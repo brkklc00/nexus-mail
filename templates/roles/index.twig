@@ -1,0 +1,1645 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Roller & Yetkiler - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item active">Roller & Yetkiler</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="key" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Roller & Yetkiler{% endblock %}
+
+{% block content %}
+
+{% if success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+    {{ success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<!-- İstatistik Kartları -->
+<div class="row mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Toplam Rol</p>
+                        <h4 class="mb-0">{{ stats.total_roles }}</h4>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="shield" class="text-primary" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Kullanıcılı Roller</p>
+                        <h4 class="mb-0">{{ stats.roles_with_users }}</h4>
+                        <p class="text-muted mb-0 fs-12">aktif kullanımda</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="users" class="text-success" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Sistem Rolleri</p>
+                        <h4 class="mb-0">{{ stats.system_roles }}</h4>
+                        <p class="text-muted mb-0 fs-12">düzenlenemez</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="lock" class="text-warning" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Toplam Yetki</p>
+                        <h4 class="mb-0">{{ stats.total_permissions }}</h4>
+                        <p class="text-muted mb-0 fs-12">yetki tanımı</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="key" class="text-info" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h4 class="card-title mb-0">
+                            <i data-feather="shield" class="align-self-center icon-xs me-2"></i>
+                            Roller & Yetkiler
+                        </h4>
+                        <small class="text-muted">{{ roles|length }} rol bulundu</small>
+                    </div>
+                    <div class="col-auto">
+                            <button type="button" class="btn btn-primary" onclick="showCreateModal()">
+                            <i data-feather="plus" class="icon-xs me-1"></i>
+                                Yeni Rol Ekle
+                            </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                {# Kart Görünümü #}
+                <div class="row g-3">
+                            {% for role in roles %}
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                        <div>
+                                        <h5 class="mb-1">
+                                            <i data-feather="shield" class="icon-xs text-primary me-2"></i>
+                                            {{ role.name }}
+                                        </h5>
+                                            {% if role.isReadonly %}
+                                        <span class="badge bg-warning-subtle text-warning">Sistem Rolü</span>
+                                        {% else %}
+                                        <span class="badge bg-success-subtle text-success">Özel Rol</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <small class="text-muted">
+                                        <i data-feather="key" class="icon-xs me-1"></i>
+                                        {{ role.permissions|length }} Yetki
+                                        </small>
+                                        <small class="text-muted">
+                                            <i data-feather="users" class="icon-xs me-1"></i>
+                                            {{ role.users|length }} Kullanıcı
+                                        </small>
+                        </div>
+                                </div>
+
+                                <div class="btn-group w-100">
+                                    {% if _session.is_admin|default(false) %}
+                                    <button type="button" class="btn btn-success btn-sm" 
+                                            onclick="quickEditPermissions({{ role.id }}, '{{ role.name|e('js') }}')"
+                                            title="Yetki Ver/Al">
+                                        <i data-feather="key" class="icon-xs me-1"></i>
+                                        Yetki Ver/Al
+                            </button>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-info btn-sm" 
+                                            onclick="viewRole({{ role.id }})"
+                                            title="Detay">
+                                        <i data-feather="eye" class="icon-xs me-1"></i>
+                                        Detay
+                                    </button>
+                                    {% if not role.isReadonly and _session.is_admin|default(false) %}
+                                    <button type="button" class="btn btn-danger btn-sm" 
+                                            onclick="deleteRole({{ role.id }}, '{{ role.name|e('js') }}')"
+                                            title="Sil">
+                                        <i data-feather="trash-2" class="icon-xs me-1"></i>
+                                        Sil
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                            {% else %}
+                    <div class="col-12">
+                        <div class="text-center text-muted py-5">
+                            <i data-feather="inbox" class="icon-lg mb-3"></i>
+                                    <p class="mb-0">Henüz rol bulunmamaktadır.</p>
+                        </div>
+                    </div>
+                            {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Yeni Rol Modal (Gruplandırılmış Yetkilerle) -->
+<div class="modal fade" id="createRoleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title">
+                    <i data-feather="plus-circle" class="icon-sm me-2 text-primary"></i>
+                    Yeni Rol Ekle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="/roles" id="createRoleForm">
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="mb-3">
+                        <label for="create_name" class="form-label">Rol Adı <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-lg" id="create_name" name="name" required placeholder="Örn: Müşteri Temsilcisi">
+                </div>
+                
+                    <div class="mb-3">
+                        <label class="form-label">Yetkiler <span class="text-muted">(Modül bazlı)</span></label>
+                        <div class="mb-2 d-flex justify-content-between align-items-center">
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-success" onclick="selectAllPermissions()">
+                                    <i data-feather="check-square" class="icon-xs me-1"></i> Tümünü Seç
+                                </button>
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="deselectAllPermissions()">
+                                    <i data-feather="square" class="icon-xs me-1"></i> Tümünü Kaldır
+                                </button>
+                                <button type="button" class="btn btn-sm btn-info" onclick="expandAllCreate()">
+                                    <i data-feather="maximize-2" class="icon-xs me-1"></i> Tümünü Aç
+                                </button>
+                                        </div>
+                            <div>
+                                <small class="text-muted">Seçili: <strong id="createSelectedCount">0</strong> yetki</small>
+                        </div>
+                    </div>
+                    
+                        <!-- Modül bazlı gruplandırma -->
+                        <div class="accordion" id="permissionsAccordion">
+                            {% for module, perms in groupedPermissions %}
+                            <div class="accordion-item border mb-2">
+                                <h2 class="accordion-header" id="headingCreate{{ loop.index }}">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCreate{{ loop.index }}" aria-expanded="false">
+                                        <strong>{{ module }}</strong>
+                                        <span class="badge bg-primary ms-2">{{ perms|length }} yetki</span>
+                                    </button>
+                                </h2>
+                                <div id="collapseCreate{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="headingCreate{{ loop.index }}" data-bs-parent="#permissionsAccordion">
+                                    <div class="accordion-body p-0">
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-hover mb-0">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th style="width: 35%">Yetki</th>
+                                                        <th class="text-center" style="width: 10%">
+                                                            <input type="checkbox" class="form-check-input" onclick="toggleColumnCreate(this, 'read', {{ loop.index }})" title="Tüm Okuma">
+                                                        </th>
+                                                        <th class="text-center" style="width: 10%">
+                                                            <input type="checkbox" class="form-check-input" onclick="toggleColumnCreate(this, 'create', {{ loop.index }})" title="Tüm Oluşturma">
+                                                        </th>
+                                                        <th class="text-center" style="width: 10%">
+                                                            <input type="checkbox" class="form-check-input" onclick="toggleColumnCreate(this, 'update', {{ loop.index }})" title="Tüm Güncelleme">
+                                                        </th>
+                                                        <th class="text-center" style="width: 10%">
+                                                            <input type="checkbox" class="form-check-input" onclick="toggleColumnCreate(this, 'delete', {{ loop.index }})" title="Tüm Silme">
+                                                        </th>
+                                                        <th class="text-center" style="width: 25%">Hızlı Seç</th>
+                                                    </tr>
+                                                    <tr>
+                                                        <th></th>
+                                                        <th class="text-center"><small class="text-muted">Okuma</small></th>
+                                                        <th class="text-center"><small class="text-muted">Oluşturma</small></th>
+                                                        <th class="text-center"><small class="text-muted">Güncelleme</small></th>
+                                                        <th class="text-center"><small class="text-muted">Silme</small></th>
+                                                        <th class="text-center"><small class="text-muted">Presetler</small></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for permission in perms %}
+                                                    <tr class="perm-row-create-{{ loop.parent.loop.index }}">
+                                                        <td>
+                                                            <strong>{{ permission.name }}</strong>
+                                                            <br><small class="text-muted font-monospace">{{ permission.key }}</small>
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <input type="checkbox" class="form-check-input permission-checkbox perm-read-create-{{ loop.parent.loop.index }}" 
+                                                                   name="permissions[{{ permission.id }}][read]" value="1">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <input type="checkbox" class="form-check-input permission-checkbox perm-create-create-{{ loop.parent.loop.index }}" 
+                                                                   name="permissions[{{ permission.id }}][create]" value="1">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <input type="checkbox" class="form-check-input permission-checkbox perm-update-create-{{ loop.parent.loop.index }}" 
+                                                                   name="permissions[{{ permission.id }}][update]" value="1">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <input type="checkbox" class="form-check-input permission-checkbox perm-delete-create-{{ loop.parent.loop.index }}" 
+                                                                   name="permissions[{{ permission.id }}][delete]" value="1">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <div class="btn-group btn-group-sm" role="group">
+                                                                <button type="button" class="btn btn-outline-success btn-sm" onclick="setRowPermissionsCreate({{ loop.parent.loop.index }}, {{ loop.index0 }}, 'all')" title="Tüm Yetkiler">Tümü</button>
+                                                                <button type="button" class="btn btn-outline-info btn-sm" onclick="setRowPermissionsCreate({{ loop.parent.loop.index }}, {{ loop.index0 }}, 'read')" title="Sadece Okuma">Okuma</button>
+                                                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRowPermissionsCreate({{ loop.parent.loop.index }}, {{ loop.index0 }}, 'none')" title="Yetki Yok">Yok</button>
+                                        </div>
+                                                        </td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                    </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                                        </div>
+                <div class="modal-footer bg-light border-top">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i data-feather="x" class="icon-xs me-1"></i>
+                        İptal
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="check" class="icon-xs me-1"></i>
+                        Rol Oluştur
+                    </button>
+                                    </div>
+            </form>
+                                    </div>
+                                </div>
+                            </div>
+
+<!-- Rol Detay Modal -->
+<div class="modal fade" id="roleDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title">
+                    <i data-feather="shield" class="icon-sm me-2 text-info"></i>
+                    Rol Detayı
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+            <div class="modal-body" id="roleDetailContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Yükleniyor...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-top">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="icon-xs me-1"></i>
+                    Kapat
+                </button>
+                <button type="button" class="btn btn-primary" id="editFromDetailBtn" onclick="editRoleFromDetail()">
+                    <i data-feather="edit" class="icon-xs me-1"></i>
+                    Düzenle
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Yetki Yönetimi Modal -->
+<div class="modal fade" id="permissionsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title">
+                    <i data-feather="key" class="icon-sm me-2 text-success"></i>
+                    Yetki Yönetimi
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <div class="alert alert-info border-0">
+                            <i data-feather="info" class="icon-xs me-2"></i>
+                            <strong>Bilgi:</strong> Sistem yetkilerini buradan yönetebilirsiniz. Yeni yetki ekleyebilir veya mevcut yetkileri düzenleyebilirsiniz.
+                    </div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <button type="button" class="btn btn-primary" onclick="showAddPermissionForm()">
+                            <i data-feather="plus" class="icon-xs me-1"></i>
+                            Yeni Yetki Ekle
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Yeni Yetki Ekleme Formu -->
+                <div id="addPermissionForm" style="display: none;" class="mb-4">
+                    <div class="card border-primary">
+                        <div class="card-header bg-primary-subtle">
+                            <h6 class="mb-0 text-primary">Yeni Yetki Ekle</h6>
+                </div>
+                        <div class="card-body">
+                            <form id="newPermissionForm" onsubmit="return saveNewPermission(event)">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Yetki Adı <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="new_perm_name" required placeholder="Örn: Email Şablon Yönetimi">
+                    </div>
+                </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Yetki Anahtarı <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control font-monospace" id="new_perm_key" required placeholder="Örn: email_template_manage">
+                                            <small class="text-muted">Küçük harf, tire ve alt çizgi kullanın</small>
+            </div>
+        </div>
+    </div>
+                                <div class="text-end">
+                                    <button type="button" class="btn btn-secondary" onclick="hideAddPermissionForm()">İptal</button>
+                                    <button type="submit" class="btn btn-success">
+                                        <i data-feather="save" class="icon-xs me-1"></i>
+                                        Yetki Ekle
+                                    </button>
+</div>
+                            </form>
+            </div>
+                    </div>
+                        </div>
+                        
+                <!-- Mevcut Yetkiler Listesi -->
+                <div class="accordion" id="permissionsManagementAccordion">
+                            {% for module, perms in groupedPermissions %}
+                    <div class="accordion-item border mb-2">
+                                <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#permMgmt{{ loop.index }}">
+                                        <strong>{{ module }}</strong>
+                                <span class="badge bg-primary ms-2">{{ perms|length }} yetki</span>
+                                    </button>
+                                </h2>
+                        <div id="permMgmt{{ loop.index }}" class="accordion-collapse collapse">
+                            <div class="accordion-body p-0">
+                                        <div class="table-responsive">
+                                    <table class="table table-sm table-hover mb-0">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                <th style="width: 10%">#ID</th>
+                                                <th style="width: 35%">Yetki Adı</th>
+                                                <th style="width: 35%">Anahtar</th>
+                                                <th class="text-end" style="width: 20%">İşlem</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for permission in perms %}
+                                            <tr id="perm-row-{{ permission.id }}">
+                                                <td><strong>#{{ permission.id }}</strong></td>
+                                                <td>
+                                                    <span class="perm-name-display">{{ permission.name }}</span>
+                                                    <input type="text" class="form-control form-control-sm perm-name-edit" style="display:none;" value="{{ permission.name }}">
+                                                        </td>
+                                                <td>
+                                                    <code class="perm-key-display">{{ permission.key }}</code>
+                                                    <input type="text" class="form-control form-control-sm font-monospace perm-key-edit" style="display:none;" value="{{ permission.key }}">
+                                                        </td>
+                                                <td class="text-end">
+                                                    <div class="btn-group btn-group-sm perm-actions">
+                                                        <button type="button" class="btn btn-outline-warning" onclick="editPermission({{ permission.id }})" title="Düzenle">
+                                                            <i data-feather="edit" class="icon-xs"></i>
+                                                        </button>
+                                                        <button type="button" class="btn btn-outline-danger" onclick="deletePermission({{ permission.id }}, '{{ permission.name|e('js') }}')" title="Sil">
+                                                            <i data-feather="trash-2" class="icon-xs"></i>
+                                                        </button>
+                                                    </div>
+                                                    <div class="btn-group btn-group-sm perm-edit-actions" style="display:none;">
+                                                        <button type="button" class="btn btn-success" onclick="savePermission({{ permission.id }})" title="Kaydet">
+                                                            <i data-feather="check" class="icon-xs"></i>
+                                                        </button>
+                                                        <button type="button" class="btn btn-secondary" onclick="cancelEditPermission({{ permission.id }})" title="İptal">
+                                                            <i data-feather="x" class="icon-xs"></i>
+                                                        </button>
+                                                    </div>
+                                                        </td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+    </div>
+</div>
+
+<!-- Hızlı Yetki Ver/Al Modal -->
+<div class="modal fade" id="quickPermissionsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title">
+                    <i data-feather="key" class="icon-sm me-2 text-success"></i>
+                    Yetki Ver/Al
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="quickPermissionsForm">
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                    {# Rol Adı Düzenleme Alanı #}
+                    <div class="card bg-light border-0 mb-3">
+                        <div class="card-body">
+                            <div class="row align-items-center">
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold mb-0">
+                                        <i data-feather="shield" class="icon-xs me-1"></i>
+                                        Rol Adı
+                                    </label>
+                    </div>
+                                <div class="col-md-9">
+                                    <input type="text" class="form-control form-control-lg" id="quickEditRoleNameInput" name="name" required placeholder="Rol adını girin...">
+                                    <small class="text-muted">Rol adını değiştirmek için düzenleyin</small>
+                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- İstatistikler -->
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center py-2">
+                                    <h3 class="mb-0 text-primary" id="quickSelectedCount">0</h3>
+                                    <small class="text-muted">Seçili Yetki</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center py-2">
+                                    <h3 class="mb-0 text-info" id="quickReadCount">0</h3>
+                                    <small class="text-muted">Okuma</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center py-2">
+                                    <h3 class="mb-0 text-success" id="quickWriteCount">0</h3>
+                                    <small class="text-muted">Yazma</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center py-2">
+                                    <h3 class="mb-0 text-danger" id="quickDeleteCount">0</h3>
+                                    <small class="text-muted">Silme</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+                    <!-- Açıklama -->
+                    <div class="alert alert-info border-0 mb-3">
+                        <h6 class="mb-2"><strong>Nasıl Kullanılır?</strong></h6>
+                        <ul class="small mb-0">
+                            <li><strong>Okuma:</strong> Kullanıcı bu sayfayı/veriyi görebilir</li>
+                            <li><strong>Oluşturma:</strong> Kullanıcı yeni kayıt ekleyebilir</li>
+                            <li><strong>Güncelleme:</strong> Kullanıcı mevcut kayıtları düzenleyebilir</li>
+                            <li><strong>Silme:</strong> Kullanıcı kayıtları silebilir</li>
+                        </ul>
+                        <p class="small mb-0 mt-2 text-muted">
+                            <strong>Örnek:</strong> "Consumer" rolüne "Email İşlem Geçmişi" yetkisinde sadece <strong>Okuma</strong> verirseniz, 
+                            kendi işlemlerini görebilir ama silemez veya düzenleyemez.
+                        </p>
+                    </div>
+
+                    <!-- Hızlı Aksiyonlar -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <strong>Hızlı Aksiyonlar:</strong>
+                        </div>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-success" onclick="quickSelectAll()">
+                                <i data-feather="check-square" class="icon-xs me-1"></i> Tümünü Seç
+                            </button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="quickDeselectAll()">
+                                <i data-feather="square" class="icon-xs me-1"></i> Tümünü Kaldır
+                            </button>
+                            <button type="button" class="btn btn-sm btn-info" onclick="toggleQuickAccordions()">
+                                <i data-feather="maximize-2" class="icon-xs me-1"></i> <span id="quickAccordionToggleText">Tümünü Aç</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Yetkiler - Modül Bazlı -->
+                    <div id="quickPermissionsContainer">
+            <div class="text-center py-5">
+                            <div class="spinner-border text-primary"></div>
+                            <p class="text-muted mt-2">Yükleniyor...</p>
+                </div>
+            </div>
+        </div>
+                <div class="modal-footer bg-light border-top">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i data-feather="x" class="icon-xs me-1"></i>
+                        İptal
+                    </button>
+                    <button type="submit" class="btn btn-success btn-lg">
+                        <i data-feather="save" class="icon-xs me-1"></i>
+                        Yetkileri Kaydet
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+    <div class="text-center">
+        <div class="spinner-border text-light" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Yükleniyor...</span>
+        </div>
+        <p class="text-white mt-3">İşleminiz gerçekleştiriliyor...</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block styles %}
+<style>
+.hover-shadow:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Loading overlay fonksiyonları
+function showLoading() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+    }
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
+// Feather icons'u güvenli şekilde yükle
+function initFeatherIcons() {
+    if (typeof feather !== 'undefined') {
+        try {
+            // Manuel olarak sadece var olan ikonları render et
+            const icons = document.querySelectorAll('[data-feather]');
+            icons.forEach(iconElement => {
+                const iconName = iconElement.getAttribute('data-feather');
+                
+                // Eğer ikon tanımlıysa render et
+                if (iconName && feather.icons[iconName]) {
+                    try {
+                        const svg = feather.icons[iconName].toSvg({
+                            class: iconElement.className,
+                            'stroke-width': iconElement.getAttribute('stroke-width') || 2
+                        });
+                        
+                        // SVG'yi element'e ekle
+                        const temp = document.createElement('div');
+                        temp.innerHTML = svg;
+                        const svgElement = temp.firstChild;
+                        
+                        // Orijinal attributeleri kopyala
+                        Array.from(iconElement.attributes).forEach(attr => {
+                            if (attr.name !== 'data-feather' && !svgElement.hasAttribute(attr.name)) {
+                                svgElement.setAttribute(attr.name, attr.value);
+                            }
+                        });
+                        
+                        iconElement.parentNode.replaceChild(svgElement, iconElement);
+                    } catch(e) {
+                        // Bu ikon için hata, diğerlerine devam et
+                    }
+                }
+            });
+        } catch(e) {
+            // Genel hata, sessizce devam et
+        }
+    }
+}
+
+// Sayfa yüklendiğinde birçok kez dene
+document.addEventListener('DOMContentLoaded', function() {
+    initFeatherIcons();
+    setTimeout(initFeatherIcons, 50);
+    setTimeout(initFeatherIcons, 100);
+    setTimeout(initFeatherIcons, 200);
+    setTimeout(initFeatherIcons, 500);
+    setTimeout(initFeatherIcons, 1000);
+});
+
+// Hemen çalıştır
+setTimeout(initFeatherIcons, 0);
+setTimeout(initFeatherIcons, 10);
+setTimeout(initFeatherIcons, 50);
+
+// Window load'da da çalıştır
+window.addEventListener('load', function() {
+    initFeatherIcons();
+    setTimeout(initFeatherIcons, 100);
+    setTimeout(initFeatherIcons, 500);
+});
+
+// DOM değişikliklerinde
+let featherTimeout = null;
+const observer = new MutationObserver(() => {
+    clearTimeout(featherTimeout);
+    featherTimeout = setTimeout(initFeatherIcons, 30);
+});
+observer.observe(document.body, {
+    childList: true,
+    subtree: true
+});
+
+// ========================================
+// YETKİ YÖNETİMİ FONKSİYONLARI
+// ========================================
+
+// Yetki yönetimi modal aç
+function showPermissionsModal() {
+    const modal = new bootstrap.Modal(document.getElementById('permissionsModal'));
+    modal.show();
+    setTimeout(() => initFeatherIcons(), 100);
+}
+
+// Yeni yetki ekleme formu göster/gizle
+function showAddPermissionForm() {
+    document.getElementById('addPermissionForm').style.display = 'block';
+    document.getElementById('new_perm_name').focus();
+    
+    // Key input validation
+    const keyInput = document.getElementById('new_perm_key');
+    keyInput.addEventListener('input', function(e) {
+        // Sadece küçük harf, rakam, tire ve alt çizgi
+        this.value = this.value.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    });
+    
+    // Name'den otomatik key oluştur
+    const nameInput = document.getElementById('new_perm_name');
+    nameInput.addEventListener('input', function(e) {
+        if (!keyInput.value || keyInput.dataset.autoGenerated === 'true') {
+            const key = this.value
+                .toLowerCase()
+                .replace(/ğ/g, 'g')
+                .replace(/ü/g, 'u')
+                .replace(/ş/g, 's')
+                .replace(/ı/g, 'i')
+                .replace(/ö/g, 'o')
+                .replace(/ç/g, 'c')
+                .replace(/[^a-z0-9]+/g, '_')
+                .replace(/^_+|_+$/g, '');
+            keyInput.value = key;
+            keyInput.dataset.autoGenerated = 'true';
+        }
+    });
+    
+    keyInput.addEventListener('focus', function() {
+        this.dataset.autoGenerated = 'false';
+    });
+}
+
+function hideAddPermissionForm() {
+    document.getElementById('addPermissionForm').style.display = 'none';
+    document.getElementById('newPermissionForm').reset();
+}
+
+// Yeni yetki kaydet
+async function saveNewPermission(event) {
+    event.preventDefault();
+    
+    const name = document.getElementById('new_perm_name').value;
+    const key = document.getElementById('new_perm_key').value;
+    
+    try {
+        const response = await fetch('/permissions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, key })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            iziToast.success({
+                title: 'Başarılı',
+                message: 'Yeni yetki eklendi!',
+                position: 'topRight'
+            });
+            setTimeout(() => location.reload(), 1000);
+    } else {
+            iziToast.error({
+                title: 'Hata',
+                message: data.error || 'Yetki eklenemedi',
+                position: 'topRight'
+            });
+        }
+    } catch (error) {
+        iziToast.error({
+            title: 'Hata',
+            message: error.message,
+            position: 'topRight'
+        });
+    }
+    
+    return false;
+}
+
+// Yetki düzenle
+function editPermission(permId) {
+    const row = document.getElementById(`perm-row-${permId}`);
+    
+    // Display'leri gizle, input'ları göster
+    row.querySelectorAll('.perm-name-display, .perm-key-display').forEach(el => el.style.display = 'none');
+    row.querySelectorAll('.perm-name-edit, .perm-key-edit').forEach(el => el.style.display = 'block');
+    
+    // Butonları değiştir
+    row.querySelector('.perm-actions').style.display = 'none';
+    row.querySelector('.perm-edit-actions').style.display = 'inline-block';
+    
+    setTimeout(() => initFeatherIcons(), 50);
+}
+
+// Yetki düzenlemeyi iptal et
+function cancelEditPermission(permId) {
+    const row = document.getElementById(`perm-row-${permId}`);
+    
+    // Input'ları gizle, display'leri göster
+    row.querySelectorAll('.perm-name-edit, .perm-key-edit').forEach(el => el.style.display = 'none');
+    row.querySelectorAll('.perm-name-display, .perm-key-display').forEach(el => el.style.display = 'inline');
+    
+    // Butonları değiştir
+    row.querySelector('.perm-edit-actions').style.display = 'none';
+    row.querySelector('.perm-actions').style.display = 'inline-block';
+    
+    setTimeout(() => initFeatherIcons(), 50);
+}
+
+// Yetki kaydet
+async function savePermission(permId) {
+    const row = document.getElementById(`perm-row-${permId}`);
+    const name = row.querySelector('.perm-name-edit').value;
+    const key = row.querySelector('.perm-key-edit').value;
+    
+    try {
+        const response = await fetch(`/permissions/${permId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, key })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            iziToast.success({
+                title: 'Başarılı',
+                message: 'Yetki güncellendi!',
+                position: 'topRight'
+            });
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            iziToast.error({
+                title: 'Hata',
+                message: data.error || 'Yetki güncellenemedi',
+                position: 'topRight'
+            });
+        }
+    } catch (error) {
+        iziToast.error({
+            title: 'Hata',
+            message: error.message,
+            position: 'topRight'
+        });
+    }
+}
+
+// Yetki sil
+function deletePermission(permId, permName) {
+    iziToast.question({
+        timeout: false,
+        close: false,
+        overlay: true,
+        displayMode: 'once',
+        id: 'deletePermission',
+        zindex: 999,
+        title: 'Dikkat!',
+        message: `"${permName}" yetkisini silmek istediğinizde emin misiniz? Bu yetki kullanan tüm rollerden kaldırılacak!`,
+        position: 'center',
+        buttons: [
+            ['<button class="btn-danger"><b>Evet, Sil</b></button>', async function (instance, toast) {
+                instance.hide({ transitionOut: 'fadeOut' }, toast, 'button');
+                
+                try {
+                    const response = await fetch(`/permissions/${permId}/delete`, {
+            method: 'POST',
+                        headers: {'Content-Type': 'application/json'}
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+                        iziToast.success({
+                            title: 'Başarılı',
+                            message: 'Yetki silindi!',
+                            position: 'topRight'
+                        });
+                        setTimeout(() => location.reload(), 1000);
+        } else {
+                        iziToast.error({
+                            title: 'Hata',
+                            message: data.error || 'Yetki silinemedi',
+                            position: 'topRight'
+                        });
+        }
+    } catch (error) {
+                    iziToast.error({
+                        title: 'Hata',
+                        message: error.message,
+                        position: 'topRight'
+                    });
+                }
+            }, true],
+            ['<button>İptal</button>', function (instance, toast) {
+                instance.hide({ transitionOut: 'fadeOut' }, toast, 'button');
+            }],
+        ]
+    });
+}
+
+
+// Create modal göster
+function showCreateModal() {
+    document.getElementById('createRoleForm').reset();
+    deselectAllPermissions();
+    const modal = new bootstrap.Modal(document.getElementById('createRoleModal'));
+    modal.show();
+    
+    // Checkbox değişikliklerini dinle
+    setTimeout(() => {
+        document.querySelectorAll('.permission-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateCreateStats);
+        });
+    }, 100);
+    
+    for(let i = 0; i < 5; i++) {
+        setTimeout(initFeatherIcons, i * 100);
+    }
+}
+
+// Global değişken - şu an düzenlenen rol ID
+let currentEditRoleId = null;
+
+// Rol detayını göster
+function viewRole(roleId) {
+    currentEditRoleId = roleId;
+    const modal = new bootstrap.Modal(document.getElementById('roleDetailModal'));
+    const content = document.getElementById('roleDetailContent');
+    const editBtn = document.getElementById('editFromDetailBtn');
+    
+    content.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+    modal.show();
+    
+    fetch('/roles/' + roleId)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            return response.text();
+        })
+        .then(html => {
+            content.innerHTML = html;
+            
+            // Readonly kontrolü
+            const isReadonly = html.includes('Sistem Rolü') || html.includes('düzenlenemez');
+            if (editBtn) {
+                editBtn.style.display = isReadonly ? 'none' : 'inline-block';
+            }
+            
+            // İkonları yenile
+            for(let i = 0; i < 10; i++) {
+                setTimeout(initFeatherIcons, i * 100);
+            }
+        })
+        .catch(error => {
+            console.error('Rol detay hatası:', error);
+            content.innerHTML = '<div class="alert alert-danger"><strong>Hata:</strong> ' + error.message + '</div>';
+        });
+}
+
+// Rol düzenle modal aç
+async function editRole(roleId) {
+    currentEditRoleId = roleId;
+    
+    const modal = new bootstrap.Modal(document.getElementById('editRoleModal'));
+    const container = document.getElementById('editPermissionsContainer');
+    
+    // Loading göster
+    container.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="text-muted mt-2">Yükleniyor...</p></div>';
+    
+    modal.show();
+    
+    try {
+        // Rol bilgilerini fetch et
+        const response = await fetch(`/roles/${roleId}/edit-data`);
+        const data = await response.json();
+        
+        if (data.success) {
+            // Rol adını doldur
+            document.getElementById('edit_name').value = data.role.name;
+            
+            // Form action'ı ayarla
+            document.getElementById('editRoleForm').action = `/roles/${roleId}/edit`;
+            
+            // Yetkileri render et
+            renderEditPermissions(data.groupedPermissions, data.role.permissions);
+            
+            // İstatistikleri güncelle
+            updateEditStats();
+            
+            // Icon'ları yenile
+            for(let i = 0; i < 5; i++) {
+                setTimeout(initFeatherIcons, i * 100);
+            }
+        } else {
+            iziToast.error({
+                title: 'Hata',
+                message: 'Rol bilgileri yüklenemedi',
+                position: 'topRight'
+            });
+        }
+    } catch (error) {
+        iziToast.error({
+            title: 'Hata',
+            message: error.message,
+            position: 'topRight'
+        });
+        container.innerHTML = '<div class="alert alert-danger">Rol yüklenemedi!</div>';
+    }
+}
+
+// Detaydan düzenle
+function editRoleFromDetail() {
+    const roleId = currentEditRoleId;
+    const detailModal = bootstrap.Modal.getInstance(document.getElementById('roleDetailModal'));
+    if (detailModal) detailModal.hide();
+    
+    setTimeout(() => {
+        editRole(roleId);
+    }, 300);
+}
+
+// Tüm yetkileri göster (liste preview)
+function showAllPermissions(roleId, roleName) {
+    viewRole(roleId);
+}
+
+// Hızlı yetki düzenleme (Checkbox'larla ver/al)
+async function quickEditPermissions(roleId, roleName) {
+    currentEditRoleId = roleId;
+    
+    // Accordion durumunu sıfırla
+    quickAccordionsExpanded = false;
+    const toggleText = document.getElementById('quickAccordionToggleText');
+    if (toggleText) {
+        toggleText.textContent = 'Tümünü Aç';
+    }
+    
+    const modal = new bootstrap.Modal(document.getElementById('quickPermissionsModal'));
+    const container = document.getElementById('quickPermissionsContainer');
+    const roleNameInput = document.getElementById('quickEditRoleNameInput');
+    
+    // Rol adını input'a yaz - önce temizle sonra doldur
+    if (roleNameInput) {
+        roleNameInput.value = '';
+        setTimeout(() => {
+            roleNameInput.value = roleName;
+        }, 100);
+    }
+    
+    // Loading göster
+    container.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="text-muted mt-2">Yetkiler yükleniyor...</p></div>';
+    
+    modal.show();
+    
+    try {
+        // Rol bilgilerini fetch et
+        const response = await fetch(`/roles/${roleId}/edit-data`);
+        const data = await response.json();
+        
+        if (data.success) {
+            // Form action'ı ayarla
+            document.getElementById('quickPermissionsForm').action = `/roles/${roleId}/edit`;
+            
+            // Rol adını tekrar set et (fetch sonrası)
+            if (roleNameInput) {
+                roleNameInput.value = data.role.name || roleName;
+            }
+            
+            // Yetkileri render et
+            renderQuickPermissions(data.groupedPermissions, data.role.permissions);
+            
+            // İstatistikleri güncelle
+            updateQuickStats();
+            
+            // Icon'ları yenile
+            setTimeout(() => initFeatherIcons(), 100);
+            setTimeout(() => initFeatherIcons(), 300);
+        } else {
+            iziToast.error({
+                title: 'Hata',
+                message: data.error || 'Rol bilgileri yüklenemedi',
+                position: 'topRight'
+            });
+        }
+    } catch (error) {
+        iziToast.error({
+            title: 'Hata',
+            message: error.message,
+            position: 'topRight'
+        });
+        container.innerHTML = '<div class="alert alert-danger">Yetkiler yüklenemedi!</div>';
+    }
+}
+
+// Rol sil
+function deleteRole(roleId, roleName) {
+    iziToast.question({
+        timeout: false,
+        close: false,
+        overlay: true,
+        displayMode: 'once',
+        id: 'deleteRole',
+        zindex: 999,
+        title: 'Emin misiniz?',
+        message: `"${roleName}" rolünü silmek istediğinize emin misiniz?`,
+        position: 'center',
+        buttons: [
+            ['<button class="btn-danger"><b>Evet, Sil</b></button>', function (instance, toast) {
+                instance.hide({ transitionOut: 'fadeOut' }, toast, 'button');
+                showLoading();
+    const form = document.createElement('form');
+    form.method = 'POST';
+                form.action = '/roles/' + roleId + '/delete';
+    document.body.appendChild(form);
+    form.submit();
+            }, true],
+            ['<button>İptal</button>', function (instance, toast) {
+                instance.hide({ transitionOut: 'fadeOut' }, toast, 'button');
+            }],
+        ]
+    });
+}
+
+// Tüm yetkileri seç
+function selectAllPermissions() {
+    document.querySelectorAll('.permission-checkbox').forEach(cb => cb.checked = true);
+    updateCreateStats();
+}
+
+// Tüm yetkileri kaldır
+function deselectAllPermissions() {
+    document.querySelectorAll('.permission-checkbox').forEach(cb => cb.checked = false);
+    updateCreateStats();
+}
+
+// Tüm accordion'ları aç (Create modal)
+function expandAllCreate() {
+    document.querySelectorAll('#permissionsAccordion .accordion-collapse').forEach(collapse => {
+        const bsCollapse = new bootstrap.Collapse(collapse, { toggle: false });
+        bsCollapse.show();
+    });
+}
+
+// Create modal istatistiklerini güncelle
+function updateCreateStats() {
+    const permissionIds = new Set();
+    document.querySelectorAll('input[type="checkbox"].permission-checkbox:checked').forEach(cb => {
+        const match = cb.name.match(/permissions\[(\d+)\]/);
+        if (match) permissionIds.add(match[1]);
+    });
+    document.getElementById('createSelectedCount').textContent = permissionIds.size;
+}
+
+// Sütun toggle (Create modal için)
+function toggleColumnCreate(checkbox, action, moduleIndex) {
+    const checkboxes = document.querySelectorAll(`.perm-${action}-create-${moduleIndex}`);
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateCreateStats();
+}
+
+// Satır yetkileri ayarla (Create modal için)
+function setRowPermissionsCreate(moduleIndex, rowIndex, preset) {
+    const row = document.querySelectorAll(`.perm-row-create-${moduleIndex}`)[rowIndex];
+    if (!row) return;
+    
+    const checkboxes = row.querySelectorAll('input[type="checkbox"].permission-checkbox');
+    
+    switch(preset) {
+        case 'all':
+            checkboxes.forEach(cb => cb.checked = true);
+            break;
+        case 'read':
+            checkboxes.forEach((cb, idx) => {
+                cb.checked = (idx === 0);
+            });
+            break;
+        case 'none':
+            checkboxes.forEach(cb => cb.checked = false);
+            break;
+    }
+    updateCreateStats();
+}
+
+// Yetkileri render et (Edit modal için)
+function renderEditPermissions(groupedPermissions, rolePermissions) {
+    const container = document.getElementById('editPermissionsContainer');
+    
+    let html = '<div class="accordion" id="editPermissionsAccordion">';
+    let moduleIndex = 0;
+    
+    for (const [module, perms] of Object.entries(groupedPermissions)) {
+        moduleIndex++;
+        html += `
+            <div class="accordion-item border mb-2">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#editCollapse${moduleIndex}">
+                        <strong>${module}</strong>
+                        <span class="badge bg-primary ms-2">${perms.length} yetki</span>
+                    </button>
+                </h2>
+                <div id="editCollapse${moduleIndex}" class="accordion-collapse collapse">
+                    <div class="accordion-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 35%">Yetki</th>
+                                        <th class="text-center" style="width: 10%">
+                                            <input type="checkbox" class="form-check-input" onclick="toggleEditColumn(this, 'read', ${moduleIndex})" title="Tüm Okuma">
+                                        </th>
+                                        <th class="text-center" style="width: 10%">
+                                            <input type="checkbox" class="form-check-input" onclick="toggleEditColumn(this, 'create', ${moduleIndex})" title="Tüm Oluşturma">
+                                        </th>
+                                        <th class="text-center" style="width: 10%">
+                                            <input type="checkbox" class="form-check-input" onclick="toggleEditColumn(this, 'update', ${moduleIndex})" title="Tüm Güncelleme">
+                                        </th>
+                                        <th class="text-center" style="width: 10%">
+                                            <input type="checkbox" class="form-check-input" onclick="toggleEditColumn(this, 'delete', ${moduleIndex})" title="Tüm Silme">
+                                        </th>
+                                        <th class="text-center" style="width: 25%">Hızlı Seç</th>
+                                    </tr>
+                                    <tr>
+                                        <th></th>
+                                        <th class="text-center"><small class="text-muted">Okuma</small></th>
+                                        <th class="text-center"><small class="text-muted">Oluşturma</small></th>
+                                        <th class="text-center"><small class="text-muted">Güncelleme</small></th>
+                                        <th class="text-center"><small class="text-muted">Silme</small></th>
+                                        <th class="text-center"><small class="text-muted">Presetler</small></th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+        
+        perms.forEach((perm, permIndex) => {
+            const rolePerm = rolePermissions.find(rp => rp.permission_id === perm.id);
+            const hasRead = rolePerm?.can_read || false;
+            const hasCreate = rolePerm?.can_create || false;
+            const hasUpdate = rolePerm?.can_update || false;
+            const hasDelete = rolePerm?.can_delete || false;
+            
+            html += `
+                <tr class="edit-perm-row-${moduleIndex}">
+                    <td>
+                        <strong>${perm.name}</strong>
+                        <br><small class="text-muted font-monospace">${perm.key}</small>
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input edit-checkbox edit-perm-read-${moduleIndex}" type="checkbox" 
+                               name="permissions[${perm.id}][read]" value="1" ${hasRead ? 'checked' : ''} onchange="updateEditStats()">
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input edit-checkbox edit-perm-create-${moduleIndex}" type="checkbox" 
+                               name="permissions[${perm.id}][create]" value="1" ${hasCreate ? 'checked' : ''} onchange="updateEditStats()">
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input edit-checkbox edit-perm-update-${moduleIndex}" type="checkbox" 
+                               name="permissions[${perm.id}][update]" value="1" ${hasUpdate ? 'checked' : ''} onchange="updateEditStats()">
+                    </td>
+                    <td class="text-center">
+                        <input class="form-check-input edit-checkbox edit-perm-delete-${moduleIndex}" type="checkbox" 
+                               name="permissions[${perm.id}][delete]" value="1" ${hasDelete ? 'checked' : ''} onchange="updateEditStats()">
+                    </td>
+                    <td class="text-center">
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-success btn-sm" onclick="setEditRowPermissions(${moduleIndex}, ${permIndex}, 'all')">Tümü</button>
+                            <button type="button" class="btn btn-outline-info btn-sm" onclick="setEditRowPermissions(${moduleIndex}, ${permIndex}, 'read')">Okuma</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setEditRowPermissions(${moduleIndex}, ${permIndex}, 'none')">Yok</button>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+            
+        html += `</tbody></table></div></div></div></div>`;
+    }
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// Edit modal istatistiklerini güncelle
+function updateEditStats() {
+    const permissionIds = new Set();
+    document.querySelectorAll('input[type="checkbox"].edit-checkbox:checked').forEach(cb => {
+        const match = cb.name.match(/permissions\[(\d+)\]/);
+        if (match) permissionIds.add(match[1]);
+    });
+    
+    const readCount = document.querySelectorAll('input[name*="[read]"].edit-checkbox:checked').length;
+    const createCount = document.querySelectorAll('input[name*="[create]"].edit-checkbox:checked').length;
+    const updateCount = document.querySelectorAll('input[name*="[update]"].edit-checkbox:checked').length;
+    const deleteCount = document.querySelectorAll('input[name*="[delete]"].edit-checkbox:checked').length;
+    
+    document.getElementById('editSelectedPermCount').textContent = permissionIds.size;
+    document.getElementById('editReadCount').textContent = readCount;
+    document.getElementById('editWriteCount').textContent = Math.max(createCount, updateCount);
+    document.getElementById('editDeleteCount').textContent = deleteCount;
+}
+
+// Edit modal tüm seç/kaldır
+function selectAllEditPermissions() {
+    document.querySelectorAll('.edit-checkbox').forEach(cb => cb.checked = true);
+    updateEditStats();
+}
+
+function deselectAllEditPermissions() {
+    document.querySelectorAll('.edit-checkbox').forEach(cb => cb.checked = false);
+    updateEditStats();
+}
+
+function expandAllEdit() {
+    document.querySelectorAll('#editPermissionsAccordion .accordion-collapse').forEach(collapse => {
+        const bsCollapse = new bootstrap.Collapse(collapse, { toggle: false });
+        bsCollapse.show();
+    });
+}
+
+// Edit modal sütun toggle
+function toggleEditColumn(checkbox, action, moduleIndex) {
+    document.querySelectorAll(`.edit-perm-${action}-${moduleIndex}`).forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateEditStats();
+}
+
+// Edit modal satır preset
+function setEditRowPermissions(moduleIndex, rowIndex, preset) {
+    const row = document.querySelectorAll(`.edit-perm-row-${moduleIndex}`)[rowIndex];
+    if (!row) return;
+    
+    const checkboxes = row.querySelectorAll('input[type="checkbox"]');
+    
+    switch(preset) {
+        case 'all':
+            checkboxes.forEach(cb => cb.checked = true);
+            break;
+        case 'read':
+            checkboxes.forEach((cb, idx) => cb.checked = (idx === 0));
+            break;
+        case 'none':
+            checkboxes.forEach(cb => cb.checked = false);
+            break;
+    }
+    updateEditStats();
+}
+
+// Hızlı yetkileri render et
+function renderQuickPermissions(groupedPermissions, rolePermissions) {
+    const container = document.getElementById('quickPermissionsContainer');
+    
+    let html = '<div class="accordion" id="quickPermissionsAccordion">';
+    let moduleIndex = 0;
+    
+    for (const [module, perms] of Object.entries(groupedPermissions)) {
+        moduleIndex++;
+        html += `
+            <div class="accordion-item border mb-2">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#quickCollapse${moduleIndex}">
+                        <strong>${module}</strong>
+                        <span class="badge bg-primary ms-2">${perms.length} yetki</span>
+                    </button>
+                </h2>
+                <div id="quickCollapse${moduleIndex}" class="accordion-collapse collapse">
+                    <div class="accordion-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 35%">Yetki Adı</th>
+                                        <th class="text-center" style="width: 13%">
+                                            <div class="form-check form-switch d-flex justify-content-center">
+                                                <input type="checkbox" class="form-check-input" onclick="toggleQuickColumn(this, 'read', ${moduleIndex})" 
+                                                       style="cursor: pointer; width: 2.5rem; height: 1.2rem;" title="Tümünü seç/kaldır">
+                                            </div>
+                                            <small class="text-muted">Okuma</small>
+                                        </th>
+                                        <th class="text-center" style="width: 13%">
+                                            <div class="form-check form-switch d-flex justify-content-center">
+                                                <input type="checkbox" class="form-check-input" onclick="toggleQuickColumn(this, 'create', ${moduleIndex})"
+                                                       style="cursor: pointer; width: 2.5rem; height: 1.2rem;" title="Tümünü seç/kaldır">
+                                            </div>
+                                            <small class="text-muted">Oluşturma</small>
+                                        </th>
+                                        <th class="text-center" style="width: 13%">
+                                            <div class="form-check form-switch d-flex justify-content-center">
+                                                <input type="checkbox" class="form-check-input" onclick="toggleQuickColumn(this, 'update', ${moduleIndex})"
+                                                       style="cursor: pointer; width: 2.5rem; height: 1.2rem;" title="Tümünü seç/kaldır">
+                                            </div>
+                                            <small class="text-muted">Güncelleme</small>
+                                        </th>
+                                        <th class="text-center" style="width: 13%">
+                                            <div class="form-check form-switch d-flex justify-content-center">
+                                                <input type="checkbox" class="form-check-input" onclick="toggleQuickColumn(this, 'delete', ${moduleIndex})"
+                                                       style="cursor: pointer; width: 2.5rem; height: 1.2rem;" title="Tümünü seç/kaldır">
+                                            </div>
+                                            <small class="text-muted">Silme</small>
+                                        </th>
+                                        <th class="text-center" style="width: 13%">Hızlı Seç</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+        
+        perms.forEach((perm, permIndex) => {
+            const rolePerm = rolePermissions.find(rp => rp.permission_id === perm.id);
+            const hasRead = rolePerm?.can_read || false;
+            const hasCreate = rolePerm?.can_create || false;
+            const hasUpdate = rolePerm?.can_update || false;
+            const hasDelete = rolePerm?.can_delete || false;
+            
+            html += `
+                <tr class="quick-perm-row-${moduleIndex}">
+                    <td>
+                        <strong>${perm.name}</strong>
+                        <br><small class="text-muted font-monospace">${perm.key}</small>
+                    </td>
+                    <td class="text-center">
+                        <div class="form-check form-switch d-flex justify-content-center">
+                            <input class="form-check-input quick-checkbox quick-read-${moduleIndex}" type="checkbox" 
+                                   name="permissions[${perm.id}][read]" value="1" ${hasRead ? 'checked' : ''} onchange="updateQuickStats()" 
+                                   style="cursor: pointer; width: 2.5rem; height: 1.2rem;">
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <div class="form-check form-switch d-flex justify-content-center">
+                            <input class="form-check-input quick-checkbox quick-create-${moduleIndex}" type="checkbox" 
+                                   name="permissions[${perm.id}][create]" value="1" ${hasCreate ? 'checked' : ''} onchange="updateQuickStats()"
+                                   style="cursor: pointer; width: 2.5rem; height: 1.2rem;">
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <div class="form-check form-switch d-flex justify-content-center">
+                            <input class="form-check-input quick-checkbox quick-update-${moduleIndex}" type="checkbox" 
+                                   name="permissions[${perm.id}][update]" value="1" ${hasUpdate ? 'checked' : ''} onchange="updateQuickStats()"
+                                   style="cursor: pointer; width: 2.5rem; height: 1.2rem;">
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <div class="form-check form-switch d-flex justify-content-center">
+                            <input class="form-check-input quick-checkbox quick-delete-${moduleIndex}" type="checkbox" 
+                                   name="permissions[${perm.id}][delete]" value="1" ${hasDelete ? 'checked' : ''} onchange="updateQuickStats()"
+                                   style="cursor: pointer; width: 2.5rem; height: 1.2rem;">
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-success btn-sm" onclick="setQuickRow(${moduleIndex}, ${permIndex}, 'all')" title="Tüm yetkiler">Tümü</button>
+                            <button type="button" class="btn btn-outline-info btn-sm" onclick="setQuickRow(${moduleIndex}, ${permIndex}, 'read')" title="Sadece okuma">Okuma</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setQuickRow(${moduleIndex}, ${permIndex}, 'none')" title="Yetki yok">Yok</button>
+                        </div>
+                    </td>
+                </tr>`;
+        });
+        
+        html += `</tbody></table></div></div></div></div>`;
+    }
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// Quick modal istatistiklerini güncelle
+function updateQuickStats() {
+    const permissionIds = new Set();
+    document.querySelectorAll('input.quick-checkbox:checked').forEach(cb => {
+        const match = cb.name.match(/permissions\[(\d+)\]/);
+        if (match) permissionIds.add(match[1]);
+    });
+    
+    const readCount = document.querySelectorAll('input[name*="[read]"].quick-checkbox:checked').length;
+    const createCount = document.querySelectorAll('input[name*="[create]"].quick-checkbox:checked').length;
+    const updateCount = document.querySelectorAll('input[name*="[update]"].quick-checkbox:checked').length;
+    const deleteCount = document.querySelectorAll('input[name*="[delete]"].quick-checkbox:checked').length;
+    
+    document.getElementById('quickSelectedCount').textContent = permissionIds.size;
+    document.getElementById('quickReadCount').textContent = readCount;
+    document.getElementById('quickWriteCount').textContent = Math.max(createCount, updateCount);
+    document.getElementById('quickDeleteCount').textContent = deleteCount;
+}
+
+// Quick modal - tümünü seç/kaldır
+function quickSelectAll() {
+    document.querySelectorAll('.quick-checkbox').forEach(cb => cb.checked = true);
+    updateQuickStats();
+    iziToast.success({
+        title: 'Tümü Seçildi',
+        message: 'Tüm yetkiler verildi',
+        position: 'topRight',
+        timeout: 2000
+    });
+}
+
+function quickDeselectAll() {
+    document.querySelectorAll('.quick-checkbox').forEach(cb => cb.checked = false);
+    updateQuickStats();
+    iziToast.info({
+        title: 'Tümü Kaldırıldı',
+        message: 'Tüm yetkiler kaldırıldı',
+        position: 'topRight',
+        timeout: 2000
+    });
+}
+
+// Quick accordion'ları aç/kapat toggle
+let quickAccordionsExpanded = false;
+function toggleQuickAccordions() {
+    const collapses = document.querySelectorAll('#quickPermissionsAccordion .accordion-collapse');
+    const toggleText = document.getElementById('quickAccordionToggleText');
+    
+    collapses.forEach(collapse => {
+        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapse, { toggle: false });
+        if (quickAccordionsExpanded) {
+            bsCollapse.hide();
+        } else {
+            bsCollapse.show();
+        }
+    });
+    
+    quickAccordionsExpanded = !quickAccordionsExpanded;
+    toggleText.textContent = quickAccordionsExpanded ? 'Tümünü Kapat' : 'Tümünü Aç';
+    
+    setTimeout(() => initFeatherIcons(), 100);
+}
+
+// Quick modal - sütun toggle
+function toggleQuickColumn(checkbox, action, moduleIndex) {
+    document.querySelectorAll(`.quick-${action}-${moduleIndex}`).forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateQuickStats();
+}
+
+// Quick modal - satır preset
+function setQuickRow(moduleIndex, rowIndex, preset) {
+    const row = document.querySelectorAll(`.quick-perm-row-${moduleIndex}`)[rowIndex];
+    if (!row) return;
+    
+    const checkboxes = row.querySelectorAll('input[type="checkbox"]');
+    
+    switch(preset) {
+        case 'all':
+            checkboxes.forEach(cb => cb.checked = true);
+            break;
+        case 'read':
+            checkboxes.forEach((cb, idx) => cb.checked = (idx === 0));
+            break;
+        case 'none':
+            checkboxes.forEach(cb => cb.checked = false);
+            break;
+    }
+    updateQuickStats();
+}
+
+// Form submit - loading göster
+document.getElementById('createRoleForm').addEventListener('submit', function() {
+    showLoading();
+});
+
+// Quick form submit
+document.getElementById('quickPermissionsForm')?.addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    showLoading();
+    
+    const formData = new FormData(this);
+    const action = this.action;
+    
+    fetch(action, {
+        method: 'POST',
+        body: formData
+    })
+        .then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        } else {
+            return response.json();
+        }
+    })
+    .then(data => {
+        if (data && data.success === false) {
+            iziToast.error({
+                title: 'Hata',
+                message: data.error || 'Yetkiler kaydedilemedi',
+                position: 'topRight'
+            });
+            hideLoading();
+        } else {
+            iziToast.success({
+                title: 'Başarılı',
+                message: 'Yetkiler güncellendi!',
+                position: 'topRight'
+            });
+            setTimeout(() => location.reload(), 1000);
+            }
+        })
+        .catch(error => {
+        iziToast.error({
+            title: 'Hata',
+            message: error.message,
+            position: 'topRight'
+        });
+        hideLoading();
+    });
+    
+    return false;
+});
+
+</script>
+{% endblock %}
+

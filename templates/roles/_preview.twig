@@ -1,0 +1,139 @@
+<div class="modal-header">
+    <h5 class="modal-title">
+        <i data-feather="eye"></i>
+        Rol Önizleme: {{ role.name }}
+    </h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+</div>
+<div class="modal-body">
+    <div class="alert alert-info border-0">
+        <i data-feather="info"></i>
+        <strong>Bu rol sahibi kullanıcılar</strong> aşağıdaki sayfalara erişebilir:
+    </div>
+    
+    <!-- Erişilebilir Sayfalar -->
+    <div class="mb-4">
+        <h6 class="text-success mb-3">
+            <i data-feather="check-circle"></i>
+            Erişilebilir Sayfalar ({{ accessible_pages|length }})
+        </h6>
+        
+        {% if accessible_pages is empty %}
+            <div class="text-muted text-center py-3">
+                <i data-feather="x-circle"></i>
+                Erişilebilir sayfa yok
+            </div>
+        {% else %}
+            <div class="list-group">
+                {% for page in accessible_pages %}
+                <div class="list-group-item list-group-item-action d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="{{ page.icon }}" class="text-success" style="width: 20px; height: 20px;"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <strong>{{ page.name }}</strong>
+                        {% if page.url %}
+                            <small class="text-muted d-block">{{ page.url }}</small>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <span class="badge bg-success-subtle text-success">
+                            <i data-feather="check" style="width: 12px; height: 12px;"></i>
+                            Erişebilir
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Engellenmiş Sayfalar -->
+    <div class="mb-3">
+        <h6 class="text-danger mb-3">
+            <i data-feather="x-circle"></i>
+            Engellenmiş Sayfalar ({{ blocked_pages|length }})
+        </h6>
+        
+        {% if blocked_pages is empty %}
+            <div class="alert alert-success border-0">
+                <i data-feather="star"></i>
+                <strong>Tebrikler!</strong> Bu rol tüm sayfalara erişebilir.
+            </div>
+        {% else %}
+            <div class="list-group">
+                {% for page in blocked_pages %}
+                <div class="list-group-item d-flex align-items-center" style="opacity: 0.6;">
+                    <div class="me-3">
+                        <i data-feather="{{ page.icon }}" class="text-muted" style="width: 20px; height: 20px;"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <strong>{{ page.name }}</strong>
+                        {% if page.url %}
+                            <small class="text-muted d-block">{{ page.url }}</small>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <span class="badge bg-danger-subtle text-danger">
+                            <i data-feather="lock" style="width: 12px; height: 12px;"></i>
+                            Erişemez
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Özet İstatistik -->
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card border-success shadow-sm">
+                <div class="card-body text-center">
+                    <h3 class="text-success mb-1">{{ accessible_pages|length }}</h3>
+                    <small class="text-muted">Erişilebilir Sayfa</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card border-danger shadow-sm">
+                <div class="card-body text-center">
+                    <h3 class="text-danger mb-1">{{ blocked_pages|length }}</h3>
+                    <small class="text-muted">Engellenmiş Sayfa</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-footer">
+    <button type="button" class="btn btn-soft-secondary" data-bs-dismiss="modal">
+        <i data-feather="x"></i>
+        Kapat
+    </button>
+</div>
+
+<script>
+// İkonları güvenli şekilde yükle
+function safeLoadIcons() {
+    if (typeof feather !== 'undefined') {
+        try {
+            const icons = document.querySelectorAll('[data-feather]');
+            icons.forEach(iconEl => {
+                const name = iconEl.getAttribute('data-feather');
+                if (name && feather.icons[name]) {
+                    try {
+                        const svg = feather.icons[name].toSvg({class: iconEl.className});
+                        const temp = document.createElement('div');
+                        temp.innerHTML = svg;
+                        iconEl.parentNode.replaceChild(temp.firstChild, iconEl);
+                    } catch(e) {}
+                }
+            });
+        } catch(e) {}
+    }
+}
+safeLoadIcons();
+setTimeout(safeLoadIcons, 50);
+setTimeout(safeLoadIcons, 150);
+</script>
+

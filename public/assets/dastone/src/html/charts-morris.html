@@ -1,0 +1,145 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        @@include("./partials/title-meta.html", {"title": "Dastone"})
+
+         <!--Morris Chart CSS -->
+         <link rel="stylesheet" href="assets/plugins/morris/morris.css">
+
+        @@include('./partials/head-css.html')
+    </head>
+
+    <body>
+        <!-- leftbar-tab-menu -->
+        @@include('./partials/left-sidebar.html')
+        <!-- end leftbar-tab-menu-->
+        
+
+        <div class="page-wrapper">
+        <!-- Top Bar Start -->
+        @@include('./partials/topbar.html')
+        <!-- Top Bar End -->
+
+            <!-- Page Content-->
+            <div class="page-content">
+                <div class="container-fluid">
+                    <!-- Page-Title -->
+                    <div class="row">
+                        <div class="col-sm-12">
+                            <div class="page-title-box">
+                                <div class="row">
+                                    <div class="col">
+                                        <h4 class="page-title">Morris Charts</h4>
+                                        <ol class="breadcrumb">
+                                            <li class="breadcrumb-item"><a href="javascript:void(0);">Dastone</a></li>
+                                            <li class="breadcrumb-item"><a href="javascript:void(0);">Charts</a></li>
+                                            <li class="breadcrumb-item active">Morris</li>
+                                        </ol>
+                                    </div><!--end col-->
+                                    <div class="col-auto align-self-center">
+                                        <a href="#" class="btn btn-sm btn-outline-primary" id="Dash_Date">
+                                            <span class="day-name" id="Day_Name">Today:</span>&nbsp;
+                                            <span class="" id="Select_date">Jan 11</span>
+                                            <i data-feather="calendar" class="align-self-center icon-xs ms-1"></i>
+                                        </a>
+                                        <a href="#" class="btn btn-sm btn-outline-primary">
+                                            <i data-feather="download" class="align-self-center icon-xs"></i>
+                                        </a>
+                                    </div><!--end col-->  
+                                </div><!--end row-->                                                              
+                            </div><!--end page-title-box-->
+                        </div><!--end col-->
+                    </div><!--end row-->
+                    <!-- end page title end breadcrumb -->
+                    <div class="row">
+                        <div class="col-lg-8">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title">Bar Chart</h4>
+                                    <p class="text-muted mb-0">Create bar charts using
+                                        Morris.Bar(options), where options is an object containing the
+                                        configuration options.
+                                    </p>     
+                                </div><!--end card-header-->
+                                <div class="card-body">        
+                                    <div id="morris-bar-example" class="drop-shadow" style="height: 300px"></div>        
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div> <!-- end col -->
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title">Donut Chart</h4>
+                                    <p class="text-muted mb-0">This really couldn't be easier. Create
+                                        a Donut chart using Morris.Donut(options).
+                                    </p>    
+                                </div><!--end card-header-->
+                                <div class="card-body">  
+                                    <div id="morris-donut-example" class="drop-shadow" style="height: 300px"></div>        
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div> <!-- end col -->
+                    </div> <!-- end row -->
+    
+                    <div class="row">
+                        <div class="col-lg-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title">Area Chart</h4>
+                                    <p class="text-muted mb-0">Create an area chart using
+                                        Morris.Area(options). Area charts take all the same options as line
+                                        charts.
+                                    </p>     
+                                </div><!--end card-header-->
+                                <div class="card-body">
+                                    <div id="morris-area-example" class="drop-shadow" style="height: 300px"></div>
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div> <!-- end col -->
+
+                        <div class="col-lg-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title">Line Chart</h4>
+                                    <p class="text-muted mb-0">The public API is terribly simple. It's
+                                        just one function: Morris.Line (options), where options is an object
+                                        containing some of the configuration options.
+                                    </p>     
+                                </div><!--end card-header-->
+                                <div class="card-body"> 
+                                    <div id="morris-line-example" class="drop-shadow" style="height: 300px"></div>        
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div> <!-- end col -->                            
+                    </div> <!-- end row -->
+
+                </div><!-- container -->
+
+                <!--Start Footer-->
+                @@include('./partials/footer.html')                
+                <!--end footer-->
+            </div>
+            <!-- end page content -->
+        </div>
+        <!-- end page-wrapper -->
+
+        
+
+
+        <!-- jQuery  -->
+        <script src="assets/js/vendor.js"></script>
+        <script src="assets/plugins/daterangepicker/daterangepicker.js"></script>
+
+        <!--Morris Chart-->
+        <script src="assets/plugins/morris/morris.min.js"></script>
+        <script src="assets/plugins/raphael/raphael.min.js"></script>
+
+        <!-- App js -->
+        <script src="assets/js/app.js"></script>
+        <script src="assets/pages/jquery.morris.init.js"></script>
+        
+    </body>
+
+</html>

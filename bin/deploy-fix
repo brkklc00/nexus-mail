@@ -1,0 +1,75 @@
+#!/bin/bash
+
+###############################################################################
+# İzin Sorunu Düzeltme ve Deploy
+###############################################################################
+
+set -e
+
+echo "🔧 İzin sorunu düzeltiliyor..."
+
+# Git işlemleri
+cd /Applications/MAMP/htdocs
+
+echo "📝 Değişiklikler commit ediliyor..."
+git add app/Controllers/Admin/SystemMonitorController.php bin/fix-file-permissions
+git commit -m "Fix: Dosya yazma izin hatası düzeltildi - $(date '+%Y-%m-%d %H:%M:%S')" || echo "Değişiklik yok"
+git push origin main || echo "Push atlandı"
+
+# Sunucuda işlemler
+echo ""
+echo "📡 Sunucuya bağlanılıyor..."
+ssh root@104.238.158.46 << 'ENDSSH'
+cd /var/www/hub-nexus.com
+
+echo "🔄 Kod güncelleniyor..."
+git pull origin main
+
+echo "🔑 İzinler düzeltiliyor..."
+
+# Yazılabilir dizinleri oluştur ve izinlerini ayarla
+mkdir -p storage/logs storage/backups/database storage/backups/files
+mkdir -p storage/uploads
+mkdir -p public/storage
+mkdir -p var/cache
+
+# İzinleri ayarla
+chmod -R 775 storage public/storage var/cache
+chown -R www-data:www-data storage public/storage var/cache
+
+# Kök dizini yazılabilir yap (dosya düzenleme için)
+chmod 775 /var/www/hub-nexus.com
+
+# Config'leri yazılabilir yap
+chmod 664 /var/www/hub-nexus.com/*.md 2>/dev/null || true
+chmod 664 /var/www/hub-nexus.com/*.json 2>/dev/null || true
+
+# Bin scriptlerini çalıştırılabilir yap
+chmod +x bin/*
+
+# Worker log klasörlerini düzelt
+for worker in email-worker; do
+    if [ -d "$worker/logs" ]; then
+        chmod -R 775 "$worker/logs"
+        chown -R www-data:www-data "$worker/logs"
+    fi
+done
+
+echo "✅ İzinler düzeltildi!"
+
+# İzin kontrolü
+echo ""
+echo "📊 İzin Durumu:"
+ls -ld /var/www/hub-nexus.com
+ls -ld storage
+ls -ld storage/backups
+
+ENDSSH
+
+echo ""
+echo "✅ DÜZELTME TAMAMLANDI!"
+echo ""
+echo "🧪 Test için:"
+echo "   1. Admin paneline gidin: https://hub-nexus.com/admin/system-monitor"
+echo "   2. Dosya düzenleme özelliğini kullanın"
+echo ""

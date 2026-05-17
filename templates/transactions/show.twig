@@ -1,0 +1,106 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}İşlem Detayı - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title_text %}İşlem Detayı{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h4 class="card-title mb-0">
+                            İşlem Detayları
+                        </h4>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/transactions" class="btn btn-sm btn-secondary">
+                            <i data-feather="arrow-left" class="align-self-center icon-xs me-1"></i>
+                            Geri Dön
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                
+                <div class="row mb-4">
+                    <div class="col-12 text-center">
+                        <h2 class="{% if transaction.type == 'credit' %}text-success{% else %}text-danger{% endif %}">
+                            {{ transaction.type == 'credit' ? '+' : '-' }} {{ transaction.amount|number_format(2) }} ₺
+                        </h2>
+                        <p class="text-muted">
+                            {% if transaction.type == 'credit' %}
+                                <span class="badge bg-success">Kredi Yükleme</span>
+                            {% elseif transaction.type == 'debit' %}
+                                <span class="badge bg-danger">Çekim</span>
+                            {% elseif transaction.type == 'order' %}
+                                <span class="badge bg-primary">Sipariş</span>
+                            {% elseif transaction.type == 'refund' %}
+                                <span class="badge bg-warning">İade</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">İşlem No</label>
+                        <p class="fw-semibold">#{{ transaction.id }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Kullanıcı</label>
+                        <p class="fw-semibold">{{ transaction.user.fullName }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Tarih</label>
+                        <p class="fw-semibold">{{ transaction.createdAt|date('d.m.Y H:i:s') }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Önceki Bakiye</label>
+                        <p class="fw-semibold">{{ transaction.balanceBefore|number_format(2) }} ₺</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Sonraki Bakiye</label>
+                        <p class="fw-semibold">{{ transaction.balanceAfter|number_format(2) }} ₺</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Referans</label>
+                        <p class="fw-semibold">{{ transaction.reference ?? '-' }}</p>
+                    </div>
+                </div>
+                
+                {% if transaction.description %}
+                <hr>
+                <div class="row">
+                    <div class="col-12">
+                        <label class="form-label text-muted">Açıklama</label>
+                        <p>{{ transaction.description }}</p>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if transaction.metadata %}
+                <hr>
+                <div class="row">
+                    <div class="col-12">
+                        <label class="form-label text-muted">Ek Bilgiler</label>
+                        <pre class="bg-light p-3 rounded">{{ transaction.metadata|json_encode(constant('JSON_PRETTY_PRINT')) }}</pre>
+                    </div>
+                </div>
+                {% endif %}
+                
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Feather icons
+feather.replace();
+</script>
+{% endblock %}

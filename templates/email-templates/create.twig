@@ -1,0 +1,213 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Yeni Şablon Oluştur - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <form action="/email-templates" method="POST">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Şablon Adı *</label>
+                            <input type="text" class="form-control" id="name" name="name" required placeholder="Örn: Hoşgeldin Maili, Kampanya Duyurusu">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="subject" class="form-label">Mail Konusu *</label>
+                            <input type="text" class="form-control" id="subject" name="subject" required placeholder="Örn: Hoşgeldiniz!">
+                            <small class="text-muted">
+                                Değişkenler: <code>{name}</code>, <code>{email}</code>, <code>{date}</code>, <code>{code}</code>
+                            </small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="body" class="form-label">Mail İçeriği *</label>
+                            <textarea class="form-control font-monospace" id="body" name="body" rows="15" required placeholder="Mail içeriğinizi buraya yazın...
+
+Değişkenler:
+{name} - Alıcı adı
+{email} - Mail adresi
+{date} - Tarih
+{code} - OTP/Kod"></textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="category" class="form-label">Kategori</label>
+                                    <input type="text" class="form-control" id="category" name="category" placeholder="Örn: Marketing, Transactional">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="tags" class="form-label">Tags</label>
+                                    <input type="text" class="form-control" id="tags" name="tags" placeholder="Örn: campaign, welcome">
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if _session.user.role.name == 'admin' %}
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_global" name="is_global">
+                                <label class="form-check-label" for="is_global">
+                                    Global Şablon (Tüm kullanıcılar erişebilir)
+                                </label>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="d-flex justify-content-between">
+                            <a href="/email-templates" class="btn btn-secondary">
+                                <i data-feather="arrow-left"></i> Geri
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i data-feather="save"></i> Şablonu Kaydet
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Yardım -->
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Değişkenler</h5>
+                    
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Kod</th>
+                                <th>Açıklama</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>{name}</code></td>
+                                <td>Alıcı adı</td>
+                            </tr>
+                            <tr>
+                                <td><code>{email}</code></td>
+                                <td>Mail adresi</td>
+                            </tr>
+                            <tr>
+                                <td><code>{date}</code></td>
+                                <td>Güncel tarih</td>
+                            </tr>
+                            <tr>
+                                <td><code>{code}</code></td>
+                                <td>OTP/Doğrulama kodu</td>
+                            </tr>
+                            <tr>
+                                <td><code>{company}</code></td>
+                                <td>Firma adı</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="alert alert-info mt-3">
+                        <strong>İpucu:</strong>
+                        <p class="mb-0 mt-2">
+                            Şablonlar gönderim sırasında otomatik olarak değişkenlerle doldurulur.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Örnek Şablonlar -->
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Örnek Şablonlar</h5>
+                    
+                    <button class="btn btn-sm btn-outline-primary w-100 mb-2" onclick="loadTemplate('welcome')">
+                        Hoşgeldin Maili
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary w-100 mb-2" onclick="loadTemplate('otp')">
+                        OTP Doğrulama
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary w-100 mb-2" onclick="loadTemplate('campaign')">
+                        Kampanya Duyurusu
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const templates = {
+    welcome: {
+        name: 'Hoşgeldin Maili',
+        subject: 'Hoşgeldiniz {name}!',
+        body: `Merhaba {name},
+
+{company} ailesine hoş geldiniz!
+
+Hesabınız başarıyla oluşturuldu. Artık tüm özelliklere erişebilirsiniz.
+
+Mail Adresiniz: {email}
+Kayıt Tarihi: {date}
+
+Herhangi bir sorunuz olursa bizimle iletişime geçebilirsiniz.
+
+İyi günler dileriz!`,
+        category: 'Transactional'
+    },
+    otp: {
+        name: 'OTP Doğrulama',
+        subject: 'Doğrulama Kodunuz: {code}',
+        body: `Merhaba {name},
+
+Doğrulama kodunuz: {code}
+
+Bu kod 5 dakika geçerlidir. Lütfen kimseyle paylaşmayın.
+
+Mail: {email}
+Tarih: {date}
+
+Bu işlemi siz yapmadıysanız hemen bize bildirin.`,
+        category: 'Transactional'
+    },
+    campaign: {
+        name: 'Kampanya Duyurusu',
+        subject: 'Özel Kampanya Sizin İçin!',
+        body: `Merhaba {name},
+
+Size özel kampanyamız başladı!
+
+🎉 %50 indirim fırsatını kaçırmayın!
+
+Detaylı bilgi için web sitemizi ziyaret edin.
+
+İyi alışverişler!
+{company}`,
+        category: 'Marketing'
+    }
+};
+
+function loadTemplate(type) {
+    const t = templates[type];
+    if (t) {
+        document.getElementById('name').value = t.name;
+        document.getElementById('subject').value = t.subject;
+        document.getElementById('body').value = t.body;
+        document.getElementById('category').value = t.category;
+        
+        iziToast.success({
+            title: 'Şablon Yüklendi',
+            message: `${t.name} şablonu forma yüklendi`
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+});
+</script>
+{% endblock %}
+

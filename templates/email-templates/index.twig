@@ -1,0 +1,797 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Email Şablonlarım - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+<li class="breadcrumb-item active" aria-current="page">Şablonlar</li>
+{% endblock %}
+
+{% block page_title %}
+<div class="row nx-orders-page-head">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head pb-0">
+            <div class="d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div class="min-w-0">
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+                            <li class="breadcrumb-item active">Email Şablonlarım</li>
+                        </ol>
+                    </div>
+                    <h4 class="page-title nx-page-title mb-1">Email Şablonlarım</h4>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page" id="nxTplHeadRefresh" title="Yenile">
+                        <i data-feather="refresh-cw" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yenile</span>
+                    </button>
+                    <a href="/email-orders" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page">
+                        <i data-feather="send" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Mail Gönder</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_icon %}{% endblock %}
+{% block title_text %}{% endblock %}
+
+{% block styles %}
+<!-- Summernote CSS -->
+<link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
+<style>
+    /* Mail içeriği gösterimi için CSS koruması */
+    .mail-content-display {
+        max-width: 100%;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        word-break: break-word;
+        overflow-x: auto;
+        overflow-y: auto;
+    }
+    
+    .mail-content-display img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .mail-content-display table {
+        max-width: 100%;
+        overflow-x: auto;
+        display: block;
+    }
+    
+    /* Modal içeriklerinin taşmasını önle */
+    .modal-body {
+        overflow-x: hidden;
+        word-wrap: break-word;
+    }
+    
+    /* Summernote editör alanı */
+    .note-editable {
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+    }
+
+    .nx-email-page .nx-tpl-toolbar-wrap {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+        background: #f8fafc;
+    }
+
+    .nx-email-page .nx-tpl-toolbar {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(170px, 210px) minmax(150px, 190px) auto;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .nx-email-page .nx-tpl-search-wrap {
+        position: relative;
+        min-width: 0;
+    }
+
+    .nx-email-page .nx-tpl-search-ic {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 14px;
+        height: 14px;
+        color: #94a3b8;
+        pointer-events: none;
+    }
+
+    .nx-email-page .nx-tpl-search-input {
+        min-height: 38px;
+        padding-left: 2.1rem;
+        border-radius: 10px;
+        border: 1px solid #d6dde8;
+        background: #fff;
+    }
+
+    .nx-email-page .nx-tpl-search-input:focus,
+    .nx-email-page .nx-tpl-filter-select:focus {
+        border-color: rgba(37, 99, 235, 0.45);
+        box-shadow: 0 0 0 0.18rem rgba(37, 99, 235, 0.14);
+    }
+
+    .nx-email-page .nx-tpl-filter-select {
+        min-height: 38px;
+        border-radius: 10px;
+        border: 1px solid #d6dde8;
+        font-size: 0.84rem;
+        background-color: #fff;
+    }
+
+    .nx-email-page .nx-tpl-toolbar-actions {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.45rem;
+        min-width: max-content;
+    }
+
+    .nx-email-page .nx-tpl-toolbar-btn {
+        min-height: 38px;
+        border-radius: 10px;
+        font-size: 0.79rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border: 1px solid #d6dde8;
+        background: #fff;
+        color: #334155;
+    }
+
+    .nx-email-page .nx-tpl-toolbar-btn--clear {
+        border-color: rgba(239, 68, 68, 0.33);
+        color: #b91c1c;
+        background: #fff5f5;
+    }
+
+    .nx-email-page .nx-tpl-toolbar-btn svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .nx-email-page .nx-tpl-search-loading {
+        font-size: 0.72rem;
+        color: #64748b;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .nx-email-page .nx-orders-list-card .nx-orders-list-body {
+        padding-top: 0.35rem !important;
+    }
+
+    .nx-email-page .nx-orders-table-wrap {
+        margin-top: 0 !important;
+    }
+
+    .nx-email-page #nxTplTable {
+        margin-bottom: 0 !important;
+    }
+
+    .nx-email-page #nxTplTable tbody td {
+        vertical-align: middle;
+        padding-top: 0.62rem;
+        padding-bottom: 0.62rem;
+    }
+
+    .nx-email-page .nx-tpl-name {
+        font-weight: 600;
+        color: #0f172a;
+    }
+
+    .nx-email-page .nx-tpl-subject {
+        display: inline-block;
+        max-width: 100%;
+        color: #334155;
+        font-size: 0.79rem;
+        line-height: 1.35;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .nx-email-page .nx-tpl-created {
+        color: #475569;
+        font-size: 0.76rem;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .nx-email-page .nx-tpl-empty-row td {
+        padding: 1.25rem 0.8rem !important;
+    }
+
+    .nx-email-page .nx-tpl-empty-box {
+        border: 1px dashed #d6dde8;
+        border-radius: 12px;
+        padding: 1rem 0.9rem;
+        background: #fff;
+    }
+
+    @media (max-width: 991.98px) {
+        .nx-email-page .nx-tpl-toolbar {
+            grid-template-columns: minmax(0, 1fr) minmax(150px, 1fr);
+        }
+
+        .nx-email-page .nx-tpl-toolbar-actions {
+            grid-column: 1 / -1;
+            justify-content: flex-start;
+            flex-wrap: wrap;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .nx-email-page .nx-tpl-toolbar-wrap {
+            padding: 0.65rem 0.75rem;
+        }
+
+        .nx-email-page .nx-tpl-toolbar {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 0.45rem;
+        }
+
+        .nx-email-page .nx-tpl-toolbar-actions {
+            width: 100%;
+        }
+
+        .nx-email-page .nx-tpl-toolbar-btn {
+            flex: 1 1 auto;
+            justify-content: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% set tpl_global = 0 %}
+    {% for t in templates %}
+        {% if t.isGlobal %}{% set tpl_global = tpl_global + 1 %}{% endif %}
+    {% endfor %}
+
+    <div class="nx-orders-page nx-email-page nx-orders-shell">
+    <div class="row g-3 nx-orders-kpis mb-3">
+        <div class="col-12 col-md-6">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--orders"><i data-feather="file-text"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ templates|length|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Toplam şablon</div>
+                    <div class="nx-orders-kpi-hint">Kayıtlı şablon sayısı</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--sent"><i data-feather="globe"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ tpl_global|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Global şablon</div>
+                    <div class="nx-orders-kpi-hint">Hazır sistem şablonları (varsa)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="nx-orders-cols nx-email-cols">
+        <main class="nx-orders-main">
+        <div class="card nx-card nx-orders-list-card">
+            <div class="nx-orders-card-head nx-orders-card-head--title-only">
+                <div class="nx-orders-card-head-main">
+                    <div class="nx-orders-icon-chip"><i data-feather="layers"></i></div>
+                    <div>
+                        <h4 class="nx-orders-card-title mb-0">Mail şablonları</h4>
+                    </div>
+                </div>
+            </div>
+            {% if templates is not empty %}
+            <div class="nx-tpl-toolbar-wrap">
+                <div class="nx-tpl-toolbar">
+                    <div class="nx-tpl-search-wrap">
+                        <i data-feather="search" class="nx-tpl-search-ic"></i>
+                        <input type="search" class="form-control nx-tpl-search-input" id="nxTplSearch" placeholder="Şablon adı veya konu ara..." autocomplete="off" aria-label="Şablonda ara">
+                    </div>
+                    <select class="form-select nx-tpl-filter-select" id="nxTplSort" aria-label="Sıralama">
+                        <option value="new_desc">Sıralama: Yeni oluşturulan</option>
+                        <option value="old_asc">Sıralama: Eski oluşturulan</option>
+                        <option value="name_asc">Sıralama: Ada göre A-Z</option>
+                        <option value="name_desc">Sıralama: Ada göre Z-A</option>
+                    </select>
+                    <select class="form-select nx-tpl-filter-select" id="nxTplType" aria-label="Şablon tipi">
+                        <option value="all">Tüm şablonlar</option>
+                        <option value="user">Kişisel şablonlar</option>
+                        <option value="global">Global şablonlar</option>
+                    </select>
+                    <div class="nx-tpl-toolbar-actions">
+                        <span class="nx-tpl-search-loading d-none" id="nxTplFilterLoading">Filtreleniyor...</span>
+                        <button type="button" class="btn nx-tpl-toolbar-btn nx-tpl-toolbar-btn--clear" id="nxTplClearFilters" title="Filtreyi temizle">
+                            <i data-feather="x"></i>
+                            Temizle
+                        </button>
+                        <button type="button" class="btn nx-tpl-toolbar-btn" id="nxTplToolbarRefresh" title="Yenile">
+                            <i data-feather="refresh-cw"></i>
+                            Yenile
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            <div class="card-body nx-orders-list-body">
+                    {% if templates is empty %}
+                    <div class="nx-orders-empty text-center py-5 px-3">
+                        <div class="nx-orders-empty-icon mb-3"><i data-feather="file-text"></i></div>
+                        <h5 class="fw-semibold mb-2">Henüz şablon yok</h5>
+                        <p class="text-muted small mb-0">Sağdaki formdan ilk şablonunuzu oluşturabilirsiniz.</p>
+                    </div>
+                    {% else %}
+                    <div class="table-responsive nx-orders-table-wrap">
+                        <table class="table table-hover mb-0 nx-orders-table" id="nxTplTable">
+                            <thead>
+                                <tr>
+                                    <th width="48">#</th>
+                                    <th>Şablon adı</th>
+                                    <th>Konu</th>
+                                    <th>Oluşturulma</th>
+                                    <th class="text-end nx-orders-col-action">İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for template in templates %}
+                                <tr
+                                    class="nx-tpl-row"
+                                    data-search="{{ template.name }} {{ template.subject }} {{ template.id }}"
+                                    data-name="{{ template.name|lower }}"
+                                    data-created="{{ template.createdAt|date('U') }}"
+                                    data-template-type="{{ template.isGlobal ? 'global' : 'user' }}"
+                                >
+                                    <td><span class="nx-orders-id">#{{ template.id }}</span></td>
+                                    <td>
+                                        <span class="nx-tpl-name">{{ template.name }}</span>
+                                        {% if template.isGlobal %}
+                                        <span class="badge nx-orders-status-badge bg-primary-subtle text-primary-emphasis ms-1">Global</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="nx-tpl-subject" title="{{ template.subject|e('html_attr') }}">{{ template.subject }}</span></td>
+                                    <td><span class="nx-tpl-created">{{ template.createdAt|date('d.m.Y H:i') }}</span></td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn nx-orders-icon-btn" onclick="previewTemplate({{ template.id }})" title="Önizle">
+                                            <i data-feather="eye" class="icon-xs"></i>
+                                        </button>
+                                        {% if not template.isGlobal or _session.user.role.name == 'admin' %}
+                                        <button type="button" class="btn nx-orders-icon-btn" onclick="deleteTemplate({{ template.id }}, '{{ template.name|e('js') }}')" title="Sil">
+                                            <i data-feather="trash-2" class="icon-xs"></i>
+                                        </button>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                <tr id="nxTplNoResultsRow" class="nx-tpl-empty-row d-none">
+                                    <td colspan="5">
+                                        <div class="nx-tpl-empty-box text-center">
+                                            <h6 class="mb-1">Şablon bulunamadı</h6>
+                                            <p class="text-muted small mb-2">Aramanıza uygun mail şablonu bulunamadı.</p>
+                                            <button type="button" class="btn btn-sm nx-tpl-toolbar-btn nx-tpl-toolbar-btn--clear" id="nxTplNoResultClearBtn">
+                                                <i data-feather="x"></i>
+                                                Filtreyi temizle
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+
+        <aside class="nx-orders-side" id="nx-tpl-form">
+            <div class="card nx-card nx-orders-form-card">
+                <div class="nx-orders-card-head nx-orders-card-head--form nx-orders-card-head--compact">
+                    <div class="nx-orders-card-head-main">
+                        <div class="nx-orders-icon-chip nx-orders-icon-chip--accent"><i data-feather="edit-3"></i></div>
+                        <div>
+                            <h4 class="nx-orders-card-title mb-0">Yeni şablon oluştur</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body nx-orders-form-body">
+                    <form method="POST" action="/email-templates" id="templateForm">
+                        <div class="mb-3">
+                            <label for="name" class="form-label small fw-semibold">Şablon adı <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="name" name="name" required placeholder="Örn: Hoş geldin maili">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="subject" class="form-label small fw-semibold">Mail konusu <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="subject" name="subject" required placeholder="Alıcıda görünecek konu satırı">
+                        </div>
+
+                        <div class="mb-3 nx-email-editor-wrap">
+                            <label for="body" class="form-label small fw-semibold">Mail içeriği <span class="text-danger">*</span></label>
+                            <textarea class="form-control summernote" id="body" name="body" required></textarea>
+                            <small class="text-muted">Zengin metin veya kod görünümü ile HTML oluşturabilirsiniz.</small>
+                        </div>
+
+                        <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
+                            <i data-feather="save" class="align-self-center icon-xs me-1"></i>
+                            Şablonu kaydet
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="nx-orders-info-card nx-orders-info-card--compact mt-3">
+                <div class="nx-orders-info-title nx-orders-info-title--compact mb-2"><i data-feather="info" class="nx-orders-info-title-ic"></i> Bilgi</div>
+                <ul class="nx-orders-info-lines list-unstyled mb-0 small text-muted">
+                    <li class="mb-1"><span class="text-secondary fw-semibold">Kullanım:</span> Şablonlar mail gönderiminde seçilir; içerik sunucuda tutulur.</li>
+                    <li class="mb-1"><span class="text-secondary fw-semibold">Önizleme:</span> Listeden göz ikonu ile konu + HTML önizleyin.</li>
+                    <li class="mb-0"><span class="text-secondary fw-semibold">Editör:</span> Araç çubuğundan biçimlendirme ve kod görünümü.</li>
+                </ul>
+            </div>
+        </aside>
+    </div>
+    </div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2 mb-0"><i data-feather="eye" class="icon-xs"></i> Şablon önizleme</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body" id="previewContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Yükleniyor...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteTemplateModal" tabindex="-1" aria-labelledby="deleteTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteTemplateModalLabel">
+                    <i data-feather="alert-triangle" class="align-self-center icon-sm me-2"></i>
+                    Şablon Silinecek
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger border-0 mb-3" role="alert">
+                    <strong>⚠️ DİKKAT!</strong> Bu işlem <strong>GERİ ALINAMAZ!</strong>
+                </div>
+                
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i data-feather="trash-2" class="icon-xxl text-danger"></i>
+                    </div>
+                    <h5 class="text-danger mb-2" id="deleteTemplateName"></h5>
+                    <p class="text-muted mb-0">
+                        Bu mail şablonu kalıcı olarak silinecektir.
+                    </p>
+                </div>
+                
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="confirmDeleteTemplate">
+                    <label class="form-check-label" for="confirmDeleteTemplate">
+                        <strong>Evet, bu şablonu silmek istiyorum</strong>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="align-self-center icon-xs me-1"></i>
+                    İptal
+                </button>
+                <button type="button" 
+                        class="btn btn-danger" 
+                        id="confirmDeleteTemplateBtn" 
+                        disabled>
+                    <i data-feather="trash-2" class="align-self-center icon-xs me-1"></i>
+                    Evet, Sil
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function previewTemplate(id) {
+    const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+    modal.show();
+    
+    fetch(`/email-templates/${id}/preview`)
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('previewContent').innerHTML = `
+                <div class="mb-3">
+                    <h4>${data.name}</h4>
+                    <p class="text-muted"><strong>Konu:</strong> ${data.subject}</p>
+                </div>
+                <hr>
+                <div class="border rounded p-3 mail-content-display" style="background: #f8f9fa; max-height: 400px;">
+                    ${data.body}
+                </div>
+            `;
+            feather.replace();
+        })
+        .catch(err => {
+            document.getElementById('previewContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <i data-feather="alert-circle" class="icon-xs me-2"></i>
+                    Önizleme yüklenemedi. Lütfen tekrar deneyin.
+                </div>
+            `;
+            feather.replace();
+        });
+}
+
+let templateToDelete = null;
+
+function deleteTemplate(id, name) {
+    templateToDelete = id;
+    
+    // Modal içeriğini doldur
+    document.getElementById('deleteTemplateName').textContent = name;
+    
+    // Checkbox'ı sıfırla
+    const checkbox = document.getElementById('confirmDeleteTemplate');
+    checkbox.checked = false;
+    document.getElementById('confirmDeleteTemplateBtn').disabled = true;
+    
+    // Modal'ı aç
+    const modal = new bootstrap.Modal(document.getElementById('deleteTemplateModal'));
+    modal.show();
+    
+    // Feather iconları yenile
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Sayfa yüklendiğinde
+function nxTplApplyFilter() {
+    const searchEl = document.getElementById('nxTplSearch');
+    const sortEl = document.getElementById('nxTplSort');
+    const typeEl = document.getElementById('nxTplType');
+    const tbody = document.querySelector('#nxTplTable tbody');
+    if (!searchEl || !sortEl || !typeEl || !tbody) {
+        return;
+    }
+
+    const q = (searchEl.value || '').toLowerCase().trim();
+    const sort = sortEl.value || 'new_desc';
+    const type = typeEl.value || 'all';
+    const rows = Array.from(tbody.querySelectorAll('.nx-tpl-row'));
+    const noResultRow = document.getElementById('nxTplNoResultsRow');
+
+    rows.sort(function(a, b) {
+        const aName = a.getAttribute('data-name') || '';
+        const bName = b.getAttribute('data-name') || '';
+        const aCreated = parseInt(a.getAttribute('data-created') || '0', 10);
+        const bCreated = parseInt(b.getAttribute('data-created') || '0', 10);
+
+        if (sort === 'old_asc') return aCreated - bCreated;
+        if (sort === 'name_asc') return aName.localeCompare(bName, 'tr');
+        if (sort === 'name_desc') return bName.localeCompare(aName, 'tr');
+        return bCreated - aCreated;
+    });
+
+    rows.forEach(function (row) {
+        tbody.appendChild(row);
+    });
+
+    let visibleCount = 0;
+    rows.forEach(function (row) {
+        const hay = (row.getAttribute('data-search') || '').toLowerCase();
+        const rowType = row.getAttribute('data-template-type') || 'user';
+        const matchSearch = !q || hay.includes(q);
+        const matchType = type === 'all' || rowType === type;
+        const visible = matchSearch && matchType;
+        row.style.display = visible ? '' : 'none';
+        if (visible) visibleCount++;
+    });
+
+    if (noResultRow) {
+        noResultRow.classList.toggle('d-none', visibleCount > 0);
+        noResultRow.style.display = visibleCount > 0 ? 'none' : '';
+    }
+
+    const url = new URL(window.location.href);
+    if (q) {
+        url.searchParams.set('q', q);
+    } else {
+        url.searchParams.delete('q');
+    }
+    if (sort && sort !== 'new_desc') {
+        url.searchParams.set('sort', sort);
+    } else {
+        url.searchParams.delete('sort');
+    }
+    if (type && type !== 'all') {
+        url.searchParams.set('type', type);
+    } else {
+        url.searchParams.delete('type');
+    }
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+}
+
+let nxTplSearchTimer = null;
+function nxTplRunDebouncedFilter(delay) {
+    const loadingEl = document.getElementById('nxTplFilterLoading');
+    if (nxTplSearchTimer) {
+        clearTimeout(nxTplSearchTimer);
+    }
+    if (loadingEl) {
+        loadingEl.classList.remove('d-none');
+    }
+    nxTplSearchTimer = setTimeout(function() {
+        nxTplApplyFilter();
+        if (loadingEl) {
+            loadingEl.classList.add('d-none');
+        }
+    }, delay);
+}
+
+function nxTplClearFilters() {
+    const searchEl = document.getElementById('nxTplSearch');
+    const sortEl = document.getElementById('nxTplSort');
+    const typeEl = document.getElementById('nxTplType');
+    if (searchEl) searchEl.value = '';
+    if (sortEl) sortEl.value = 'new_desc';
+    if (typeEl) typeEl.value = 'all';
+    nxTplApplyFilter();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+
+    const searchEl = document.getElementById('nxTplSearch');
+    const sortEl = document.getElementById('nxTplSort');
+    const typeEl = document.getElementById('nxTplType');
+
+    const params = new URLSearchParams(window.location.search);
+    if (searchEl) searchEl.value = params.get('q') || '';
+    if (sortEl) sortEl.value = params.get('sort') || 'new_desc';
+    if (typeEl) typeEl.value = params.get('type') || 'all';
+
+    searchEl?.addEventListener('input', function() {
+        nxTplRunDebouncedFilter(400);
+    });
+    searchEl?.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            nxTplRunDebouncedFilter(0);
+        }
+    });
+    sortEl?.addEventListener('change', function() {
+        nxTplRunDebouncedFilter(0);
+    });
+    typeEl?.addEventListener('change', function() {
+        nxTplRunDebouncedFilter(0);
+    });
+
+    document.getElementById('nxTplClearFilters')?.addEventListener('click', nxTplClearFilters);
+    document.getElementById('nxTplNoResultClearBtn')?.addEventListener('click', nxTplClearFilters);
+    document.getElementById('nxTplToolbarRefresh')?.addEventListener('click', function () { location.reload(); });
+    document.getElementById('nxTplHeadRefresh')?.addEventListener('click', function () { location.reload(); });
+    nxTplApplyFilter();
+    
+    // Checkbox değiştiğinde butonu aktifleştir
+    const checkbox = document.getElementById('confirmDeleteTemplate');
+    const deleteBtn = document.getElementById('confirmDeleteTemplateBtn');
+    
+    if (checkbox) {
+        checkbox.addEventListener('change', function() {
+            deleteBtn.disabled = !this.checked;
+        });
+    }
+    
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+            if (templateToDelete) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = `/email-templates/${templateToDelete}/delete`;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
+
+{% block scripts %}
+<!-- Summernote JS -->
+<script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+
+<script>
+$(document).ready(function() {
+    $('.summernote').summernote({
+        height: 300,
+        maxHeight: 500,
+        toolbar: [
+            ['style', ['style']],
+            ['font', ['bold', 'underline', 'clear']],
+            ['color', ['color']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['table', ['table']],
+            ['insert', ['link', 'picture']],
+            ['view', ['codeview']]
+        ],
+        placeholder: 'Mail içeriğinizi buraya yazın...',
+        callbacks: {
+            onInit: function() {
+                // Summernote editör alanına CSS ekleme
+                $('.note-editable').css({
+                    'word-wrap': 'break-word',
+                    'overflow-wrap': 'break-word',
+                    'word-break': 'break-word'
+                });
+            }
+        }
+    });
+    
+    // Form gönderilmeden önce Summernote içeriğini textarea'ya senkronize et
+    // Code view açıkken summernote('code') boş döner - preventDefault ile zorunlu sync
+    $('#templateForm').on('submit', function(e) {
+        e.preventDefault();
+        var form = this;
+        var bodyEl = document.getElementById('body');
+        if (!bodyEl) { form.submit(); return; }
+        
+        var code = '';
+        var codable = document.querySelector('.note-editor .note-codable') || document.querySelector('.note-codable');
+        if (codable) code = (codable.value || '').trim();
+        if (!code && typeof $ === 'function' && $('#body').length && $('#body').data('summernote')) {
+            try { code = ($('#body').summernote('code') || '').trim(); } catch(err) {}
+        }
+        bodyEl.value = code;
+        
+        $(form).off('submit');
+        form.submit();
+    });
+    
+    // Icon yenileme
+    setTimeout(() => feather.replace(), 500);
+});
+</script>
+{% endblock %}

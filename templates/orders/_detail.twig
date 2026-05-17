@@ -1,0 +1,120 @@
+<div class="nx-order-detail-inner p-3 p-md-4">
+    <div class="nx-order-detail-kpis">
+        <div class="nx-order-detail-kpi">
+            <span class="nx-order-detail-kpi-label">Sipariş no</span>
+            <span class="nx-order-detail-kpi-value">#{{ order.id }}</span>
+        </div>
+        <div class="nx-order-detail-kpi">
+            <span class="nx-order-detail-kpi-label">Durum</span>
+            <span class="nx-order-detail-kpi-value">
+                <span class="badge nx-orders-status-badge {{ order.status.badgeClass }}">{{ order.status.label }}</span>
+            </span>
+        </div>
+        <div class="nx-order-detail-kpi">
+            <span class="nx-order-detail-kpi-label">Toplam</span>
+            <span class="nx-order-detail-kpi-value">{{ order.requestedCount|number_format(0, ',', '.') }}</span>
+        </div>
+        <div class="nx-order-detail-kpi">
+            <span class="nx-order-detail-kpi-label">Gönderilen</span>
+            <span class="nx-order-detail-kpi-value nx-orders-sent">{{ order.sentCount|number_format(0, ',', '.') }}</span>
+        </div>
+        <div class="nx-order-detail-kpi">
+            <span class="nx-order-detail-kpi-label">Başarısız</span>
+            <span class="nx-order-detail-kpi-value nx-orders-fail">{{ order.failedCount|number_format(0, ',', '.') }}</span>
+        </div>
+        <div class="nx-order-detail-kpi">
+            <span class="nx-order-detail-kpi-label">Oluşturulma</span>
+            <span class="nx-order-detail-kpi-value text-muted small">{{ order.createdAt|date('d.m.Y H:i') }}</span>
+        </div>
+        <div class="nx-order-detail-kpi nx-order-detail-kpi--wide">
+            <span class="nx-order-detail-kpi-label">Planlı tarih</span>
+            <span class="nx-order-detail-kpi-value text-muted small">{{ order.scheduledAt ? order.scheduledAt|date('d.m.Y H:i') : 'Hemen gönderim' }}</span>
+        </div>
+    </div>
+
+    <div class="nx-order-detail-message card border-0 shadow-none">
+        <div class="card-body">
+            <div class="nx-order-detail-section-title mb-2">Mesaj</div>
+            <div class="nx-order-detail-message-body">{{ order.messageText }}</div>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        {% if order.status.value == 'pending' or order.status.value == 'scheduled' %}
+        <button type="button" class="btn btn-outline-danger btn-sm" onclick="cancelOrder({{ order.id }})">
+            <i data-feather="x-circle" class="icon-xs me-1"></i> İptal et
+        </button>
+        {% endif %}
+        <a href="/orders/{{ order.id }}/export" class="btn nx-order-detail-export btn-sm">
+            <i data-feather="download" class="icon-xs me-1"></i> Rapor indir
+        </a>
+    </div>
+
+    <div class="nx-order-detail-section-title mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i data-feather="list" class="icon-xs me-1"></i> Gönderim detayları</span>
+        <small class="text-muted fw-normal">Toplam {{ total|number_format(0, ',', '.') }} numara</small>
+    </div>
+
+    <div class="table-responsive nx-order-detail-table-wrap">
+        <table class="table table-sm mb-0 nx-order-detail-table">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:40px">#</th>
+                    <th>Telefon</th>
+                    <th style="width:100px">Durum</th>
+                    <th>Hata</th>
+                    <th style="width:130px">Gönderim</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for orderNumber in orderNumbers %}
+                <tr>
+                    <td class="text-muted small">{{ ((currentPage - 1) * 50) + loop.index }}</td>
+                    <td><span class="nx-order-detail-phone">{{ orderNumber.phoneE164 }}</span></td>
+                    <td>
+                        {% if orderNumber.status.value == 'sent' %}
+                            <span class="badge nx-order-detail-num-badge bg-success-subtle text-success">Gönderildi</span>
+                        {% elseif orderNumber.status.value == 'failed' %}
+                            <span class="badge nx-order-detail-num-badge bg-danger-subtle text-danger">Başarısız</span>
+                        {% elseif orderNumber.status.value == 'pending' %}
+                            <span class="badge nx-order-detail-num-badge bg-warning-subtle text-warning">Bekliyor</span>
+                        {% elseif orderNumber.status.value == 'queued' %}
+                            <span class="badge nx-order-detail-num-badge bg-info-subtle text-info">Sırada</span>
+                        {% else %}
+                            <span class="badge nx-order-detail-num-badge bg-secondary-subtle text-secondary">{{ orderNumber.status.value }}</span>
+                        {% endif %}
+                    </td>
+                    <td><small class="text-muted">{{ orderNumber.errorMessage ?? '—' }}</small></td>
+                    <td><small class="text-muted">{{ orderNumber.sentAt ? orderNumber.sentAt|date('d.m.Y H:i') : '—' }}</small></td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">Detay bulunamadı</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if totalPages > 1 %}
+    <nav class="mt-3">
+        <ul class="pagination pagination-sm justify-content-center mb-0 nx-order-detail-pagination">
+            <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
+                <a class="page-link" href="javascript:void(0)" onclick="loadOrderPage({{ order.id }}, {{ currentPage - 1 }})">Önceki</a>
+            </li>
+            {% for page in 1..totalPages %}
+                {% if page == currentPage %}
+                    <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                    <li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="loadOrderPage({{ order.id }}, {{ page }})">{{ page }}</a></li>
+                {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% endif %}
+            {% endfor %}
+            <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
+                <a class="page-link" href="javascript:void(0)" onclick="loadOrderPage({{ order.id }}, {{ currentPage + 1 }})">Sonraki</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+</div>

@@ -1,0 +1,390 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Mail Siparişlerim - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 9999; backdrop-filter: blur(5px);">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+            <div class="spinner-border text-light mb-3" role="status" style="width: 4rem; height: 4rem; border-width: 0.3rem;">
+                <span class="visually-hidden">Yükleniyor...</span>
+            </div>
+            <h4 class="text-white mb-2" id="loadingText">Sipariş Oluşturuluyor...</h4>
+            <p class="text-white-50 mb-3" id="loadingSubtext">Lütfen bekleyin</p>
+            <div class="progress mx-auto" style="width: 300px; height: 8px; background: rgba(255,255,255,0.2);">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 100%"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Sol Taraf: Sipariş Listesi -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">
+                        <i data-feather="mail" class="align-self-center icon-xs me-2"></i>
+                        Siparişlerim
+                    </h4>
+                </div>
+                <div class="card-body">
+                    {% if orders is empty %}
+                    <div class="text-center text-muted py-5">
+                        <i data-feather="inbox" style="width: 64px; height: 64px;"></i>
+                        <h5 class="mt-3">Henüz sipariş oluşturmadınız</h5>
+                        <p class="text-muted">Sağ taraftaki formu kullanarak ilk mail kampanyanızı başlatın</p>
+                    </div>
+                    {% else %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Konu</th>
+                                    <th>Durum</th>
+                                    <th>Toplam</th>
+                                    <th>Başarı</th>
+                                    <th>Tarih</th>
+                                    <th>İşlem</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for order in orders %}
+                                <tr>
+                                    <td>{{ order.id }}</td>
+                                    <td>
+                                        <a href="/email-orders/{{ order.id }}">
+                                            {{ order.subject|length > 30 ? order.subject|slice(0, 30) ~ '...' : order.subject }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-{{ order.status.value == 'sent' ? 'success' : (order.status.value == 'processing' ? 'warning' : (order.status.value == 'failed' ? 'danger' : 'secondary')) }}">
+                                            {{ order.status.value == 'pending' ? 'Bekliyor' : (order.status.value == 'processing' ? 'Gönderiliyor' : (order.status.value == 'sent' ? 'Gönderildi' : (order.status.value == 'failed' ? 'Başarısız' : 'İptal'))) }}
+                                        </span>
+                                    </td>
+                                    <td>{{ order.total|number_format }}</td>
+                                    <td>
+                                        {% if order.total > 0 %}
+                                        <span class="badge bg-{{ order.successRate >= 90 ? 'success' : (order.successRate >= 70 ? 'warning' : 'danger') }}">
+                                            {{ order.successRate|number_format(1) }}%
+                                        </span>
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><small>{{ order.createdAt|date('d.m.Y H:i') }}</small></td>
+                                    <td>
+                                        <a href="/email-orders/{{ order.id }}" class="btn btn-sm btn-soft-primary" title="Detay">
+                                            <i data-feather="eye" class="icon-xs"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sağ Taraf: Yeni Sipariş Formu -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title mb-0">
+                        <i data-feather="plus-circle" class="align-self-center icon-xs me-2"></i>
+                        Yeni Mail Siparişi
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/email-orders" id="orderForm" onsubmit="return showLoading(event)">
+                        <!-- Konu -->
+                        <div class="mb-3">
+                            <label for="subject" class="form-label">Mail Konusu <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="subject" name="subject" required placeholder="Mail konusu...">
+                        </div>
+
+                        <!-- Mail İçeriği -->
+                        <div class="mb-3">
+                            <label for="body" class="form-label">Mail İçeriği (HTML) <span class="text-danger">*</span></label>
+                            <textarea class="form-control font-monospace" id="body" name="body" rows="8" required placeholder="<h1>Merhaba!</h1>&#10;<p>Mail içeriğiniz...</p>"></textarea>
+                            <small class="text-muted">HTML etiketleri kullanabilirsiniz</small>
+                        </div>
+
+                        <hr class="my-3">
+
+                        <!-- Alıcı Seçimi -->
+                        <h6 class="mb-3">Alıcıları Seçin</h6>
+
+                        <!-- Rehberden Seç -->
+                        {% if phonebooks is not empty %}
+                        <div class="mb-3">
+                            <label class="form-label">Rehberlerimden Seç</label>
+                            <div style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.5rem;">
+                                {% for phonebook in phonebooks %}
+                                <div class="form-check">
+                                    <input class="form-check-input phonebook-check" type="checkbox" 
+                                           id="phonebook{{ phonebook.id }}" 
+                                           name="phonebook_ids[]" 
+                                           value="{{ phonebook.id }}"
+                                           data-count="{{ phonebook.totalContacts }}"
+                                           onchange="updateTotal()">
+                                    <label class="form-check-label" for="phonebook{{ phonebook.id }}">
+                                        {{ phonebook.title }} 
+                                        <span class="badge bg-primary">{{ phonebook.totalContacts|number_format }}</span>
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Manuel Mail Girişi -->
+                        <div class="mb-3">
+                            <label for="manual_emails" class="form-label">Manuel Mail Adresleri</label>
+                            <textarea class="form-control font-monospace" id="manual_emails" name="manual_emails" rows="5" placeholder="Her satıra bir mail:&#10;user@example.com&#10;info@company.com" oninput="updateTotal()"></textarea>
+                            <small class="text-muted">Her satıra bir mail adresi</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-info btn-sm w-100" onclick="showImportModal()">
+                                <i data-feather="upload" class="icon-xs"></i> Dosyadan İçe Aktar
+                            </button>
+                        </div>
+
+                        <!-- Özet -->
+                        <div class="alert alert-info mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>Toplam:</strong>
+                                    <span id="totalEmails">0</span> mail
+                                </div>
+                                <div>
+                                    <strong>Maliyet:</strong>
+                                    <span id="totalCost">0</span> ₺
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i data-feather="send" class="align-self-center icon-xs me-1"></i>
+                            Siparişi Oluştur
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Bilgi Kartı -->
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h6 class="mb-2">
+                        <i data-feather="info" class="align-self-center icon-xs me-1 text-primary"></i>
+                        Bakiye & Bilgi
+                    </h6>
+                    <div class="mb-3">
+                        <label class="text-muted">Mail Bakiyesi</label>
+                        <h3 class="mb-0">{{ email_credit|number_format }}</h3>
+                        <small class="text-muted">Kredi</small>
+                    </div>
+                    
+                    <hr>
+                    
+                    <small class="text-muted">
+                        <strong>Desteklenen Formatlar:</strong><br>
+                        CSV, Excel (xls/xlsx), TXT<br><br>
+                        
+                        <strong>Maksimum Dosya:</strong><br>
+                        100 MB<br><br>
+                        
+                        <strong>Not:</strong><br>
+                        Geçersiz mailler otomatik filtrelenir. Karaliste kontrol edilir.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Dosyadan İçe Aktar</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="file" id="importFile" accept=".txt,.csv,.xlsx,.xls" class="form-control">
+                <div id="importProgress" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div id="importProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <small class="text-muted mt-1" id="importStatus"></small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+                <button type="button" class="btn btn-primary" onclick="processImport()">İçe Aktar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+function updateTotal() {
+    let total = 0;
+    
+    // Rehberlerden seçilenler
+    document.querySelectorAll('.phonebook-check:checked').forEach(cb => {
+        total += parseInt(cb.dataset.count);
+    });
+    
+    // Manuel girilen mailler
+    const manualEmails = document.getElementById('manual_emails').value;
+    if (manualEmails.trim()) {
+        const lines = manualEmails.split('\n').filter(line => line.trim() && line.includes('@'));
+        total += lines.length;
+    }
+    
+    document.getElementById('totalEmails').textContent = total.toLocaleString('tr-TR');
+    document.getElementById('totalCost').textContent = total.toLocaleString('tr-TR');
+    
+    // Bakiye kontrolü
+    const credit = {{ email_credit }};
+    const alertBox = document.getElementById('totalCost').closest('.alert');
+    if (total > credit) {
+        alertBox.classList.remove('alert-info');
+        alertBox.classList.add('alert-danger');
+    } else {
+        alertBox.classList.remove('alert-danger');
+        alertBox.classList.add('alert-info');
+    }
+}
+
+function showImportModal() {
+    new bootstrap.Modal(document.getElementById('importModal')).show();
+    feather.replace();
+}
+
+function processImport() {
+    const file = document.getElementById('importFile').files[0];
+    if (!file) {
+        alert('Lütfen bir dosya seçin');
+        return;
+    }
+
+    const progressDiv = document.getElementById('importProgress');
+    const progressBar = document.getElementById('importProgressBar');
+    const statusText = document.getElementById('importStatus');
+    
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '50%';
+    statusText.textContent = 'Dosya işleniyor...';
+
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        const content = e.target.result;
+        let emails = [];
+
+        if (file.name.endsWith('.txt') || file.name.endsWith('.csv')) {
+            const lines = content.split('\n');
+            emails = lines.filter(line => line.trim() && line.includes('@')).map(line => line.trim());
+        } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+            const workbook = XLSX.read(content, {type: 'binary'});
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+            emails = data.flat().filter(cell => cell && String(cell).includes('@'));
+        }
+
+        const textarea = document.getElementById('manual_emails');
+        const currentValue = textarea.value.trim();
+        const newValue = emails.join('\n');
+        
+        textarea.value = currentValue ? currentValue + '\n' + newValue : newValue;
+        
+        progressBar.style.width = '100%';
+        progressBar.classList.add('bg-success');
+        statusText.textContent = `✓ ${emails.length.toLocaleString('tr-TR')} mail adresi yüklendi`;
+        
+        updateTotal();
+        
+        setTimeout(() => {
+            bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+            progressDiv.style.display = 'none';
+            progressBar.style.width = '0%';
+            progressBar.classList.remove('bg-success');
+        }, 1500);
+    };
+
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        reader.readAsBinaryString(file);
+    } else {
+        reader.readAsText(file);
+    }
+}
+
+// Loading overlay göster
+function showLoading(event) {
+    const form = event ? event.target : null;
+    
+    if (form) {
+        const subject = form.querySelector('#subject').value;
+        const body = form.querySelector('#body').value;
+        const total = parseInt(document.getElementById('totalEmails').textContent.replace(/\./g, ''));
+        const credit = {{ email_credit }};
+        
+        // Validasyon
+        if (!subject.trim() || !body.trim()) {
+            alert('Lütfen konu ve içerik alanlarını doldurun!');
+            return false;
+        }
+        
+        if (total === 0) {
+            alert('En az bir mail adresi gerekli!');
+            return false;
+        }
+        
+        if (total > credit) {
+            alert(`Yetersiz kredi! Gerekli: ${total}, Mevcut: ${credit}`);
+            return false;
+        }
+        
+        console.log('Form submit ediliyor...');
+        console.log('Konu:', subject);
+        console.log('Alıcı sayısı:', total);
+    }
+    
+    document.getElementById('loadingText').textContent = 'Sipariş Oluşturuluyor...';
+    document.getElementById('loadingSubtext').textContent = 'Mail kampanyanız hazırlanıyor...';
+    document.getElementById('loadingOverlay').style.display = 'block';
+    return true;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    updateTotal();
+});
+</script>
+{% endblock %}
+

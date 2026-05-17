@@ -1,0 +1,222 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}{{ user.fullName }} - Kullanıcı Detayları - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title_text %}Kullanıcı Detayları{% endblock %}
+
+{% block content %}
+
+{% if success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+    {{ success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i data-feather="alert-triangle" class="align-self-center icon-xs me-2"></i>
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <img src="/assets/images/users/user-4.jpg" alt="user" class="rounded-circle img-thumbnail mb-3" width="150">
+                <h4 class="mb-1">{{ user.fullName }}</h4>
+                <p class="text-muted mb-3">{{ user.role.name }}</p>
+                
+                {% if user.isActive %}
+                    <span class="badge bg-success mb-3">Aktif</span>
+                {% else %}
+                    <span class="badge bg-danger mb-3">Pasif</span>
+                {% endif %}
+                
+                <div class="d-grid gap-2">
+                    <a href="/users/{{ user.id }}/edit" class="btn btn-primary">
+                        <i data-feather="edit" class="align-self-center icon-xs me-1"></i>
+                        Düzenle
+                    </a>
+                    <a href="/users" class="btn btn-secondary">
+                        <i data-feather="arrow-left" class="align-self-center icon-xs me-1"></i>
+                        Geri Dön
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">İletişim Bilgileri</h5>
+            </div>
+            <div class="card-body">
+                <p class="mb-2">
+                    <i data-feather="mail" class="align-self-center icon-xs me-2"></i>
+                    {{ user.email }}
+                    {% if user.emailVerified %}
+                        <span class="badge bg-success ms-2">Doğrulanmış</span>
+                    {% endif %}
+                </p>
+                <p class="mb-2">
+                    <i data-feather="user" class="align-self-center icon-xs me-2"></i>
+                    @{{ user.username }}
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Hesap Bilgileri</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Kullanıcı Adı</label>
+                        <p class="fw-semibold">{{ user.username }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Rol</label>
+                        <p class="fw-semibold">{{ user.role.name }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Kayıt Tarihi</label>
+                        <p class="fw-semibold">{{ user.createdAt|date('d.m.Y H:i') }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Son Giriş</label>
+                        <p class="fw-semibold">{{ user.lastLoginAt ? user.lastLoginAt|date('d.m.Y H:i') : 'Henüz giriş yapmadı' }}</p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">2FA Durumu</label>
+                        <p>
+                            {% if user.twoFactorEnabled %}
+                                <span class="badge bg-success">Aktif</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Pasif</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted">Hesap Durumu</label>
+                        <p>
+                            {% if user.isActive %}
+                                <span class="badge bg-success">Aktif</span>
+                            {% else %}
+                                <span class="badge bg-danger">Pasif</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Kredi Bilgileri</h5>
+            </div>
+            <div class="card-body">
+                {% if user.credit %}
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card border border-primary">
+                            <div class="card-body text-center">
+                                <h3 class="text-primary mb-0">{{ user.credit.balance|number_format(2) }} ₺</h3>
+                                <p class="text-muted mb-0">Mevcut Bakiye</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card border border-info">
+                            <div class="card-body text-center">
+                                <h3 class="text-info mb-0">{{ user.credit.totalSpent|number_format(2) }} ₺</h3>
+                                <p class="text-muted mb-0">Toplam Harcama</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <h6 class="mb-3">Bakiye İşlemleri</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <form method="POST" action="/users/{{ user.id }}/credit/add" class="mb-3" onsubmit="return confirm('Bakiye eklemek istediğinizden emin misiniz?')">
+                            <label for="credit_add" class="form-label">Bakiye Ekle</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="credit_add" name="amount" step="0.01" min="0.01" placeholder="Miktar" required>
+                                <button type="submit" class="btn btn-success">
+                                    <i data-feather="plus" class="align-self-center icon-xs me-1"></i>
+                                    Ekle
+                                </button>
+                            </div>
+                            <small class="text-muted">Kullanıcı bakiyesine eklenecek tutar</small>
+                        </form>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <form method="POST" action="/users/{{ user.id }}/credit/deduct" class="mb-3" onsubmit="return confirm('Bakiye çıkarmak istediğinizden emin misiniz?')">
+                            <label for="credit_deduct" class="form-label">Bakiye Çıkar</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="credit_deduct" name="amount" step="0.01" min="0.01" max="{{ user.credit.balance }}" placeholder="Miktar" required>
+                                <button type="submit" class="btn btn-danger">
+                                    <i data-feather="minus" class="align-self-center icon-xs me-1"></i>
+                                    Çıkar
+                                </button>
+                            </div>
+                            <small class="text-muted">Kullanıcı bakiyesinden çıkarılacak tutar</small>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-12">
+                        <textarea class="form-control mb-2" id="credit_note" name="note" rows="2" placeholder="İşlem açıklaması (opsiyonel)" form="credit_add"></textarea>
+                        <textarea class="form-control" id="credit_note_deduct" name="note" rows="2" placeholder="İşlem açıklaması (opsiyonel)" form="credit_deduct"></textarea>
+                    </div>
+                </div>
+                
+                {% else %}
+                <div class="alert alert-info mb-0">
+                    <i data-feather="info" class="align-self-center icon-xs me-2"></i>
+                    Kredi bilgisi bulunamadı
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Yetkiler</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% if user.role.permissions|length > 0 %}
+                        {% for permission in user.role.permissions %}
+                        <div class="col-md-6 col-lg-4 mb-2">
+                            <i data-feather="check-circle" class="text-success icon-xs me-1"></i>
+                            <small>{{ permission.name }}</small>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="col-12">
+                            <p class="text-muted mb-0">Bu role yetki atanmamış</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Feather icons
+feather.replace();
+</script>
+{% endblock %}

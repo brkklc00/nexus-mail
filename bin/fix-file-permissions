@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# Dosya düzenleme izinlerini düzeltme scripti
+# Bu script, web sunucusunun dosyalara yazabilmesi için gerekli izinleri verir
+
+set -e
+
+# Renk kodları
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}=== Dosya İzinleri Düzeltiliyor ===${NC}\n"
+
+# Proje dizinini bul
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo "Proje dizini: $PROJECT_DIR"
+
+# Web sunucu kullanıcısını tespit et
+WEB_USER=""
+if id -u www-data >/dev/null 2>&1; then
+    WEB_USER="www-data"
+elif id -u nginx >/dev/null 2>&1; then
+    WEB_USER="nginx"
+elif id -u apache >/dev/null 2>&1; then
+    WEB_USER="apache"
+else
+    echo -e "${YELLOW}Uyarı: Web sunucu kullanıcısı tespit edilemedi${NC}"
+    echo "Manuel olarak belirtmek için: sudo chown -R KULLANICI:KULLANICI $PROJECT_DIR"
+fi
+
+# Genel izinleri ayarla
+echo -e "\n${GREEN}1. Genel dosya izinleri ayarlanıyor...${NC}"
+find "$PROJECT_DIR" -type f -exec chmod 644 {} \;
+find "$PROJECT_DIR" -type d -exec chmod 755 {} \;
+
+# Bin scriptlerini çalıştırılabilir yap
+echo -e "${GREEN}2. Bin scriptleri çalıştırılabilir yapılıyor...${NC}"
+chmod +x "$PROJECT_DIR"/bin/*
+
+# Yazılabilir dizinleri ayarla
+echo -e "${GREEN}3. Yazılabilir dizinler ayarlanıyor...${NC}"
+WRITABLE_DIRS=(
+    "storage"
+    "storage/logs"
+    "storage/uploads"
+    "storage/backups"
+    "storage/backups/database"
+    "storage/backups/files"
+    "public/storage"
+    "var/cache"
+    "email-worker/logs"
+)
+
+for dir in "${WRITABLE_DIRS[@]}"; do
+    FULL_PATH="$PROJECT_DIR/$dir"
+    if [ ! -d "$FULL_PATH" ]; then
+        echo "  - Oluşturuluyor: $dir"
+        mkdir -p "$FULL_PATH"
+    fi
+    echo "  - İzinler ayarlanıyor: $dir"
+    chmod -R 775 "$FULL_PATH"
+done
+
+# Kök dizindeki bazı dosyaları yazılabilir yap
+echo -e "${GREEN}4. Düzenlenebilir dosyalar ayarlanıyor...${NC}"
+WRITABLE_FILES=(
+    "composer.json"
+    "composer.lock"
+    "DEPLOY-GUIDE.md"
+    "README.md"
+    "ecosystem.config.js"
+)
+
+for file in "${WRITABLE_FILES[@]}"; do
+    FULL_PATH="$PROJECT_DIR/$file"
+    if [ -f "$FULL_PATH" ]; then
+        echo "  - $file"
+        chmod 664 "$FULL_PATH"
+    fi
+done
+
+# Config dosyalarını yazılabilir yap
+echo -e "${GREEN}5. Config dosyaları ayarlanıyor...${NC}"
+chmod -R 664 "$PROJECT_DIR/config"/*.php
+chmod -R 664 "$PROJECT_DIR/config/domains"/*.php
+
+# Web sunucu kullanıcısına sahiplik ver
+if [ -n "$WEB_USER" ]; then
+    echo -e "\n${GREEN}6. Dosya sahipliği $WEB_USER kullanıcısına veriliyor...${NC}"
+    echo -e "${YELLOW}Bu işlem sudo yetkisi gerektirir.${NC}"
+    
+    # Önce mevcut kullanıcı grubunu kontrol et
+    CURRENT_USER=$(whoami)
+    
+    # Sadece yazılabilir dizinler için chown yap
+    for dir in "${WRITABLE_DIRS[@]}"; do
+        FULL_PATH="$PROJECT_DIR/$dir"
+        if [ -d "$FULL_PATH" ]; then
+            echo "  - $dir"
+            sudo chown -R "$WEB_USER:$WEB_USER" "$FULL_PATH" 2>/dev/null || {
+                echo -e "${YELLOW}    Uyarı: Sahiplik değiştirilemedi (izin sorunu olabilir)${NC}"
+            }
+        fi
+    done
+    
+    # Proje dosyalarını karma sahiplik yap (user:www-data)
+    echo -e "\n${GREEN}7. Karma sahiplik ayarlanıyor ($CURRENT_USER:$WEB_USER)...${NC}"
+    sudo chown -R "$CURRENT_USER:$WEB_USER" "$PROJECT_DIR" 2>/dev/null || {
+        echo -e "${YELLOW}Uyarı: Karma sahiplik ayarlanamadı${NC}"
+    }
+    
+    # Tekrar yazılabilir dizinleri WEB_USER'a ver
+    for dir in "${WRITABLE_DIRS[@]}"; do
+        FULL_PATH="$PROJECT_DIR/$dir"
+        if [ -d "$FULL_PATH" ]; then
+            sudo chown -R "$WEB_USER:$WEB_USER" "$FULL_PATH" 2>/dev/null || true
+        fi
+    done
+fi
+
+echo -e "\n${GREEN}=== İzinler Başarıyla Düzeltildi ===${NC}"
+echo -e "\n${YELLOW}Not: Eğer hala izin sorunları yaşıyorsanız:${NC}"
+echo -e "1. Web sunucu kullanıcısını kontrol edin: ${GREEN}ps aux | grep -E '(apache|nginx|www-data)'${NC}"
+echo -e "2. SELinux aktifse: ${GREEN}sudo setsebool -P httpd_unified 1${NC}"
+echo -e "3. Manuel izin düzeltme: ${GREEN}sudo chmod -R 775 $PROJECT_DIR/storage${NC}"

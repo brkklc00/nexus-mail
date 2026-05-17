@@ -1,0 +1,67 @@
+<div class="mb-3">
+    <label class="form-label fw-bold">Gönderilen Kullanıcı:</label>
+    <p>
+        {% if notification.user %}
+            <strong>{{ notification.user.name }}</strong> ({{ notification.user.username }})<br>
+            <small class="text-muted">{{ notification.user.email }}</small>
+        {% else %}
+            <span class="badge bg-primary">Tüm Kullanıcılar</span>
+        {% endif %}
+    </p>
+</div>
+
+<div class="mb-3">
+    <label class="form-label fw-bold">Bildirim Tipi:</label>
+    <p>
+        {% if notification.type == 'info' %}
+            <span class="badge bg-info-subtle text-info">
+                <i data-feather="info" class="icon-xs"></i> Bilgi
+            </span>
+        {% elseif notification.type == 'success' %}
+            <span class="badge bg-success-subtle text-success">
+                <i data-feather="check-circle" class="icon-xs"></i> Başarı
+            </span>
+        {% elseif notification.type == 'warning' %}
+            <span class="badge bg-warning-subtle text-warning">
+                <i data-feather="alert-triangle" class="icon-xs"></i> Uyarı
+            </span>
+        {% elseif notification.type == 'danger' %}
+            <span class="badge bg-danger-subtle text-danger">
+                <i data-feather="alert-circle" class="icon-xs"></i> Hata
+            </span>
+        {% endif %}
+    </p>
+</div>
+
+<div class="mb-3">
+    <label class="form-label fw-bold">Başlık:</label>
+    <p>{{ notification.title }}</p>
+</div>
+
+<div class="mb-3">
+    <label class="form-label fw-bold">Mesaj:</label>
+    <p>{{ notification.message }}</p>
+</div>
+
+<div class="mb-3">
+    <label class="form-label fw-bold">Gönderim Tarihi:</label>
+    <p>{{ notification.createdAt|date('d.m.Y H:i:s') }}</p>
+</div>
+
+<div class="mb-0">
+    <label class="form-label fw-bold">Durum:</label>
+    <p>
+        {% if notification.isRead %}
+            <span class="badge bg-success-subtle text-success">
+                <i data-feather="check" class="icon-xs"></i> Okundu
+            </span>
+            {% if notification.readAt %}
+                <br><small class="text-muted">{{ notification.readAt|date('d.m.Y H:i:s') }}</small>
+            {% endif %}
+        {% else %}
+            <span class="badge bg-secondary-subtle text-secondary">
+                <i data-feather="circle" class="icon-xs"></i> Okunmadı
+            </span>
+        {% endif %}
+    </p>
+</div>

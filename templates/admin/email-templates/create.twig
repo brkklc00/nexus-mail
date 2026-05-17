@@ -1,0 +1,188 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Yeni Global Şablon - Admin - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item"><a href="/admin/email-templates">Email Şablonları</a></li>
+<li class="breadcrumb-item active">Yeni Şablon</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="plus-circle" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Yeni Global Şablon Oluştur{% endblock %}
+
+{% block styles %}
+<link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <div class="alert alert-info mb-4">
+                        <i data-feather="info" class="icon-xs me-2"></i>
+                        <strong>Global Şablon:</strong> Oluşturduğunuz şablon tüm kullanıcılar tarafından mail gönderiminde kullanılabilir. Otomatik onaylı olacaktır.
+                    </div>
+
+                    <form action="/admin/email-templates" method="POST">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Şablon Adı <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="name" name="name" required placeholder="Örn: Hoşgeldin Maili, Kampanya Duyurusu">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="subject" class="form-label">Mail Konusu <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="subject" name="subject" required placeholder="Örn: Hoşgeldiniz!">
+                            <small class="text-muted">
+                                Değişkenler: <code>{name}</code>, <code>{email}</code>, <code>{date}</code>, <code>{code}</code>, <code>{company}</code>
+                            </small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="body" class="form-label">Mail İçeriği <span class="text-danger">*</span></label>
+                            <textarea class="form-control summernote" id="body" name="body" rows="15" required placeholder="Mail içeriğinizi buraya yazın..."></textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="category" class="form-label">Kategori</label>
+                                    <input type="text" class="form-control" id="category" name="category" placeholder="Örn: Marketing, Transactional">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="tags" class="form-label">Etiketler</label>
+                                    <input type="text" class="form-control" id="tags" name="tags" placeholder="Örn: campaign, welcome">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="/admin/email-templates" class="btn btn-secondary">
+                                <i data-feather="arrow-left" class="icon-xs me-1"></i> Geri
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i data-feather="save" class="icon-xs me-1"></i> Şablonu Kaydet
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Değişkenler</h5>
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Kod</th>
+                                <th>Açıklama</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>{name}</code></td><td>Alıcı adı</td></tr>
+                            <tr><td><code>{email}</code></td><td>Mail adresi</td></tr>
+                            <tr><td><code>{date}</code></td><td>Güncel tarih</td></tr>
+                            <tr><td><code>{code}</code></td><td>OTP/Doğrulama kodu</td></tr>
+                            <tr><td><code>{company}</code></td><td>Firma adı</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Örnek Şablonlar</h5>
+                    <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" onclick="loadTemplate('welcome')">Hoşgeldin Maili</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" onclick="loadTemplate('otp')">OTP Doğrulama</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" onclick="loadTemplate('campaign')">Kampanya Duyurusu</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+<script>
+const templates = {
+    welcome: {
+        name: 'Hoşgeldin Maili',
+        subject: 'Hoşgeldiniz {name}!',
+        body: '<p>Merhaba {name},</p><p>{company} ailesine hoş geldiniz!</p><p>Hesabınız başarıyla oluşturuldu. Mail: {email}, Tarih: {date}</p><p>İyi günler!</p>',
+        category: 'Transactional'
+    },
+    otp: {
+        name: 'OTP Doğrulama',
+        subject: 'Doğrulama Kodunuz: {code}',
+        body: '<p>Merhaba {name},</p><p>Doğrulama kodunuz: <strong>{code}</strong></p><p>Bu kod 5 dakika geçerlidir. Mail: {email}, Tarih: {date}</p>',
+        category: 'Transactional'
+    },
+    campaign: {
+        name: 'Kampanya Duyurusu',
+        subject: 'Özel Kampanya Sizin İçin!',
+        body: '<p>Merhaba {name},</p><p>Size özel kampanyamız başladı! Detaylar için web sitemizi ziyaret edin.</p><p>İyi alışverişler! {company}</p>',
+        category: 'Marketing'
+    }
+};
+
+function loadTemplate(type) {
+    const t = templates[type];
+    if (t) {
+        document.getElementById('name').value = t.name;
+        document.getElementById('subject').value = t.subject;
+        $('#body').summernote('code', t.body);
+        document.getElementById('category').value = t.category || '';
+        feather.replace();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    $('.summernote').summernote({
+        height: 250,
+        placeholder: 'Mail içeriğinizi buraya yazın...',
+        toolbar: [
+            ['style', ['style']],
+            ['font', ['bold', 'italic', 'underline', 'clear']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['insert', ['link', 'picture']],
+            ['view', ['codeview']]
+        ]
+    });
+    
+    // Form gönderilmeden önce Summernote içeriğini textarea'ya senkronize et
+    // Code view açıkken içerik .note-codable'da - oradan da oku
+    $('form[action="/admin/email-templates"]').on('submit', function() {
+        var $body = $('#body');
+        if ($body.length && typeof $body.summernote === 'function') {
+            var code = '';
+            var $codable = $body.next('.note-editor').find('.note-codable');
+            if ($codable.length && $codable.is(':visible')) {
+                code = $codable.val() || '';
+            } else {
+                code = $body.summernote('code') || '';
+            }
+            var bodyEl = document.getElementById('body');
+            if (bodyEl) {
+                bodyEl.value = code;
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

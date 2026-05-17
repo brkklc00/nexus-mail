@@ -1,0 +1,28 @@
+{
+  "name": "nexus-email-worker",
+  "version": "1.0.0",
+  "description": "Nexus Email Campaign Worker - 7/24 Email processing",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "email",
+    "worker",
+    "campaign",
+    "smtp",
+    "nodemailer"
+  ],
+  "author": "Nexus",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "mysql2": "^3.6.5",
+    "nodemailer": "^7.0.11",
+    "winston": "^3.11.0"
+  }
+}

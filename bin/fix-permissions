@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# Hub Nexus - Fix File Permissions Script
+# Bu script sunucuda dosya izinlerini düzeltir
+
+PROJECT_DIR="/var/www/hub-nexus.com"
+WEB_USER="www-data"
+
+echo "================================"
+echo "Hub Nexus - Permission Fix"
+echo "================================"
+echo ""
+
+# Root check
+if [ "$EUID" -ne 0 ]; then 
+    echo "❌ Bu script root olarak çalıştırılmalı: sudo ./fix-permissions"
+    exit 1
+fi
+
+echo "📁 Proje dizini: $PROJECT_DIR"
+echo "👤 Web server kullanıcısı: $WEB_USER"
+echo ""
+
+# 1. Tüm dosyaların owner'ını ayarla
+echo "1️⃣  Owner ayarlanıyor..."
+chown -R $WEB_USER:$WEB_USER $PROJECT_DIR
+echo "   ✅ Owner ayarlandı"
+
+# 2. Klasör izinleri (755)
+echo "2️⃣  Klasör izinleri ayarlanıyor (755)..."
+find $PROJECT_DIR -type d -exec chmod 755 {} \;
+echo "   ✅ Klasör izinleri ayarlandı"
+
+# 3. Dosya izinleri (644)
+echo "3️⃣  Dosya izinleri ayarlanıyor (644)..."
+find $PROJECT_DIR -type f -exec chmod 644 {} \;
+echo "   ✅ Dosya izinleri ayarlandı"
+
+# 4. Executable dosyalar (755)
+echo "4️⃣  Executable dosyalar ayarlanıyor (755)..."
+chmod 755 $PROJECT_DIR/bin/*
+echo "   ✅ Executable dosyalar ayarlandı"
+
+# 5. Yazılabilir klasörler (775)
+echo "5️⃣  Yazılabilir klasörler ayarlanıyor (775)..."
+WRITABLE_DIRS=(
+    "$PROJECT_DIR/var/cache"
+    "$PROJECT_DIR/storage"
+    "$PROJECT_DIR/storage/logs"
+    "$PROJECT_DIR/storage/uploads"
+    "$PROJECT_DIR/public/storage"
+    "$PROJECT_DIR/public/storage/logs"
+)
+
+for dir in "${WRITABLE_DIRS[@]}"; do
+    if [ -d "$dir" ]; then
+        chmod -R 775 "$dir"
+        echo "   ✅ $dir"
+    else
+        mkdir -p "$dir"
+        chmod -R 775 "$dir"
+        chown -R $WEB_USER:$WEB_USER "$dir"
+        echo "   ✅ $dir (oluşturuldu)"
+    fi
+done
+
+# 6. Cache temizle
+echo "6️⃣  Cache temizleniyor..."
+if [ -d "$PROJECT_DIR/var/cache" ]; then
+    rm -rf $PROJECT_DIR/var/cache/*
+    echo "   ✅ Cache temizlendi"
+fi
+
+echo ""
+echo "================================"
+echo "✅ İzin düzeltmeleri tamamlandı!"
+echo "================================"
+echo ""
+echo "📋 Özet:"
+echo "   - Owner: $WEB_USER:$WEB_USER"
+echo "   - Klasörler: 755 (rwxr-xr-x)"
+echo "   - Dosyalar: 644 (rw-r--r--)"
+echo "   - Yazılabilir klasörler: 775 (rwxrwxr-x)"
+echo "   - Executable dosyalar: 755 (rwxr-xr-x)"
+echo ""
+

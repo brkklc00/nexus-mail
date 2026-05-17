@@ -1,0 +1,252 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Roller & Yetkiler - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title_text %}Roller & Yetkiler{% endblock %}
+
+{% block content %}
+
+{% if success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+    {{ success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h4 class="card-title mb-0">
+                            <i data-feather="shield" class="align-self-center icon-xs me-2"></i>
+                            Rol Yönetimi
+                        </h4>
+                        <small class="text-muted">Toplam {{ roles|length }} rol</small>
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-primary" onclick="showCreateModal()">
+                            <i data-feather="plus" class="align-self-center icon-xs me-1"></i>
+                            Yeni Rol Ekle
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Rol Adı</th>
+                                <th>Yetkiler</th>
+                                <th>Durum</th>
+                                <th class="text-end">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for role in roles %}
+                            <tr>
+                                <td><strong>#{{ role.id }}</strong></td>
+                                <td>
+                                    <strong>{{ role.name }}</strong>
+                                    {% if role.isReadonly %}
+                                        <span class="badge bg-danger-subtle text-danger ms-2">Sistem</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-primary-subtle text-primary">{{ role.permissions|length }} Yetki</span>
+                                </td>
+                                <td>
+                                    {% if role.users|length > 0 %}
+                                        <span class="text-success">{{ role.users|length }} kullanıcı</span>
+                                    {% else %}
+                                        <span class="text-muted">Kullanıcısız</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-primary" 
+                                            onclick="viewRole({{ role.id }})"
+                                            title="Detay">
+                                        <i data-feather="eye" class="icon-xs"></i>
+                                    </button>
+                                    {% if not role.isReadonly %}
+                                    <button type="button" class="btn btn-sm btn-info" 
+                                            onclick="editRole({{ role.id }})"
+                                            title="Düzenle">
+                                        <i data-feather="edit" class="icon-xs"></i>
+                                    </button>
+                                    <form method="POST" action="/roles/{{ role.id }}/delete" class="d-inline" 
+                                          onsubmit="return confirm('Bu rolü silmek istediğinizden emin misiniz?')">
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Sil">
+                                            <i data-feather="trash-2" class="icon-xs"></i>
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                        <span class="badge bg-secondary-subtle text-secondary">Sistem Rolü</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    <i data-feather="inbox" class="icon-lg mb-2"></i>
+                                    <p class="mb-0">Henüz rol bulunmamaktadır.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Yeni Rol Modal -->
+<div class="modal fade" id="createRoleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="plus-circle" class="icon-xs me-2"></i>
+                    Yeni Rol Ekle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="/roles" id="createRoleForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="create_name" class="form-label">Rol Adı <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="create_name" name="name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Yetkiler</label>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 40%">Yetki</th>
+                                        <th class="text-center" style="width: 15%">Okuma</th>
+                                        <th class="text-center" style="width: 15%">Oluşturma</th>
+                                        <th class="text-center" style="width: 15%">Güncelleme</th>
+                                        <th class="text-center" style="width: 15%">Silme</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for permission in permissions %}
+                                    <tr>
+                                        <td><strong>{{ permission.name }}</strong></td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="form-check-input" 
+                                                   name="permissions[{{ permission.id }}][read]" value="1">
+                                        </td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="form-check-input" 
+                                                   name="permissions[{{ permission.id }}][create]" value="1">
+                                        </td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="form-check-input" 
+                                                   name="permissions[{{ permission.id }}][update]" value="1">
+                                        </td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="form-check-input" 
+                                                   name="permissions[{{ permission.id }}][delete]" value="1">
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="check" class="icon-xs me-1"></i>
+                        Rol Oluştur
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Rol Detay Modal -->
+<div class="modal fade" id="roleDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="shield" class="icon-xs me-2"></i>
+                    Rol Detayı
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="roleDetailContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Yükleniyor...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+    <div class="text-center">
+        <div class="spinner-border text-light" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Yükleniyor...</span>
+        </div>
+        <p class="text-white mt-3">İşleminiz gerçekleştiriliyor...</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+feather.replace();
+
+// Create modal göster
+function showCreateModal() {
+    document.getElementById('createRoleForm').reset();
+    const modal = new bootstrap.Modal(document.getElementById('createRoleModal'));
+    modal.show();
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Rol detayını göster
+function viewRole(roleId) {
+    const modal = new bootstrap.Modal(document.getElementById('roleDetailModal'));
+    const content = document.getElementById('roleDetailContent');
+    
+    content.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+    modal.show();
+    
+    fetch('/roles/' + roleId)
+        .then(response => response.text())
+        .then(html => {
+            content.innerHTML = html;
+            feather.replace();
+        })
+        .catch(error => {
+            content.innerHTML = '<div class="alert alert-danger">Hata oluştu</div>';
+        });
+}
+
+// Rol düzenle
+function editRole(roleId) {
+    window.location.href = '/roles/' + roleId + '/edit';
+}
+
+// Form submit - loading göster
+document.getElementById('createRoleForm').addEventListener('submit', function() {
+    document.getElementById('loadingOverlay').style.display = 'flex';
+});
+</script>
+{% endblock %}

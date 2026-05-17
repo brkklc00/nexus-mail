@@ -1,0 +1,979 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}URL Kısaltma - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block page_title %}
+<div class="row nx-url-page-head-row">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head nx-dash-page-head-wrap pb-0 mb-0">
+            <div class="nx-dash-page-head d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div class="min-w-0 flex-grow-1">
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item"><a href="/dashboard">Araçlar</a></li>
+                            <li class="breadcrumb-item active" aria-current="page">URL Kısaltma</li>
+                        </ol>
+                    </div>
+                    <h4 class="page-title nx-page-title mb-1">URL Kısaltma</h4>
+                    <p class="nx-page-lead text-muted mb-0">Uzun bağlantıları kısa, takip edilebilir ve paylaşılabilir linklere dönüştürün.</p>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 nx-dash-toolbar">
+                    <button type="button" class="btn btn-sm nx-dash-tool-btn" id="nx-us-header-refresh" title="Sayfayı yenile">
+                        <i data-feather="refresh-cw" class="nx-dash-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yenile</span>
+                    </button>
+                    <a href="#nx-us-shorten" class="btn btn-sm nx-dash-tool-btn">
+                        <i data-feather="plus-circle" class="nx-dash-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yeni Link</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block content %}
+{% set nx_us_total = stats.total_urls|default(0) %}
+{% set nx_us_clicks = stats.total_clicks|default(0) %}
+<div class="nx-url-shell nx-url-section-gap pb-4">
+
+    {% if success %}<span id="us-page-success" class="d-none">{{ success }}</span>{% endif %}
+    {% if error %}<span id="us-page-error" class="d-none">{{ error }}</span>{% endif %}
+
+    <!-- KPI -->
+    <div class="row nx-dash-kpi-row nx-url-kpi-row row-cols-1 row-cols-sm-2 row-cols-lg-2 row-cols-xl-4 g-3 mb-0">
+        <div class="col">
+            {% include 'dashboard/_partials/kpi-card.twig' with {
+                icon: 'layers',
+                label: 'Toplam URL',
+                value: nx_us_total|number_format(0, ',', '.'),
+                hint: 'Kayıtlı kısa link',
+                extra_class: 'nx-url-kpi'
+            } only %}
+        </div>
+        <div class="col">
+            <div class="nx-dash-kpi h-100 nx-url-kpi">
+                <div class="nx-dash-kpi-accent" aria-hidden="true"></div>
+                <div class="nx-dash-kpi-body">
+                    <div class="nx-dash-kpi-top">
+                        <div class="nx-dash-kpi-chip"><i data-feather="mouse-pointer" class="nx-dash-kpi-icon" aria-hidden="true"></i></div>
+                        <span class="nx-dash-kpi-label">Toplam Tıklama</span>
+                    </div>
+                    <div class="nx-dash-kpi-value" data-stat-total-clicks>{{ nx_us_clicks|number_format(0, ',', '.') }}</div>
+                    <p class="nx-dash-kpi-hint mb-0">Tüm linkler</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            {% include 'dashboard/_partials/kpi-card.twig' with {
+                icon: 'sun',
+                label: 'Bugünkü Tıklama',
+                value: '—',
+                hint: 'Canlı özet',
+                extra_class: 'nx-url-kpi'
+            } only %}
+        </div>
+        <div class="col">
+            <div class="nx-dash-kpi h-100 nx-url-kpi nx-url-kpi-dynamic">
+                <div class="nx-dash-kpi-accent" aria-hidden="true"></div>
+                <div class="nx-dash-kpi-body">
+                    <div class="nx-dash-kpi-top">
+                        <div class="nx-dash-kpi-chip"><i data-feather="trending-up" class="nx-dash-kpi-icon" aria-hidden="true"></i></div>
+                        <span class="nx-dash-kpi-label">En çok tıklanan</span>
+                    </div>
+                    <div class="nx-dash-kpi-value nx-url-kpi-top-link" data-stat-top-label title="">Henüz tıklama yok</div>
+                    <p class="nx-dash-kpi-hint mb-0"><span data-stat-top-count>—</span> tıklama</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="url-shortener-main-grid nx-url-main-grid">
+        <div class="nx-url-main-col nx-url-main-col--list min-w-0">
+    <!-- Liste -->
+    <div class="card nx-url-list-card url-list-card border-0">
+        <div class="nx-url-card-head border-0 nx-url-list-card-head nx-url-list-card-head--clean">
+            <div class="nx-url-list-head-main w-100 min-w-0">
+                <h2 class="nx-url-card-title mb-0">
+                    <span class="nx-url-head-ic"><i data-feather="link-2"></i></span>
+                    <span class="nx-url-list-title-text">Kısaltılmış URL'ler</span>
+                </h2>
+            </div>
+        </div>
+        {% if urls is not empty %}
+        <div class="nx-url-list-toolbar-row">
+            <div class="url-toolbar nx-url-toolbar nx-url-toolbar--list">
+                <input type="search" class="form-control nx-url-toolbar-input" id="us-search" placeholder="Başlık, uzun veya kısa URL ara…" autocomplete="off">
+                <select class="form-select nx-url-toolbar-select" id="us-filter-domain">
+                    <option value="">Tüm domainler</option>
+                </select>
+                <select class="form-select nx-url-toolbar-select" id="us-sort">
+                    <option value="new">En yeni</option>
+                    <option value="old">En eski</option>
+                    <option value="clicks">En çok tıklanan</option>
+                </select>
+                <button type="button" class="btn nx-url-toolbar-refresh nx-url-toolbar-refresh--light" id="us-refresh" title="Listeyi yenile" aria-label="Yenile">
+                    <i data-feather="refresh-cw" class="nx-url-toolbar-refresh-ic"></i>
+                </button>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card-body p-0">
+            <script type="application/json" id="urls-data">
+[
+{% for url in urls %}
+{"id":{{ url.id }},"title":{{ (url.title|default(''))|json_encode|raw }},"originalUrl":{{ url.originalUrl|json_encode|raw }},"shortUrl":{{ url.shortUrl|json_encode|raw }},"clickCount":{{ url.clickCount }},"createdAt":{{ url.createdAt|date('c')|json_encode|raw }}}{% if not loop.last %},{% endif %}
+{% endfor %}
+]
+            </script>
+
+            {% if urls is empty %}
+            <div class="text-center nx-url-empty py-5 px-3">
+                <div class="nx-url-empty-ic">
+                    <i data-feather="link"></i>
+                </div>
+                <h5 class="fw-bold mb-2" style="color:#0f172a;">Henüz kısa URL oluşturulmadı</h5>
+                <p class="text-muted mb-3 mx-auto small" style="max-width: 380px;">Sağdaki formdan ilk kısa linkinizi oluşturabilirsiniz.</p>
+                <a href="#nx-us-shorten" class="btn btn-sm nx-url-btn-submit border-0">Yeni Link Oluştur</a>
+            </div>
+            {% else %}
+            <div class="table-responsive d-none d-md-block nx-url-table-wrap url-table-wrapper" id="us-table-wrap">
+                <table class="table align-middle mb-0 nx-url-table nx-url-table--list url-table">
+                    <thead>
+                        <tr>
+                            <th class="nx-url-th-origin">Bağlantı</th>
+                            <th class="nx-url-th-short">Kısa link</th>
+                            <th class="nx-url-th-clicks">Tıklama</th>
+                            <th class="nx-url-th-date">Tarih</th>
+                            <th class="text-end nx-url-th-actions">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody id="urls-table-body">
+                        <tr class="us-skel-only">
+                            <td colspan="5">
+                                <div class="nx-url-skel-bar mb-2" style="max-width:55%"></div>
+                                <div class="nx-url-skel-bar" style="max-width:85%; opacity:.85"></div>
+                            </td>
+                        </tr>
+                        <tr class="us-skel-only">
+                            <td colspan="5">
+                                <div class="nx-url-skel-bar mb-2" style="max-width:48%"></div>
+                                <div class="nx-url-skel-bar" style="max-width:78%; opacity:.85"></div>
+                            </td>
+                        </tr>
+                        <tr class="us-skel-only">
+                            <td colspan="5">
+                                <div class="nx-url-skel-bar mb-2" style="max-width:62%"></div>
+                                <div class="nx-url-skel-bar" style="max-width:90%; opacity:.85"></div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-md-none p-3" id="us-mobile-list" style="background:var(--nx-bg-page);"></div>
+
+            <div id="us-filter-empty" class="text-center py-5 px-3 text-muted d-none">
+                <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width:56px;height:56px;background:#f1f5f9;">
+                    <i data-feather="search" style="width:22px;height:22px;color:#64748b;"></i>
+                </div>
+                <p class="fw-semibold text-secondary mb-1">Sonuç bulunamadı</p>
+                <p class="small mb-0">Arama veya filtreyi değiştirmeyi deneyin.</p>
+            </div>
+
+            {% if totalPages > 1 %}
+            <div class="border-top bg-white px-3 py-3" id="us-pagination-wrap">
+                <nav aria-label="Sayfalama">
+                    <ul class="pagination justify-content-center mb-0">
+                        <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
+                            <a class="page-link rounded-start" href="/url-shortener?page={{ currentPage - 1 }}">Önceki</a>
+                        </li>
+                        {% for page in 1..totalPages %}
+                            {% if page == currentPage %}
+                                <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                            {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                                <li class="page-item"><a class="page-link" href="/url-shortener?page={{ page }}">{{ page }}</a></li>
+                            {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+                        <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
+                            <a class="page-link rounded-end" href="/url-shortener?page={{ currentPage + 1 }}">Sonraki</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+        </div>
+
+        <div class="nx-url-main-col nx-url-main-col--form min-w-0">
+    <!-- Form -->
+    <div id="nx-us-shorten" class="card nx-url-form-card border-0 scroll-margin-top-5 h-100">
+        <div class="nx-url-card-head border-0">
+            <h2 class="nx-url-card-title mb-0">
+                <span class="nx-url-head-ic"><i data-feather="scissors"></i></span>
+                Yeni Kısa Link Oluştur
+            </h2>
+        </div>
+        <div class="card-body p-3 p-md-4">
+            <form method="POST" action="/url-shortener" id="shortenForm" novalidate>
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label for="url" class="form-label">Uzun URL <span class="text-danger">*</span></label>
+                        <input type="url" class="form-control nx-url-input" id="url" name="url" required placeholder="https://example.com/uzun/yol">
+                    </div>
+                    <div class="col-12">
+                        <label for="domain" class="form-label">Domain <span class="text-danger">*</span></label>
+                        <select class="form-select nx-url-input" id="domain" name="domain" required onchange="updateDomainPreview()">
+                            {% for domain in domains %}
+                            <option value="{{ domain }}">{{ domain }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label for="custom_alias" class="form-label">Özel alias</label>
+                        <div class="input-group">
+                            <span class="input-group-text small" id="domainPrefix">{{ (domains|first)|default('') }}/</span>
+                            <input type="text" class="form-control nx-url-input" id="custom_alias" name="custom_alias" pattern="[a-zA-Z0-9_-]+" maxlength="50" placeholder="ornek-link" autocomplete="off">
+                        </div>
+                        <small class="text-muted" style="font-size:0.78rem;">Boş bırakılırsa kod otomatik üretilir</small>
+                    </div>
+                    <div class="col-12">
+                        <label for="title" class="form-label">Başlık</label>
+                        <input type="text" class="form-control nx-url-input" id="title" name="title" maxlength="100" placeholder="İsteğe bağlı etiket">
+                    </div>
+                    <div class="col-12 d-flex align-items-end">
+                        <button type="submit" class="btn w-100 nx-url-btn-submit" id="shortenSubmitBtn">
+                            <span class="us-submit-label d-inline-flex align-items-center justify-content-center gap-1"><i data-feather="scissors" class="icon-xs"></i> URL Kısalt</span>
+                            <span class="us-submit-loading d-none spinner-border spinner-border-sm" role="status"></span>
+                            <span class="us-submit-loading d-none small ms-1">İşleniyor...</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade nx-url-modal" id="editModal" tabindex="-1" aria-labelledby="editModalLabel">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header nx-url-modal-header border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2 mb-0" id="editModalLabel">
+                    <span class="nx-url-head-ic" style="width:34px;height:34px;"><i data-feather="edit" class="icon-sm"></i></span>
+                    URL düzenle
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <form method="POST" id="editForm">
+                <div class="modal-body bg-white p-3 p-md-4">
+                    <div class="mb-3">
+                        <label for="edit_title" class="form-label fw-semibold small">Başlık</label>
+                        <input type="text" class="form-control nx-url-input" id="edit_title" name="title" maxlength="100" placeholder="URL için açıklayıcı başlık">
+                    </div>
+                    <div class="mb-3">
+                        <label for="edit_url" class="form-label fw-semibold small">Hedef URL <span class="text-danger">*</span></label>
+                        <input type="url" class="form-control nx-url-input" id="edit_url" name="url" required>
+                        <small class="text-muted" style="font-size:0.78rem;">Kısa linkin yönleneceği adres</small>
+                    </div>
+                    <div class="mb-0">
+                        <label for="edit_slug" class="form-label fw-semibold small">Slug <span class="text-muted fw-normal">(isteğe bağlı)</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text" id="editDomainPrefix">domain.com/</span>
+                            <input type="text" class="form-control nx-url-input" id="edit_slug" name="slug" pattern="[a-zA-Z0-9_-]+" maxlength="50" placeholder="yeni-slug">
+                        </div>
+                        <small class="text-muted" style="font-size:0.78rem;">Boş bırakırsanız mevcut slug korunur</small>
+                    </div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn nx-url-btn-submit border-0 px-4">
+                        <i data-feather="save" class="icon-xs me-1"></i>
+                        Kaydet
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade nx-url-modal nx-url-delete-modal" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:18px;">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">Kısa URL silinsin mi?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body pt-2">
+                <p class="text-muted mb-3 small">Bu işlem geri alınamaz.</p>
+                <div class="rounded-3 border bg-light p-2 small font-monospace text-break mb-0" id="deleteUrlText"></div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn" onclick="confirmDelete()">
+                    <i data-feather="trash-2" class="icon-xs me-1"></i>
+                    Sil
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Details Modal -->
+<div class="modal fade nx-url-modal nx-url-details-modal" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+        <div class="modal-content nx-url-details-modal-content">
+            <div class="modal-header nx-url-modal-header border-0 nx-url-details-modal-head">
+                <div class="d-flex align-items-center gap-2 min-w-0 flex-grow-1">
+                    <span class="nx-url-head-ic nx-url-details-modal-head-ic"><i data-feather="bar-chart-2" class="icon-sm"></i></span>
+                    <div class="min-w-0">
+                        <h5 class="modal-title text-white mb-0">Link detayı</h5>
+                        <p class="small mb-0 mt-1 text-truncate text-white opacity-75">Tıklama özeti ve paylaşım</p>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white flex-shrink-0" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body p-0" id="detailsModalBody">
+                <div class="text-center py-5 px-3">
+                    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Yükleniyor...</span></div>
+                    <p class="mt-3 text-muted mb-0 small">Yükleniyor...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="d-none align-items-center justify-content-center nx-url-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999;">
+    <div class="text-center bg-white p-4 rounded-3 shadow">
+        <div class="spinner-border text-primary mb-2" role="status"></div>
+        <p class="text-muted mb-0 small">İşlem yapılıyor...</p>
+    </div>
+</div>
+
+<div id="us-toast-host" aria-live="polite"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script>
+(function () {
+    const parseUrlsData = () => {
+        const el = document.getElementById('urls-data');
+        if (!el) return [];
+        try {
+            return JSON.parse(el.textContent.trim() || '[]');
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
+    };
+
+    let URLS_PAGE_DATA = parseUrlsData();
+    let deleteId = null;
+    let editId = null;
+
+    function hostFromShort(shortUrl) {
+        try {
+            return new URL(shortUrl).hostname || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return iso;
+        return d.toLocaleString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    /** Kompakt: tek satır veya iki satır HTML */
+    function formatDateCompactHtml(iso) {
+        if (!iso) return '<span class="nx-url-date-compact">—</span>';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return `<span class="nx-url-date-compact">${escHtml(String(iso))}</span>`;
+        const datePart = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' });
+        const timePart = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        return `<div class="nx-url-date-stack"><span class="nx-url-date-line">${escHtml(datePart)}</span><span class="nx-url-time-line">${escHtml(timePart)}</span></div>`;
+    }
+
+    function truncateMiddle(str, max) {
+        const s = str == null ? '' : String(str);
+        if (s.length <= max) return s;
+        const left = Math.ceil((max - 1) / 2);
+        const right = Math.floor((max - 1) / 2);
+        return s.slice(0, left) + '…' + s.slice(s.length - right);
+    }
+
+    function displayShortUrl(shortUrl, maxLen) {
+        const s = shortUrl == null ? '' : String(shortUrl);
+        const lim = maxLen || 44;
+        return s.length > lim ? truncateMiddle(s, lim) : s;
+    }
+
+    /** KPI: mevcut sayfa verisinden (ilk yükleme / yedek) */
+    function refreshTopKpiFromPageData() {
+        const topLabel = document.querySelector('[data-stat-top-label]');
+        const topCount = document.querySelector('[data-stat-top-count]');
+        if (!topLabel || !topCount) return;
+        if (!URLS_PAGE_DATA.length) {
+            topLabel.textContent = 'Henüz tıklama yok';
+            topLabel.removeAttribute('title');
+            topCount.textContent = '—';
+            topLabel.classList.add('text-muted');
+            return;
+        }
+        let best = null;
+        URLS_PAGE_DATA.forEach((u) => {
+            const c = Number(u.clickCount || 0);
+            const t = new Date(u.createdAt || 0).getTime();
+            if (
+                !best ||
+                c > best.c ||
+                (c === best.c && c > 0 && t > best.t)
+            ) {
+                best = { c, t, u };
+            }
+        });
+        if (!best || best.c <= 0) {
+            topLabel.textContent = 'Henüz tıklama yok';
+            topLabel.removeAttribute('title');
+            topCount.textContent = '—';
+            topLabel.classList.add('text-muted');
+            return;
+        }
+        topLabel.classList.remove('text-muted');
+        const full = String(best.u.shortUrl || '');
+        topLabel.textContent = full || '—';
+        if (full) topLabel.setAttribute('title', full);
+        else topLabel.removeAttribute('title');
+        topCount.textContent = Number(best.c).toLocaleString('tr-TR');
+    }
+
+    /** KPI: sunucudan gelen tıklama haritasına göre (global en yüksek) */
+    function applyTopKpiFromClickMap(map) {
+        const topLabel = document.querySelector('[data-stat-top-label]');
+        const topCount = document.querySelector('[data-stat-top-count]');
+        if (!topLabel || !topCount) return;
+        const m = map || {};
+        const keys = Object.keys(m);
+        if (!keys.length) {
+            refreshTopKpiFromPageData();
+            return;
+        }
+        let topId = null;
+        let topVal = -1;
+        keys.forEach((k) => {
+            const v = parseInt(m[k], 10) || 0;
+            if (v > topVal) {
+                topVal = v;
+                topId = k;
+            }
+        });
+        if (topVal <= 0) {
+            topLabel.textContent = 'Henüz tıklama yok';
+            topLabel.removeAttribute('title');
+            topCount.textContent = '—';
+            topLabel.classList.add('text-muted');
+            return;
+        }
+        topLabel.classList.remove('text-muted');
+        topCount.textContent = topVal.toLocaleString('tr-TR');
+        const match = URLS_PAGE_DATA.find((x) => String(x.id) === String(topId));
+        const full = match && match.shortUrl ? String(match.shortUrl) : '';
+        if (full) {
+            topLabel.textContent = full;
+            topLabel.setAttribute('title', full);
+        } else {
+            topLabel.textContent = 'Bu sayfada görünmüyor';
+            topLabel.setAttribute(
+                'title',
+                'En çok tıklanan link bu sayfada listelenmiyor; diğer sayfalara bakın veya tam adres için detayı açın.'
+            );
+        }
+    }
+
+    function showToast(message, type = 'success') {
+        const host = document.getElementById('us-toast-host');
+        if (!host || !message) return;
+        const cls = type === 'danger' ? 'danger' : type === 'warning' ? 'warning' : type === 'info' ? 'info' : 'success';
+        const div = document.createElement('div');
+        div.className = `alert alert-${cls} us-toast-item shadow-sm py-2 px-3 mb-0`;
+        div.setAttribute('role', 'alert');
+        div.innerHTML = `<div class="d-flex align-items-start gap-2"><span class="flex-grow-1">${message}</span><button type="button" class="btn-close btn-sm" aria-label="Kapat"></button></div>`;
+        div.querySelector('.btn-close').addEventListener('click', () => div.remove());
+        host.appendChild(div);
+        setTimeout(() => div.remove(), 5200);
+    }
+
+    function escHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    function escAttr(s) {
+        return escHtml(s).replace(/"/g, '&quot;');
+    }
+
+    function escJsStr(s) {
+        return JSON.stringify(s == null ? '' : String(s));
+    }
+
+    window.copyUrl = function (url) {
+        navigator.clipboard.writeText(url).then(() => {
+            showToast('Kısa URL panoya kopyalandı.', 'success');
+            if (typeof feather !== 'undefined') feather.replace();
+        }).catch(() => showToast('Panoya kopyalanamadı.', 'danger'));
+    };
+
+    window.updateDomainPreview = function () {
+        const sel = document.getElementById('domain');
+        const prefix = document.getElementById('domainPrefix');
+        if (sel && prefix) prefix.textContent = sel.value + '/';
+    };
+
+    window.editUrl = function (id, originalUrl, title, shortUrl) {
+        editId = id;
+        document.getElementById('edit_url').value = originalUrl;
+        document.getElementById('edit_title').value = title || '';
+        document.getElementById('edit_slug').value = '';
+        if (shortUrl) {
+            try {
+                const urlObj = new URL(shortUrl);
+                const prefix = document.getElementById('editDomainPrefix');
+                if (prefix) prefix.textContent = urlObj.hostname + '/';
+            } catch (e) {}
+        }
+        document.getElementById('editForm').action = `/url-shortener/${id}/update`;
+        const modal = new bootstrap.Modal(document.getElementById('editModal'));
+        modal.show();
+        setTimeout(() => typeof feather !== 'undefined' && feather.replace(), 120);
+    };
+
+    window.deleteUrl = function (id, shortUrl) {
+        deleteId = id;
+        const t = document.getElementById('deleteUrlText');
+        if (t) t.textContent = shortUrl;
+        const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        modal.show();
+        setTimeout(() => typeof feather !== 'undefined' && feather.replace(), 120);
+    };
+
+    window.confirmDelete = function () {
+        if (!deleteId) return;
+        const ov = document.getElementById('loadingOverlay');
+        if (ov) {
+            ov.classList.remove('d-none');
+            ov.classList.add('d-flex');
+        }
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/url-shortener/${deleteId}/delete`;
+        document.body.appendChild(form);
+        form.submit();
+    };
+
+    function sortUrls(list, mode) {
+        const arr = [...list];
+        if (mode === 'old') {
+            arr.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        } else if (mode === 'clicks') {
+            arr.sort((a, b) => (b.clickCount || 0) - (a.clickCount || 0));
+        } else {
+            arr.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        }
+        return arr;
+    }
+
+    function filterUrls(list, q, domain) {
+        const qq = (q || '').trim().toLowerCase();
+        return list.filter((u) => {
+            const dom = hostFromShort(u.shortUrl);
+            if (domain && dom !== domain) return false;
+            if (!qq) return true;
+            const hay = `${u.title || ''} ${u.originalUrl || ''} ${u.shortUrl || ''}`.toLowerCase();
+            return hay.includes(qq);
+        });
+    }
+
+    function renderRow(u) {
+        const titleDisplay = u.title ? escHtml(u.title) : 'Başlıksız bağlantı';
+        const shortJs = escJsStr(u.shortUrl);
+        const origJs = escJsStr(u.originalUrl);
+        const titleJs = escJsStr(u.title || '');
+        const shortShown = escHtml(displayShortUrl(u.shortUrl, 48));
+        const origFull = u.originalUrl || '';
+        const origTrunc = escHtml(truncateMiddle(origFull, 64));
+        const n = Number(u.clickCount || 0);
+        const clicks = n.toLocaleString('tr-TR');
+        const clickBadgeClass =
+            n === 0 ? 'nx-url-click-badge nx-url-click-badge--zero' : 'nx-url-click-badge nx-url-click-badge--active';
+
+        return `
+<tr class="nx-url-table-row" data-url-id="${u.id}">
+    <td class="nx-url-cell-origin">
+        <div class="d-flex gap-2 align-items-center">
+            <span class="nx-url-origin-ic"><i data-feather="link-2"></i></span>
+            <div class="min-w-0 flex-grow-1">
+                <div class="nx-url-origin-title text-truncate" title="${escAttr(u.title || 'Başlıksız bağlantı')}">${titleDisplay}</div>
+                <div class="nx-url-origin-url text-truncate" title="${escAttr(origFull)}">${origTrunc}</div>
+            </div>
+        </div>
+    </td>
+    <td class="nx-url-cell-short">
+        <div class="d-flex align-items-center gap-2 nx-url-short-row">
+            <span class="nx-url-pill nx-url-pill--tight min-w-0"><a href="${escAttr(u.shortUrl)}" target="_blank" rel="noopener" class="text-decoration-none js-short-link text-truncate d-inline-block" style="max-width:min(100%, 260px);" title="${escAttr(u.shortUrl)}">${shortShown}</a></span>
+            <button type="button" class="btn nx-url-icon-btn nx-url-icon-btn--copy nx-url-icon-btn--sq" onclick="copyUrl(${shortJs})" title="Kopyala" aria-label="Kopyala">
+                <i data-feather="copy" class="icon-xs"></i>
+            </button>
+        </div>
+    </td>
+    <td class="nx-url-cell-clicks">
+        <button type="button" class="btn btn-link text-decoration-none p-0 border-0 nx-url-click-hit" onclick="showDetails(${u.id})" title="Detay ve istatistik">
+            <span class="${clickBadgeClass}" data-url-id="${u.id}">${clicks}</span>
+        </button>
+    </td>
+    <td class="nx-url-cell-date">${formatDateCompactHtml(u.createdAt)}</td>
+    <td class="text-end nx-url-cell-actions">
+        <div class="d-inline-flex align-items-center justify-content-end gap-2 nx-url-actions-row">
+            <button type="button" class="btn nx-url-icon-btn nx-url-icon-btn--edit nx-url-icon-btn--sq" onclick="editUrl(${u.id}, ${origJs}, ${titleJs}, ${shortJs})" title="Düzenle" aria-label="Düzenle"><i data-feather="edit" class="icon-xs"></i></button>
+            <button type="button" class="btn nx-url-icon-btn nx-url-icon-btn--danger nx-url-icon-btn--sq" onclick="deleteUrl(${u.id}, ${shortJs})" title="Sil" aria-label="Sil"><i data-feather="trash-2" class="icon-xs"></i></button>
+        </div>
+    </td>
+</tr>`;
+    }
+
+    function renderMobileCard(u) {
+        const shortJs = escJsStr(u.shortUrl);
+        const origJs = escJsStr(u.originalUrl);
+        const titleJs = escJsStr(u.title || '');
+        const nc = Number(u.clickCount || 0);
+        const clicks = nc.toLocaleString('tr-TR');
+        const clickBadgeClass =
+            nc === 0 ? 'nx-url-click-badge nx-url-click-badge--zero' : 'nx-url-click-badge nx-url-click-badge--active';
+        const titleDisplay = u.title ? escHtml(u.title) : 'Başlıksız bağlantı';
+        const origFull = u.originalUrl || '';
+        const shortShown = escHtml(displayShortUrl(u.shortUrl, 40));
+        return `
+<div class="nx-url-mobile-card">
+    <div class="nx-url-mobile-head">
+        <span class="nx-url-mobile-title">${titleDisplay}</span>
+        <div class="nx-url-mobile-long small text-muted text-break">${escHtml(truncateMiddle(origFull, 120))}</div>
+    </div>
+    <div class="nx-url-mobile-short d-flex align-items-center gap-2 mb-3">
+        <span class="nx-url-pill nx-url-pill--tight flex-grow-1 min-w-0 mb-0"><a href="${escAttr(u.shortUrl)}" target="_blank" rel="noopener" class="js-short-link text-truncate d-inline-block w-100" title="${escAttr(u.shortUrl)}">${shortShown}</a></span>
+        <button type="button" class="btn nx-url-icon-btn nx-url-icon-btn--copy nx-url-icon-btn--sq flex-shrink-0" onclick="copyUrl(${shortJs})" title="Kopyala" aria-label="Kopyala"><i data-feather="copy" class="icon-xs"></i></button>
+    </div>
+    <div class="nx-url-mobile-meta d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <button type="button" class="btn btn-link p-0 border-0 text-start nx-url-click-hit" onclick="showDetails(${u.id})">
+                <span class="${clickBadgeClass}" data-url-id="${u.id}">${clicks}</span>
+                <span class="small text-muted ms-1">tıklama</span>
+            </button>
+            <span class="nx-url-mobile-date">${formatDateCompactHtml(u.createdAt)}</span>
+        </div>
+        <div class="d-inline-flex align-items-center gap-2">
+            <button type="button" class="btn nx-url-icon-btn nx-url-icon-btn--edit nx-url-icon-btn--sq" onclick="editUrl(${u.id}, ${origJs}, ${titleJs}, ${shortJs})" title="Düzenle" aria-label="Düzenle"><i data-feather="edit" class="icon-xs"></i></button>
+            <button type="button" class="btn nx-url-icon-btn nx-url-icon-btn--danger nx-url-icon-btn--sq" onclick="deleteUrl(${u.id}, ${shortJs})" title="Sil" aria-label="Sil"><i data-feather="trash-2" class="icon-xs"></i></button>
+        </div>
+    </div>
+</div>`;
+    }
+
+    function refreshTable() {
+        const tbody = document.getElementById('urls-table-body');
+        const mobile = document.getElementById('us-mobile-list');
+        const emptyF = document.getElementById('us-filter-empty');
+        const wrap = document.getElementById('us-table-wrap');
+        const sortEl = document.getElementById('us-sort');
+        const searchEl = document.getElementById('us-search');
+        const domEl = document.getElementById('us-filter-domain');
+        if (!tbody) return;
+
+        const mode = sortEl ? sortEl.value : 'new';
+        const q = searchEl ? searchEl.value : '';
+        const dom = domEl ? domEl.value : '';
+        let list = filterUrls(URLS_PAGE_DATA, q, dom);
+        list = sortUrls(list, mode);
+
+        if (list.length === 0) {
+            tbody.innerHTML = '';
+            if (mobile) mobile.innerHTML = '';
+            if (emptyF) emptyF.classList.remove('d-none');
+            if (wrap) wrap.classList.add('d-none');
+            if (mobile) mobile.classList.add('d-none');
+        } else {
+            if (emptyF) emptyF.classList.add('d-none');
+            if (wrap) wrap.classList.remove('d-none');
+            if (mobile) mobile.classList.remove('d-none');
+            tbody.innerHTML = list.map(renderRow).join('');
+            if (mobile) mobile.innerHTML = list.map(renderMobileCard).join('');
+        }
+        if (typeof feather !== 'undefined') feather.replace();
+    }
+
+    function populateDomainFilter() {
+        const sel = document.getElementById('us-filter-domain');
+        if (!sel) return;
+        const hosts = [...new Set(URLS_PAGE_DATA.map(hostFromShort).filter(Boolean))].sort();
+        const keep = sel.value;
+        while (sel.options.length > 1) sel.remove(1);
+        hosts.forEach((h) => {
+            const o = document.createElement('option');
+            o.value = h;
+            o.textContent = h;
+            sel.appendChild(o);
+        });
+        if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+    }
+
+    function updateDerivedStats() {
+        const domEl = document.querySelector('[data-stat-domains]');
+        if (domEl) {
+            const hosts = new Set(URLS_PAGE_DATA.map(hostFromShort).filter(Boolean));
+            domEl.textContent = hosts.size ? hosts.size.toLocaleString('tr-TR') : '—';
+        }
+    }
+
+    window.showDetails = function (urlId) {
+        const modal = new bootstrap.Modal(document.getElementById('detailsModal'));
+        const modalBody = document.getElementById('detailsModalBody');
+        modalBody.innerHTML = `
+            <div class="text-center py-5 px-3">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-3 text-muted mb-0 small">Yükleniyor...</p>
+            </div>`;
+        modal.show();
+
+        fetch(`/url-shortener/${urlId}/details`)
+            .then((response) => {
+                const ct = response.headers.get('content-type');
+                if (!ct || !ct.includes('application/json')) throw new Error('Sunucu JSON döndürmedi.');
+                return response.json();
+            })
+            .then((data) => {
+                if (data.success) {
+                    renderDetailModal(data.url, data.details || null);
+                } else {
+                    modalBody.innerHTML = `<div class="p-4"><div class="alert alert-danger mb-0">${escHtml(data.error || 'Detay yüklenemedi')}</div></div>`;
+                }
+                if (typeof feather !== 'undefined') feather.replace();
+            })
+            .catch((error) => {
+                modalBody.innerHTML = `<div class="p-4"><div class="alert alert-danger mb-0">${escHtml(error.message)}</div></div>`;
+            });
+    };
+
+    function renderDetailModal(url, details) {
+        const modalBody = document.getElementById('detailsModalBody');
+        const updatedRaw =
+            details &&
+            (details.updated_at ||
+                details.updatedAt ||
+                details.modified_at ||
+                details.last_update ||
+                details.date);
+        const clicks = Number(url.click_count || 0).toLocaleString('tr-TR');
+        const titleBlock = url.title
+            ? `<h3 class="nx-us-detail-title">${escHtml(url.title)}</h3>`
+            : '<p class="nx-us-detail-title-placeholder mb-3">Başlık atanmamış</p>';
+        const updatedStat = updatedRaw
+            ? `<div class="nx-us-detail-stat"><span class="nx-us-detail-stat-label">Son güncelleme</span><span class="nx-us-detail-stat-value nx-us-detail-stat-value--sm">${escHtml(String(updatedRaw))}</span></div>`
+            : '';
+
+        modalBody.innerHTML = `
+<div class="nx-us-detail-root">
+    <div class="nx-us-detail-hero">
+        <div class="nx-us-detail-hero-text">
+            ${titleBlock}
+            <div class="nx-us-detail-stat-row">
+                <div class="nx-us-detail-stat nx-us-detail-stat--accent">
+                    <span class="nx-us-detail-stat-label">Toplam tıklama</span>
+                    <span class="nx-us-detail-stat-value">${clicks}</span>
+                </div>
+                <div class="nx-us-detail-stat">
+                    <span class="nx-us-detail-stat-label">Oluşturulma</span>
+                    <span class="nx-us-detail-stat-value nx-us-detail-stat-value--sm">${escHtml(url.created_at || '—')}</span>
+                </div>
+                ${updatedStat}
+            </div>
+        </div>
+        <div class="nx-us-detail-hero-qr">
+            <div class="nx-url-detail-qr-wrap nx-us-detail-qr-card">
+                <span class="nx-us-detail-chip-label">QR kod</span>
+                <canvas id="us-detail-qr-canvas" width="200" height="200" class="mx-auto d-block mb-2"></canvas>
+                <small class="text-muted d-block">Paylaşım için QR okutun</small>
+            </div>
+        </div>
+    </div>
+    <div class="nx-us-detail-blocks">
+        <div class="nx-us-detail-link-block">
+            <span class="nx-us-detail-label">Hedef URL</span>
+            <div class="nx-us-detail-url-inner">
+                <a href="${escAttr(url.original_url)}" target="_blank" rel="noopener">${escHtml(url.original_url)}</a>
+            </div>
+        </div>
+        <div class="nx-us-detail-link-block nx-us-detail-link-block--short">
+            <span class="nx-us-detail-label">Kısa link</span>
+            <div class="nx-us-detail-url-inner nx-us-detail-url-inner--mono">
+                <a href="${escAttr(url.short_url)}" target="_blank" rel="noopener">${escHtml(url.short_url)}</a>
+            </div>
+        </div>
+    </div>
+    <div class="nx-us-detail-footer-actions">
+        <button type="button" class="btn nx-url-btn-submit btn-sm border-0 px-3" onclick="copyUrl(${escJsStr(url.short_url)})"><i data-feather="copy" class="icon-xs me-1"></i> Kopyala</button>
+        <a class="btn btn-outline-primary btn-sm px-3" href="${escAttr(url.short_url)}" target="_blank" rel="noopener"><i data-feather="external-link" class="icon-xs me-1"></i> Yeni sekmede aç</a>
+    </div>
+</div>`;
+
+        setTimeout(() => {
+            const canvas = document.getElementById('us-detail-qr-canvas');
+            const QR = window.QRCode;
+            if (canvas && QR && typeof QR.toCanvas === 'function' && url.short_url) {
+                QR.toCanvas(
+                    canvas,
+                    url.short_url,
+                    { width: 200, margin: 2, color: { dark: '#0f172a', light: '#ffffffff' } },
+                    (err) => {
+                        if (err && canvas.parentNode) {
+                            canvas.parentNode.innerHTML =
+                                '<p class="text-muted small mb-0">QR oluşturulamadı.</p>';
+                        }
+                    }
+                );
+            } else if (canvas && canvas.parentNode) {
+                canvas.parentNode.innerHTML =
+                    '<p class="text-muted small mb-0">QR görüntülemek için tarayıcıda qrcode paketi gerekir.</p>';
+            }
+            if (typeof feather !== 'undefined') feather.replace();
+        }, 50);
+    }
+
+    function wireToolbar() {
+        const s = document.getElementById('us-search');
+        const d = document.getElementById('us-filter-domain');
+        const so = document.getElementById('us-sort');
+        const r = document.getElementById('us-refresh');
+        const hr = document.getElementById('nx-us-header-refresh');
+        let t;
+        if (s) {
+            s.addEventListener('input', () => {
+                clearTimeout(t);
+                t = setTimeout(() => refreshTable(), 200);
+            });
+        }
+        [d, so].forEach((el) => el && el.addEventListener('change', refreshTable));
+        if (r) r.addEventListener('click', () => window.location.reload());
+        if (hr) hr.addEventListener('click', () => window.location.reload());
+    }
+
+    function flashPageMessages() {
+        const s = document.getElementById('us-page-success');
+        const e = document.getElementById('us-page-error');
+        if (e && e.textContent.trim()) {
+            showToast(e.textContent.trim(), 'danger');
+        }
+        if (s && s.textContent.trim()) {
+            const baseMsg = s.textContent.trim();
+            const firstShort =
+                document.querySelector('#urls-table-body tr:first-child .js-short-link') ||
+                document.querySelector('.nx-url-mobile-card .nx-url-pill a');
+            if (firstShort && firstShort.href) {
+                navigator.clipboard.writeText(firstShort.href).then(() => {
+                    showToast(baseMsg + ' Kısa link panoya kopyalandı.', 'success');
+                }).catch(() => showToast(baseMsg, 'success'));
+            } else {
+                showToast(baseMsg, 'success');
+            }
+        }
+    }
+
+    function updateClickCountsPoll() {
+        fetch('/url-shortener/update-clicks')
+            .then((r) => r.json())
+            .then((data) => {
+                if (!data.success) return;
+                const map = data.clickCounts || {};
+                const totalEl = document.querySelector('[data-stat-total-clicks]');
+                if (totalEl && data.totalClicks !== undefined) {
+                    totalEl.textContent = Number(data.totalClicks).toLocaleString('tr-TR');
+                }
+                Object.keys(map).forEach((id) => {
+                    const v = parseInt(map[id], 10) || 0;
+                    const txt = v.toLocaleString('tr-TR');
+                    document.querySelectorAll(`span.nx-url-click-badge[data-url-id="${id}"]`).forEach((badge) => {
+                        badge.textContent = txt;
+                        badge.classList.remove('nx-url-click-badge--zero', 'nx-url-click-badge--active');
+                        badge.classList.add(v === 0 ? 'nx-url-click-badge--zero' : 'nx-url-click-badge--active');
+                    });
+                });
+                URLS_PAGE_DATA.forEach((row) => {
+                    if (map[row.id] !== undefined) row.clickCount = parseInt(map[row.id], 10) || 0;
+                });
+                applyTopKpiFromClickMap(map);
+                refreshTable();
+            })
+            .catch(() => {});
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (typeof feather !== 'undefined') feather.replace();
+        updateDomainPreview();
+
+        document.getElementById('shortenForm')?.addEventListener('submit', function () {
+            const btn = document.getElementById('shortenSubmitBtn');
+            if (!btn) return;
+            btn.disabled = true;
+            btn.querySelector('.us-submit-label')?.classList.add('d-none');
+            btn.querySelectorAll('.us-submit-loading').forEach((el) => el.classList.remove('d-none'));
+        });
+
+        document.getElementById('editForm')?.addEventListener('submit', function () {
+            const ov = document.getElementById('loadingOverlay');
+            if (ov) {
+                ov.classList.remove('d-none');
+                ov.classList.add('d-flex');
+            }
+        });
+
+        document.getElementById('custom_alias')?.addEventListener('input', function (e) {
+            const cleaned = e.target.value.replace(/[^a-zA-Z0-9_-]/g, '');
+            if (e.target.value !== cleaned) e.target.value = cleaned;
+        });
+        document.getElementById('custom_alias')?.addEventListener('blur', function (e) {
+            e.target.value = e.target.value.toLowerCase();
+        });
+        document.getElementById('edit_slug')?.addEventListener('input', function (e) {
+            const cleaned = e.target.value.replace(/[^a-zA-Z0-9_-]/g, '');
+            if (e.target.value !== cleaned) e.target.value = cleaned;
+        });
+        document.getElementById('edit_slug')?.addEventListener('blur', function (e) {
+            e.target.value = e.target.value.toLowerCase();
+        });
+
+        populateDomainFilter();
+        updateDerivedStats();
+        refreshTable();
+        refreshTopKpiFromPageData();
+        wireToolbar();
+        flashPageMessages();
+
+        setInterval(updateClickCountsPoll, 30000);
+        updateClickCountsPoll();
+    });
+})();
+</script>
+{% endblock %}

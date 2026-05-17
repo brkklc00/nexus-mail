@@ -1,0 +1,114 @@
+<div class="modal-header">
+    <h5 class="modal-title">
+        <i data-feather="book" class="icon-xs me-2"></i>
+        {{ phonebook.title }}
+    </h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+</div>
+<div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+    <!-- Bilgiler -->
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <div class="card border-0 bg-light">
+                <div class="card-body py-2 px-3">
+                    <small class="text-muted d-block">Toplam Mail</small>
+                    <strong class="text-primary">{{ total|number_format }}</strong>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 bg-light">
+                <div class="card-body py-2 px-3">
+                    <small class="text-muted d-block">Bu Sayfa</small>
+                    <strong class="text-success">{{ contacts|length }}</strong>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 bg-light">
+                <div class="card-body py-2 px-3">
+                    <small class="text-muted d-block">Sayfa</small>
+                    <strong class="text-info">{{ page }}/{{ total_pages }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Açıklama -->
+    {% if phonebook.description %}
+    <div class="alert alert-info py-2 mb-3">
+        <small><i data-feather="info" class="icon-xs me-1"></i> {{ phonebook.description }}</small>
+    </div>
+    {% endif %}
+
+    <!-- Tablo -->
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Mail Adresi</th>
+                    <th>Ad</th>
+                    <th>Soyad</th>
+                    <th>Tarih</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for contact in contacts %}
+                <tr>
+                    <td><span class="font-monospace small">{{ contact.email }}</span></td>
+                    <td><small>{{ contact.firstName ?: '-' }}</small></td>
+                    <td><small>{{ contact.lastName ?: '-' }}</small></td>
+                    <td><small class="text-muted">{{ contact.createdAt|date('d.m.Y') }}</small></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <small class="text-muted">
+            {{ ((page - 1) * per_page + 1) }}-{{ min(page * per_page, total) }} / {{ total|number_format }}
+        </small>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="javascript:void(0)" onclick="loadEmailPhonebookPage({{ phonebook.id }}, '{{ phonebook.title|e('js') }}', {{ page - 1 }})">Önceki</a>
+                </li>
+                {% endif %}
+                
+                {% for p in 1..total_pages %}
+                    {% if p == page %}
+                    <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                    {% elseif (p >= page - 2 and p <= page + 2) or p == 1 or p == total_pages %}
+                    <li class="page-item">
+                        <a class="page-link" href="javascript:void(0)" onclick="loadEmailPhonebookPage({{ phonebook.id }}, '{{ phonebook.title|e('js') }}', {{ p }})">{{ p }}</a>
+                    </li>
+                    {% elseif (p == page - 3 or p == page + 3) %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if page < total_pages %}
+                <li class="page-item">
+                    <a class="page-link" href="javascript:void(0)" onclick="loadEmailPhonebookPage({{ phonebook.id }}, '{{ phonebook.title|e('js') }}', {{ page + 1 }})">Sonraki</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+<div class="modal-footer">
+    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">
+        <i data-feather="x" class="icon-xs me-1"></i>
+        Kapat
+    </button>
+    <button type="button" class="btn btn-success btn-sm" onclick="showDownloadModal({{ phonebook.id }}, '{{ phonebook.title|e('js') }}', {{ total }})">
+        <i data-feather="download" class="icon-xs me-1"></i>
+        İndir
+    </button>
+</div>
+

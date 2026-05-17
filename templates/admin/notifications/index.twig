@@ -1,0 +1,290 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Bildirim Yönetimi - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item active">Bildirimler</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="bell" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Bildirim Yönetimi{% endblock %}
+
+{% block content %}
+
+<div class="row">
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title mb-0">
+                    <i data-feather="bell" class="align-self-center icon-sm me-2"></i>
+                    Kullanıcılara Bildirim Gönder
+                </h4>
+            </div>
+            <div class="card-body">
+                {% if success %}
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+                    {{ success }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+
+                <form method="POST" action="/admin/notifications/send">
+                    <div class="mb-3">
+                        <label for="title" class="form-label">Bildirim Başlığı</label>
+                        <input type="text" class="form-control" id="title" name="title" required placeholder="Örn: Sistem Bakımı">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="message" class="form-label">Bildirim Mesajı</label>
+                        <textarea class="form-control" id="message" name="message" rows="4" required placeholder="Bildirim içeriğini buraya yazın..."></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="type" class="form-label">Bildirim Tipi</label>
+                        <select class="form-select" id="type" name="type">
+                            <option value="info">Bilgi (Mavi)</option>
+                            <option value="success">Başarı (Yeşil)</option>
+                            <option value="warning">Uyarı (Sarı)</option>
+                            <option value="danger">Hata (Kırmızı)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Hedef Kullanıcılar</label>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="target" id="target_all" value="all" checked onchange="toggleUserSelection()">
+                            <label class="form-check-label" for="target_all">
+                                <strong>Tüm Kullanıcılar</strong> ({{ users|length }} kullanıcı)
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="target" id="target_selected" value="selected" onchange="toggleUserSelection()">
+                            <label class="form-check-label" for="target_selected">
+                                <strong>Seçili Kullanıcılar</strong>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="user_selection" style="display: none;">
+                        <label class="form-label">Kullanıcı Seçin</label>
+                        <div class="border rounded p-3" style="max-height: 300px; overflow-y: auto;">
+                            {% for user in users %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="user_ids[]" value="{{ user.id }}" id="user_{{ user.id }}">
+                                <label class="form-check-label" for="user_{{ user.id }}">
+                                    {{ user.name }} ({{ user.username }})
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i data-feather="send" class="align-self-center icon-xs me-2"></i>
+                            Bildirim Gönder
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="card-title mb-0">
+                    <i data-feather="list" class="align-self-center icon-sm me-2"></i>
+                    Gönderilen Bildirimler
+                </h4>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                {% if sentNotifications|length == 0 %}
+                <div class="text-center py-5">
+                    <i data-feather="inbox" class="icon-xl text-muted mb-3"></i>
+                    <p class="text-muted">Henüz bildirim gönderilmemiş.</p>
+                </div>
+                {% else %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Kullanıcı</th>
+                                <th>Başlık</th>
+                                <th>Tip</th>
+                                <th>Tarih</th>
+                                <th class="text-end">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for notification in sentNotifications %}
+                            <tr>
+                                <td>
+                                    {% if notification.user %}
+                                        <strong>{{ notification.user.name }}</strong><br>
+                                        <small class="text-muted">{{ notification.user.username }}</small>
+                                    {% else %}
+                                        <span class="badge bg-primary-subtle text-primary">Tüm Kullanıcılar</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <strong>{{ notification.title }}</strong><br>
+                                    <small class="text-muted">{{ notification.message|length > 50 ? notification.message|slice(0, 50) ~ '...' : notification.message }}</small>
+                                </td>
+                                <td>
+                                    {% if notification.type == 'info' %}
+                                        <span class="text-info"><i data-feather="info" class="icon-xs"></i> Bilgi</span>
+                                    {% elseif notification.type == 'success' %}
+                                        <span class="text-success"><i data-feather="check-circle" class="icon-xs"></i> Başarı</span>
+                                    {% elseif notification.type == 'warning' %}
+                                        <span class="text-warning"><i data-feather="alert-triangle" class="icon-xs"></i> Uyarı</span>
+                                    {% elseif notification.type == 'danger' %}
+                                        <span class="text-danger"><i data-feather="alert-circle" class="icon-xs"></i> Hata</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small>{{ notification.createdAt|date('d.m.Y H:i') }}</small>
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-soft-primary" onclick="viewNotification({{ notification.id }})">
+                                        <i data-feather="eye" class="icon-xs"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-soft-danger" onclick="deleteNotification({{ notification.id }})">
+                                        <i data-feather="trash-2" class="icon-xs"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bildirim Detay Modal -->
+<div class="modal fade" id="viewNotificationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bildirim Detayları</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="notificationDetailContent">
+                <!-- AJAX ile doldurulacak -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Silme Onay Modal -->
+<div class="modal fade" id="deleteNotificationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bildirimi Sil</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Bu bildirimi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Sil</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/css/iziToast.min.css">
+<script src="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/js/iziToast.min.js"></script>
+
+<script>
+function toggleUserSelection() {
+    const targetSelected = document.getElementById('target_selected').checked;
+    const userSelection = document.getElementById('user_selection');
+    
+    if (targetSelected) {
+        userSelection.style.display = 'block';
+    } else {
+        userSelection.style.display = 'none';
+    }
+}
+
+let currentNotificationId = null;
+
+function viewNotification(id) {
+    fetch(`/admin/notifications/${id}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('notificationDetailContent').innerHTML = data.html;
+            const modal = new bootstrap.Modal(document.getElementById('viewNotificationModal'));
+            modal.show();
+            
+            // Feather icons'ı yeniden başlat
+            setTimeout(() => feather.replace(), 100);
+        })
+        .catch(error => {
+            iziToast.error({
+                title: 'Hata',
+                message: 'Bildirim detayları yüklenemedi',
+                position: 'topRight'
+            });
+        });
+}
+
+function deleteNotification(id) {
+    currentNotificationId = id;
+    const modal = new bootstrap.Modal(document.getElementById('deleteNotificationModal'));
+    modal.show();
+}
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+    if (!currentNotificationId) return;
+    
+    fetch(`/admin/notifications/${currentNotificationId}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            iziToast.success({
+                title: 'Başarılı',
+                message: 'Bildirim silindi',
+                position: 'topRight'
+            });
+            
+            // Modal'ı kapat
+            const modal = bootstrap.Modal.getInstance(document.getElementById('deleteNotificationModal'));
+            modal.hide();
+            
+            // Sayfayı yenile
+            setTimeout(() => location.reload(), 500);
+        } else {
+            iziToast.error({
+                title: 'Hata',
+                message: data.error || 'Bildirim silinemedi',
+                position: 'topRight'
+            });
+        }
+    })
+    .catch(error => {
+        iziToast.error({
+            title: 'Hata',
+            message: 'Bir hata oluştu',
+            position: 'topRight'
+        });
+    });
+});
+</script>
+
+{% endblock %}

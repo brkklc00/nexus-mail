@@ -1,0 +1,130 @@
+{% import '_macros/sidebar_components.twig' as nx_sb %}
+<div id="nxAppSidebar" class="left-sidenav nx-sidebar nx-sidebar-layout">
+    <header class="nx-sidebar-header flex-shrink-0">
+        <div class="brand nx-brand-wrap flex-shrink-0{% if use_nexus_theme is defined ? use_nexus_theme : true %} position-relative{% endif %}">
+            {% if use_nexus_theme is defined ? use_nexus_theme : true %}
+            <button type="button" class="nx-mobile-sidebar-close" id="nxMobileSidebarClose" aria-label="Menüyü kapat">
+                <i data-feather="x" class="nx-mobile-sidebar-close-ic" aria-hidden="true"></i>
+            </button>
+            {% endif %}
+            <a href="/" class="nx-brand-link text-decoration-none" title="{{ site_title|default('Nexus') }}">
+                <div class="nx-brand-inner">
+                    <div class="nx-brand-logo-box">
+                        <img src="{{ site_logo|default('/assets/images/default-avatar.png') }}" class="nx-brand-logo-img" alt="{{ site_title|default('Nexus') }}" onerror="this.src='/assets/images/default-avatar.png'">
+                    </div>
+                    <span class="visually-hidden">{{ site_title|default('Nexus') }}</span>
+                </div>
+            </a>
+        </div>
+    </header>
+
+    <div class="menu-content nx-sidebar-body flex-grow-1 min-h-0" data-simplebar>
+        <ul class="left-sidenav-menu nx-sidebar-metismenu nx-sidebar-v2">
+                {% set nx_can_email = _session.is_admin|default(false)
+                    or _session.user_permissions.email_order.read|default(false)
+                    or _session.user_permissions.email_phonebook.read|default(false)
+                    or _session.user_permissions.email_template.read|default(false)
+                    or _session.user_permissions.email_blacklist.read|default(false) %}
+
+                {{ nx_sb.section_label('Genel') }}
+                <li class="nx-sb-item nx-sb-item--link">
+                    <a href="/">
+                        <i data-feather="home" class="align-self-center menu-icon"></i>
+                        <span>Ana Sayfa</span>
+                    </a>
+                </li>
+
+                {% if nx_can_email %}
+                {{ nx_sb.section_label('İletişim') }}
+                <li class="nx-sb-group nx-sb-group--tier0" data-nx-sb="email">
+                    <button type="button" class="nx-sb-group__trigger" aria-expanded="false" aria-controls="nxSbPanelEmail">
+                        <i data-feather="mail" class="align-self-center menu-icon"></i>
+                        <span class="nx-sb-group__label">Email İşlemleri</span>
+                        <span class="nx-sb-chevron" aria-hidden="true"><i data-feather="chevron-right"></i></span>
+                    </button>
+                    <div id="nxSbPanelEmail" class="nx-sb-group__panel" role="region" inert>
+                        <ul class="nx-sb-group__list">
+                            {% if _session.is_admin|default(false) or _session.user_permissions.email_order.read|default(false) %}
+                            <li><a href="/email-orders">Email Gönder</a></li>
+                            {% endif %}
+                            {% if _session.is_admin|default(false) or _session.user_permissions.email_phonebook.read|default(false) %}
+                            <li><a href="/email-phonebooks">Email Rehberleri</a></li>
+                            {% endif %}
+                            {% if _session.is_admin|default(false) or _session.user_permissions.email_template.read|default(false) %}
+                            <li><a href="/email-templates">Email Şablonları</a></li>
+                            {% endif %}
+                            {% if _session.is_admin|default(false) or _session.user_permissions.email_blacklist.read|default(false) %}
+                            <li><a href="/email-blacklist">Email Kara Liste</a></li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </li>
+                {% endif %}
+
+                {% if _session.user_permissions.url_shortener.read|default(false) %}
+                {{ nx_sb.section_label('Araçlar') }}
+                <li class="nx-sb-item nx-sb-item--link">
+                    <a href="/url-shortener">
+                        <i data-feather="link" class="align-self-center menu-icon"></i>
+                        <span>Link Kısaltıcı</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% if _session.user_permissions.support_ticket.read|default(true) %}
+                {{ nx_sb.section_label('Destek') }}
+                <li class="nx-sb-item nx-sb-item--link">
+                    <a href="/tickets">
+                        <i data-feather="headphones" class="align-self-center menu-icon"></i>
+                        <span>Destek Talepleri</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                <!-- Impersonation Banner - Menu Style -->
+                {% if _session.original_account_manager_id|default(false) %}
+                <li class="impersonation-menu-item nx-sidebar-impersonation-li">
+                    <div class="nx-sidebar-impersonation">
+                        <i data-feather="user-check" class="align-self-center menu-icon nx-sidebar-impersonation__ic"></i>
+                        <div class="nx-sidebar-impersonation__body">
+                            <div class="nx-sidebar-impersonation__name">{{ _session.user.name|default('Personel') }}</div>
+                            <small class="nx-sidebar-impersonation__hint">adına giriş yaptınız</small>
+                        </div>
+                        <form method="POST" action="/users/stop-impersonate" class="nx-sidebar-impersonation__form">
+                            <button type="submit" class="btn btn-sm btn-outline-light border-light nx-sidebar-impersonation__btn">
+                                <i data-feather="user-x" class="icon-xs me-1"></i>
+                                <span>Geri</span>
+                            </button>
+                        </form>
+                    </div>
+                </li>
+                {% endif %}
+                {% if _session.original_admin_id|default(false) %}
+                <li class="impersonation-menu-item nx-sidebar-impersonation-li">
+                    <div class="nx-sidebar-impersonation">
+                        <i data-feather="user-check" class="align-self-center menu-icon nx-sidebar-impersonation__ic"></i>
+                        <div class="nx-sidebar-impersonation__body">
+                            <div class="nx-sidebar-impersonation__name">{{ _session.user.name|default('Kullanıcı') }}</div>
+                            <small class="nx-sidebar-impersonation__hint">adına giriş yaptınız</small>
+                        </div>
+                        <form method="POST" action="/users/stop-impersonate" class="nx-sidebar-impersonation__form">
+                            <button type="submit" class="btn btn-sm btn-outline-light border-light nx-sidebar-impersonation__btn">
+                                <i data-feather="user-x" class="icon-xs me-1"></i>
+                                <span>Geri</span>
+                            </button>
+                        </form>
+                    </div>
+                </li>
+                {% endif %}
+        </ul>
+    </div>
+
+    <footer class="nx-sidebar-footer flex-shrink-0">
+        <form method="POST" action="/logout" class="nx-sidebar-footer__form mb-0">
+            <button type="submit" class="nx-sidebar-logout-btn w-100 border-0">
+                <i data-feather="log-out" class="nx-sidebar-logout-ic"></i>
+                <span>Çıkış Yap</span>
+            </button>
+        </form>
+    </footer>
+</div>

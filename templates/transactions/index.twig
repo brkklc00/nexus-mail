@@ -1,0 +1,220 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}İşlem Geçmişi - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item active">İşlem Geçmişi</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="activity" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}İşlem Geçmişi{% endblock %}
+
+{% block content %}
+
+{% if _session.flash_success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+    {{ _session.flash_success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<!-- İstatistik Kartları -->
+<div class="row">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <div class="bg-success-subtle rounded p-3">
+                            <i data-feather="arrow-up-circle" class="align-self-center icon-md text-success"></i>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <p class="text-muted mb-0 fw-semibold">Toplam Gelen</p>
+                        <h3 class="m-0 text-dark">{{ stats.total_credit_in|number_format(0, ',', '.') }}</h3>
+                        <p class="mb-0 text-truncate text-muted">Kredi</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <div class="bg-danger-subtle rounded p-3">
+                            <i data-feather="arrow-down-circle" class="align-self-center icon-md text-danger"></i>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <p class="text-muted mb-0 fw-semibold">Toplam Giden</p>
+                        <h3 class="m-0 text-dark">{{ stats.total_credit_out|number_format(0, ',', '.') }}</h3>
+                        <p class="mb-0 text-truncate text-muted">Kredi</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <div class="bg-warning-subtle rounded p-3">
+                            <i data-feather="list" class="align-self-center icon-md text-warning"></i>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <p class="text-muted mb-0 fw-semibold">Toplam İşlem</p>
+                        <h3 class="m-0 text-dark">{{ stats.total_transactions|number_format(0, ',', '.') }}</h3>
+                        <p class="mb-0 text-truncate text-muted">İşlem</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <div class="bg-info-subtle rounded p-3">
+                            <i data-feather="trending-up" class="align-self-center icon-md text-info"></i>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <p class="text-muted mb-0 fw-semibold">Toplam Tutar</p>
+                        <h3 class="m-0 text-dark">{{ stats.total_amount|number_format(2, ',', '.') }}</h3>
+                        <p class="mb-0 text-truncate text-muted">TRY</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- İşlemler Tablosu -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h4 class="card-title mb-0">
+                            <i data-feather="credit-card" class="align-self-center icon-xs me-2"></i>
+                            İşlem Geçmişi
+                        </h4>
+                        <small class="text-muted">Toplam {{ total }} işlem</small>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Tarih & Saat</th>
+                                <th>İşlem Tipi</th>
+                                <th class="text-end">Kredi</th>
+                                <th class="text-end">Birim Fiyat</th>
+                                <th class="text-end">Toplam Tutar</th>
+                                <th>Açıklama</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in transactions %}
+                            <tr>
+                                <td><strong>#{{ transaction.id }}</strong></td>
+                                <td>
+                                    <div>{{ transaction.createdAt|date('d.m.Y') }}</div>
+                                    <small class="text-muted">{{ transaction.createdAt|date('H:i:s') }}</small>
+                                </td>
+                                <td>{{ transaction.type.label }}</td>
+                                <td class="text-end">
+                                    <strong class="{{ transaction.credits > 0 ? 'text-success' : 'text-danger' }}">
+                                        {{ transaction.credits > 0 ? '+' : '' }}{{ transaction.credits|number_format(0, ',', '.') }}
+                                    </strong>
+                                </td>
+                                <td class="text-end">
+                                    <small class="text-muted">{{ transaction.unitPrice }} {{ transaction.currency }}</small>
+                                </td>
+                                <td class="text-end">
+                                    <strong>{{ transaction.totalPrice|number_format(2, ',', '.') }} {{ transaction.currency }}</strong>
+                                </td>
+                                <td>
+                                    {% if transaction.meta %}
+                                        {% if transaction.meta.order_id %}
+                                            {% set isEmailOrder = transaction.meta.service == 'email' or transaction.meta.type == 'email' or transaction.type.label matches '/Email|Mail/i' %}
+                                            {% set orderUrl = isEmailOrder ? '/email-orders?modal=' ~ transaction.meta.order_id : '/orders?modal=' ~ transaction.meta.order_id %}
+                                            <a href="{{ orderUrl }}" class="text-primary">
+                                                <i data-feather="external-link" class="icon-xs me-1"></i>
+                                                Sipariş #{{ transaction.meta.order_id }}
+                                            </a>
+                                        {% elseif transaction.meta.email_order_id %}
+                                            <a href="/email-orders?modal={{ transaction.meta.email_order_id }}" class="text-primary">
+                                                <i data-feather="external-link" class="icon-xs me-1"></i>
+                                                Mail Sipariş #{{ transaction.meta.email_order_id }}
+                                            </a>
+                                        {% elseif transaction.meta.reason %}
+                                            <small class="text-muted">{{ transaction.meta.reason }}</small>
+                                        {% endif %}
+                                    {% else %}
+                                        <small class="text-muted">-</small>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    <i data-feather="inbox" class="icon-lg mb-2"></i>
+                                    <p class="mb-0">Henüz işlem kaydı bulunmamaktadır.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                {# Pagination #}
+                {% if totalPages > 1 %}
+                <nav class="mt-3">
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
+                            <a class="page-link" href="/transactions?page={{ currentPage - 1 }}">Önceki</a>
+                        </li>
+                        
+                        {% for page in 1..totalPages %}
+                            {% if page == currentPage %}
+                                <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                            {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                                <li class="page-item"><a class="page-link" href="/transactions?page={{ page }}">{{ page }}</a></li>
+                            {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
+                            <a class="page-link" href="/transactions?page={{ currentPage + 1 }}">Sonraki</a>
+                        </li>
+                    </ul>
+                </nav>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+feather.replace();
+</script>
+{% endblock %}
+

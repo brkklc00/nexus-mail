@@ -1,0 +1,519 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}URL Kısaltma Ayarları - Admin - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item active">URL Kısaltma Ayarları</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="link" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}URL Kısaltma Ayarları{% endblock %}
+
+{% block content %}
+
+<!-- Flash Messages -->
+{% if _session.success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i data-feather="check-circle" class="icon-xs me-2"></i>
+    {{ _session.success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if _session.error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i data-feather="alert-circle" class="icon-xs me-2"></i>
+    {{ _session.error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- İstatistikler -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h3 class="mb-1">{{ stats.total_users }}</h3>
+                        <p class="text-muted mb-0 small">Aktif Kullanıcı</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="users" class="text-primary" style="width: 32px; height: 32px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h3 class="mb-1">{{ stats.unlimited_users }}</h3>
+                        <p class="text-muted mb-0 small">Sınırsız Kullanıcı</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="infinity" class="text-success" style="width: 32px; height: 32px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h3 class="mb-1">{{ stats.limited_users }}</h3>
+                        <p class="text-muted mb-0 small">Limitli Kullanıcı</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="bar-chart-2" class="text-warning" style="width: 32px; height: 32px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h3 class="mb-1">{{ stats.total_urls }}</h3>
+                        <p class="text-muted mb-0 small">Toplam Kısa Link</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="link" class="text-info" style="width: 32px; height: 32px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title mb-0">
+                    <i data-feather="link" class="align-self-center icon-xs me-2"></i>
+                    Kullanıcı URL Kısaltma Ayarları
+                </h4>
+            </div>
+            <div class="card-body">
+                <!-- Filtreler -->
+                <form method="GET" class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <input type="text" class="form-control" name="search" placeholder="Kullanıcı ara..." value="{{ search }}">
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-select" name="status_filter">
+                            <option value="all" {% if statusFilter == 'all' %}selected{% endif %}>Tüm Kullanıcılar</option>
+                            <option value="enabled" {% if statusFilter == 'enabled' %}selected{% endif %}>Etkin</option>
+                            <option value="disabled" {% if statusFilter == 'disabled' %}selected{% endif %}>Kapalı</option>
+                            <option value="unlimited" {% if statusFilter == 'unlimited' %}selected{% endif %}>Sınırsız</option>
+                            <option value="limited" {% if statusFilter == 'limited' %}selected{% endif %}>Limitli</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i data-feather="search" class="icon-xs me-1"></i>
+                            Ara
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Toplu İşlem Butonları -->
+                <div class="mb-3" id="bulkActionsBar" style="display: none;">
+                    <div class="alert alert-info py-2">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap">
+                            <span class="mb-2 mb-md-0"><strong id="selectedCount">0</strong> kullanıcı seçildi</span>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-success me-1 mb-1" onclick="bulkAction('enable')">
+                                    <i data-feather="check" class="icon-xs me-1"></i> Aktif Et
+                                </button>
+                                <button type="button" class="btn btn-sm btn-secondary me-1 mb-1" onclick="bulkAction('disable')">
+                                    <i data-feather="x" class="icon-xs me-1"></i> Pasif Et
+                                </button>
+                                <button type="button" class="btn btn-sm btn-primary me-1 mb-1" onclick="showBulkUpdateModal()">
+                                    <i data-feather="edit" class="icon-xs me-1"></i> Toplu Güncelle
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Kullanıcı Tablosu -->
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40px;">
+                                    <input type="checkbox" class="form-check-input" id="selectAll">
+                                </th>
+                                <th>Kullanıcı</th>
+                                <th class="text-center">Durum</th>
+                                <th class="text-center">Mevcut URL</th>
+                                <th class="text-center">Limit</th>
+                                <th class="text-center">İzinli Domainler</th>
+                                <th class="text-end">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr data-user-id="{{ user.id }}"
+                                data-user-enabled="{{ user.urlShortenerEnabled ? '1' : '0' }}"
+                                data-user-max-urls="{{ user.urlShortenerMaxUrls }}"
+                                data-user-domains="{{ user.urlShortenerAllowedDomains|json_encode|e('html_attr') }}">
+                                <td>
+                                    <input type="checkbox" class="form-check-input user-checkbox" value="{{ user.id }}">
+                                </td>
+                                <td>
+                                    <div>
+                                        <strong>{{ user.name }}</strong>
+                                        <br>
+                                        <small class="text-muted">{{ user.email }}</small>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    {% if user.urlShortenerEnabled %}
+                                        <span class="badge bg-success">Aktif</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Kapalı</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <strong>{{ userUrlCounts[user.id]|default(0) }}</strong>
+                                </td>
+                                <td class="text-center">
+                                    {% if user.urlShortenerMaxUrls is null %}
+                                        <span class="badge bg-success">
+                                            <i data-feather="infinity" class="icon-xs"></i> Sınırsız
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-warning">{{ user.urlShortenerMaxUrls }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if user.urlShortenerAllowedDomains is empty or user.urlShortenerAllowedDomains is null %}
+                                        <span class="badge bg-info">Tümü</span>
+                                    {% else %}
+                                        <span class="badge bg-primary">{{ user.urlShortenerAllowedDomains|length }} Domain</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-soft-primary" onclick="editUser({{ user.id }})">
+                                        <i data-feather="edit" class="icon-xs"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    <i data-feather="inbox" style="width: 48px; height: 48px;"></i>
+                                    <p class="mb-0 mt-2">Kullanıcı bulunamadı</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                {% if totalPages > 1 %}
+                <nav class="mt-3">
+                    <ul class="pagination justify-content-center mb-0">
+                        <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
+                            <a class="page-link" href="?page={{ currentPage - 1 }}&search={{ search }}&status_filter={{ statusFilter }}">Önceki</a>
+                        </li>
+                        {% for page in 1..totalPages %}
+                            {% if page == currentPage %}
+                                <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                            {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                                <li class="page-item"><a class="page-link" href="?page={{ page }}&search={{ search }}&status_filter={{ statusFilter }}">{{ page }}</a></li>
+                            {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+                        <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
+                            <a class="page-link" href="?page={{ currentPage + 1 }}&search={{ search }}&status_filter={{ statusFilter }}">Sonraki</a>
+                        </li>
+                    </ul>
+                </nav>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);">
+                <h5 class="modal-title text-white">
+                    <i data-feather="edit" class="icon-sm me-2"></i>
+                    URL Kısaltma Ayarları Düzenle
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editForm">
+                <div class="modal-body">
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="editEnabled" name="enabled">
+                        <label class="form-check-label" for="editEnabled">
+                            <strong>URL Kısaltma Etkin</strong>
+                        </label>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="editMaxUrls" class="form-label">
+                            <i data-feather="hash" class="icon-xs me-1"></i>
+                            Maksimum URL Sayısı
+                        </label>
+                        <select class="form-select" id="editMaxUrls" name="max_urls">
+                            <option value="unlimited">Sınırsız</option>
+                            <option value="10">10 URL</option>
+                            <option value="25">25 URL</option>
+                            <option value="50">50 URL</option>
+                            <option value="100">100 URL</option>
+                            <option value="250">250 URL</option>
+                            <option value="500">500 URL</option>
+                            <option value="1000">1000 URL</option>
+                        </select>
+                        <small class="text-muted">Sınırsız = NULL değeri</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i data-feather="globe" class="icon-xs me-1"></i>
+                            İzin Verilen Domainler
+                        </label>
+                        {% for domain in availableDomains %}
+                        <div class="form-check">
+                            <input class="form-check-input allowed-domain" type="checkbox" value="{{ domain }}" id="editDomain{{ loop.index }}" name="allowed_domains[]">
+                            <label class="form-check-label" for="editDomain{{ loop.index }}">
+                                {{ domain }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                        <small class="text-muted">Hiçbiri seçilmezse = Tüm domainler izinli</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i data-feather="x" class="icon-xs me-1"></i>
+                        İptal
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="save" class="icon-xs me-1"></i>
+                        Kaydet
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Update Modal -->
+<div class="modal fade" id="bulkUpdateModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i data-feather="edit" class="icon-sm me-2"></i>
+                    Toplu Güncelleme
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/admin/url-shortener-settings/bulk-update">
+                <div class="modal-body">
+                    <input type="hidden" name="user_ids[]" id="bulkUserIds">
+                    
+                    <div class="mb-3">
+                        <label for="bulkMaxUrls" class="form-label">Maksimum URL Sayısı</label>
+                        <select class="form-select" id="bulkMaxUrls" name="max_urls">
+                            <option value="">Değiştirme</option>
+                            <option value="unlimited">Sınırsız</option>
+                            <option value="10">10 URL</option>
+                            <option value="25">25 URL</option>
+                            <option value="50">50 URL</option>
+                            <option value="100">100 URL</option>
+                            <option value="250">250 URL</option>
+                            <option value="500">500 URL</option>
+                            <option value="1000">1000 URL</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">İzin Verilen Domainler</label>
+                        {% for domain in availableDomains %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="{{ domain }}" id="bulkDomain{{ loop.index }}" name="allowed_domains[]">
+                            <label class="form-check-label" for="bulkDomain{{ loop.index }}">
+                                {{ domain }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Güncelle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Checkbox seçimleri
+document.getElementById('selectAll')?.addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.user-checkbox');
+    checkboxes.forEach(cb => cb.checked = this.checked);
+    updateBulkActionsBar();
+});
+
+document.querySelectorAll('.user-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateBulkActionsBar);
+});
+
+function updateBulkActionsBar() {
+    const checked = document.querySelectorAll('.user-checkbox:checked');
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const countEl = document.getElementById('selectedCount');
+    
+    if (checked.length > 0) {
+        bulkBar.style.display = 'block';
+        countEl.textContent = checked.length;
+    } else {
+        bulkBar.style.display = 'none';
+    }
+}
+
+// Kullanıcı düzenle
+function editUser(userId) {
+    // TR elementinden kullanıcı bilgilerini al
+    const tr = document.querySelector(`tr[data-user-id="${userId}"]`);
+    if (!tr) {
+        console.error('Kullanıcı bulunamadı:', userId);
+        return;
+    }
+    
+    const enabled = tr.dataset.userEnabled === '1';
+    const maxUrls = tr.dataset.userMaxUrls === 'null' || tr.dataset.userMaxUrls === '' ? null : tr.dataset.userMaxUrls;
+    const domainsJson = tr.dataset.userDomains;
+    let allowedDomains = [];
+    
+    try {
+        if (domainsJson && domainsJson !== 'null' && domainsJson !== '[]') {
+            allowedDomains = JSON.parse(domainsJson);
+        }
+    } catch (e) {
+        console.error('Domain parse hatası:', e);
+        allowedDomains = [];
+    }
+    
+    // Form alanlarını doldur
+    document.getElementById('editEnabled').checked = enabled;
+    
+    // Max URLs
+    const maxUrlsSelect = document.getElementById('editMaxUrls');
+    if (maxUrls === null || maxUrls === 'null') {
+        maxUrlsSelect.value = 'unlimited';
+    } else {
+        // Eğer seçenekte yoksa en yakınını seç
+        const availableOptions = Array.from(maxUrlsSelect.options).map(o => o.value);
+        if (availableOptions.includes(maxUrls)) {
+            maxUrlsSelect.value = maxUrls;
+        } else {
+            maxUrlsSelect.value = 'unlimited';
+        }
+    }
+    
+    // Allowed domains
+    document.querySelectorAll('.allowed-domain').forEach(cb => {
+        cb.checked = Array.isArray(allowedDomains) && allowedDomains.includes(cb.value);
+    });
+    
+    document.getElementById('editForm').action = `/admin/url-shortener-settings/${userId}/update`;
+    
+    const modal = new bootstrap.Modal(document.getElementById('editModal'));
+    modal.show();
+    
+    setTimeout(() => {
+        if (typeof feather !== 'undefined') {
+            feather.replace();
+        }
+    }, 100);
+}
+
+// Toplu işlemler
+function bulkAction(action) {
+    const checked = document.querySelectorAll('.user-checkbox:checked');
+    if (checked.length === 0) return;
+    
+    const userIds = Array.from(checked).map(cb => cb.value);
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/admin/url-shortener-settings/bulk-toggle';
+    
+    userIds.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'user_ids[]';
+        input.value = id;
+        form.appendChild(input);
+    });
+    
+    const actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = 'action';
+    actionInput.value = action;
+    form.appendChild(actionInput);
+    
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function showBulkUpdateModal() {
+    const checked = document.querySelectorAll('.user-checkbox:checked');
+    if (checked.length === 0) return;
+    
+    const userIds = Array.from(checked).map(cb => cb.value);
+    document.getElementById('bulkUserIds').value = JSON.stringify(userIds);
+    
+    // Her user_id için hidden input ekle
+    const form = document.querySelector('#bulkUpdateModal form');
+    // Önceki user_ids inputlarını temizle
+    form.querySelectorAll('input[name="user_ids[]"]').forEach(input => {
+        if (input.id !== 'bulkUserIds') input.remove();
+    });
+    
+    // Yeni user_ids inputları ekle
+    userIds.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'user_ids[]';
+        input.value = id;
+        form.appendChild(input);
+    });
+    
+    const modal = new bootstrap.Modal(document.getElementById('bulkUpdateModal'));
+    modal.show();
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Feather icons
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof feather !== 'undefined') {
+        feather.replace();
+    }
+});
+</script>
+
+{% endblock %}

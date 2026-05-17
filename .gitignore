@@ -1,0 +1,32 @@
+/vendor/
+/storage/logs/*.log
+/storage/uploads/*
+/storage/backups/*
+!/storage/logs/.gitkeep
+!/storage/uploads/.gitkeep
+!/storage/backups/.gitkeep
+.env
+.env.backup.*
+.phpunit.result.cache
+.php-cs-fixer.cache
+phpstan.neon
+composer.lock
+node_modules/
+*.cache
+.DS_Store
+Thumbs.db
+
+# Doctrine cache
+/var/cache/
+
+# Worker logs
+*/logs/*.log
+!*/logs/.gitkeep
+
+# Backup files
+*.backup
+*.backup.*
+
+# Deployment
+/deploy/config.sh
+

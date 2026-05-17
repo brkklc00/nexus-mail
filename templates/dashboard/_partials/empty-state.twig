@@ -1,0 +1,11 @@
+{# title, text, icon, optional action_href + action_label #}
+<div class="nx-dash-empty text-center py-4 px-3">
+    <div class="nx-dash-empty-icon" aria-hidden="true">
+        <i data-feather="{{ icon|default('inbox') }}" class="nx-dash-empty-feather"></i>
+    </div>
+    <h6 class="nx-dash-empty-title">{{ title }}</h6>
+    <p class="nx-dash-empty-text text-muted small mb-0">{{ text }}</p>
+    {% if action_href is defined and action_href and action_label is defined and action_label %}
+    <a href="{{ action_href }}" class="btn btn-sm nx-dash-empty-btn mt-3">{{ action_label }}</a>
+    {% endif %}
+</div>

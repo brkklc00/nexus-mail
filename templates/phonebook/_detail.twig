@@ -1,0 +1,138 @@
+<div class="modal-header">
+    <div class="d-flex align-items-center w-100">
+        <div class="flex-grow-1">
+            <h5 class="modal-title mb-0">
+                <i data-feather="phone" class="icon-xs me-2"></i>
+                {{ phoneBook.title }}
+            </h5>
+            <small class="text-muted">Oluşturulma: {{ phoneBook.createdAt|date('d.m.Y H:i') }}</small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+    </div>
+</div>
+<div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+    <!-- İstatistikler -->
+    <div class="row g-2 mb-3">
+        <div class="col-md-4">
+            <div class="card border">
+                <div class="card-body py-2 px-3">
+                    <small class="text-muted d-block">Toplam</small>
+                    <h5 class="mb-0 text-primary">{{ total|number_format }}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border">
+                <div class="card-body py-2 px-3">
+                    <small class="text-muted d-block">Bu Sayfa</small>
+                    <h5 class="mb-0 text-success">{{ contacts|length }}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border">
+                <div class="card-body py-2 px-3">
+                    <small class="text-muted d-block">Sayfa</small>
+                    <h5 class="mb-0 text-info">{{ currentPage }}/{{ totalPages }}</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Açıklama -->
+    {% if phoneBook.description %}
+    <div class="alert alert-info py-2 mb-3">
+        <small><i data-feather="info" class="icon-xs me-1"></i> {{ phoneBook.description }}</small>
+    </div>
+    {% endif %}
+
+    <!-- Tablo -->
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th width="50">#</th>
+                    <th>Numara</th>
+                    <th>Tarih</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for contact in contacts %}
+                <tr>
+                    <td><small>{{ loop.index }}</small></td>
+                    <td>
+                        <span class="font-monospace small">{{ contact.phoneE164 }}</span>
+                    </td>
+                    <td>
+                        <small class="text-muted">{{ contact.createdAt|date('d.m.Y H:i') }}</small>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="text-center text-muted py-3">
+                        <i data-feather="inbox" class="icon-sm mb-2"></i>
+                        <p class="mb-0 small">Numara bulunamadı</p>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if totalPages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <small class="text-muted">
+            {{ ((currentPage - 1) * perPage + 1) }}-{{ min(currentPage * perPage, total) }} / {{ total|number_format }}
+        </small>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if currentPage > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="javascript:void(0)" onclick="loadPhoneBookPage({{ phoneBook.id }}, '{{ phoneBook.title|e('js') }}', {{ currentPage - 1 }})">Önceki</a>
+                </li>
+                {% endif %}
+                
+                {% for p in 1..totalPages %}
+                    {% if p == currentPage %}
+                    <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                    {% elseif (p >= currentPage - 2 and p <= currentPage + 2) or p == 1 or p == totalPages %}
+                    <li class="page-item">
+                        <a class="page-link" href="javascript:void(0)" onclick="loadPhoneBookPage({{ phoneBook.id }}, '{{ phoneBook.title|e('js') }}', {{ p }})">{{ p }}</a>
+                    </li>
+                    {% elseif (p == currentPage - 3 or p == currentPage + 3) %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if currentPage < totalPages %}
+                <li class="page-item">
+                    <a class="page-link" href="javascript:void(0)" onclick="loadPhoneBookPage({{ phoneBook.id }}, '{{ phoneBook.title|e('js') }}', {{ currentPage + 1 }})">Sonraki</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<div class="modal-footer">
+    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">
+        <i data-feather="x" class="icon-xs me-1"></i>
+        Kapat
+    </button>
+    {% if total > 0 %}
+    <button type="button" class="btn btn-danger btn-sm" onclick="clearAllInModal({{ phoneBook.id }}, {{ total }})">
+        <i data-feather="trash-2" class="icon-xs me-1"></i>
+        Tümünü Sil
+    </button>
+    {% endif %}
+</div>
+
+<script>
+// Feather ikonları yenile
+if (typeof feather !== 'undefined') {
+    feather.replace();
+}
+</script>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sipariş Detayı - {{ site_title|default('Nexus Panel') }}</title>
+    <link href="/assets/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/css/icons.min.css" rel="stylesheet">
+    <link href="/assets/css/app.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container-fluid h-100">
+        <div class="row h-100 justify-content-center align-items-center">
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center py-5">
+                        <div class="mb-4">
+                            <div class="bg-primary-subtle rounded-circle d-inline-flex align-items-center justify-content-center" style="width: 80px; height: 80px;">
+                                <i data-feather="package" class="text-primary" style="width: 32px; height: 32px;"></i>
+                            </div>
+                        </div>
+                        <h4 class="mb-3">Sipariş Detayı Açılıyor</h4>
+                        <p class="text-muted mb-4">Modal penceresi hazırlanıyor...</p>
+                        
+                        <div class="progress mb-3" style="height: 4px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                        </div>
+                        
+                        <small class="text-muted">Lütfen bekleyin...</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/assets/js/feather.min.js"></script>
+    <script>
+        // Feather icon'ları aktif et
+        feather.replace();
+        
+        // Hemen yönlendir (loading gösterimi için kısa bekle)
+        setTimeout(function() {
+            window.location.href = '/orders?modal=' + {{ orderId }};
+        }, 800);
+    </script>
+</body>
+</html>

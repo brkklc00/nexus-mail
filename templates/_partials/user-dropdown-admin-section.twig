@@ -1,0 +1,40 @@
+{% set nx_can_manage = _session.is_admin|default(false)
+    or _session.user_permissions.notification.read|default(false)
+    or _session.user_permissions.system_monitor.read|default(false)
+    or _session.user_permissions.settings.read|default(false)
+    or _session.user_permissions.email_smtp.read|default(false)
+    or _session.user_permissions.admin_email_orders.read|default(false) %}
+{% if nx_can_manage %}
+<div class="dropdown-divider nx-dd-divider"></div>
+<h6 class="dropdown-header nx-dd-section text-uppercase small fw-bold mb-0">Yönetim</h6>
+
+{% if _session.user_permissions.notification.read|default(false) %}
+<a class="dropdown-item nx-dd-item" href="/admin/notifications">
+    <i data-feather="bell" class="nx-dd-icon"></i>
+    <span>Bildirim Gönder</span>
+</a>
+{% endif %}
+
+{% if _session.is_admin|default(false) or _session.user_permissions.system_monitor.read|default(false) %}
+<a class="dropdown-item nx-dd-item" href="/admin/system-monitor">
+    <i data-feather="server" class="nx-dd-icon"></i>
+    <span>Sunucu Yönetimi</span>
+</a>
+{% endif %}
+
+{% if _session.is_admin|default(false) or _session.user_permissions.settings.read|default(false) %}
+<a class="dropdown-item nx-dd-item" href="/admin/domain-settings">
+    <i data-feather="settings" class="nx-dd-icon"></i>
+    <span>Sistem Ayarları</span>
+</a>
+{% endif %}
+
+{% if _session.is_admin|default(false)
+    or _session.user_permissions.admin_email_orders.read|default(false)
+    or _session.user_permissions.email_smtp.read|default(false) %}
+<a class="dropdown-item nx-dd-item" href="/admin/email-orders">
+    <i data-feather="mail" class="nx-dd-icon"></i>
+    <span>Email Yönetimi</span>
+</a>
+{% endif %}
+{% endif %}

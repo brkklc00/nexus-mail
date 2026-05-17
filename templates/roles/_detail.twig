@@ -1,0 +1,112 @@
+{# Rol Detay İçeriği - Modal için #}
+<div class="row">
+    <div class="col-12">
+        <div class="mb-3">
+            <h5>{{ role.name }}</h5>
+            {% if role.isReadonly %}
+                <span class="badge bg-danger-subtle text-danger">Sistem Rolü</span>
+            {% endif %}
+        </div>
+
+        <div class="mb-3">
+            <h6 class="mb-2">Yetkiler</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 40%">Yetki</th>
+                            <th class="text-center">Okuma</th>
+                            <th class="text-center">Oluşturma</th>
+                            <th class="text-center">Güncelleme</th>
+                            <th class="text-center">Silme</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if role.permissions|length > 0 %}
+                            {% for rp in role.permissions %}
+                            <tr>
+                                <td><strong>{{ rp.permission.name }}</strong></td>
+                                <td class="text-center">
+                                    {% if rp.canRead %}
+                                        <i data-feather="check" class="icon-xs text-success"></i>
+                                    {% else %}
+                                        <i data-feather="x" class="icon-xs text-danger"></i>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if rp.canCreate %}
+                                        <i data-feather="check" class="icon-xs text-success"></i>
+                                    {% else %}
+                                        <i data-feather="x" class="icon-xs text-danger"></i>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if rp.canUpdate %}
+                                        <i data-feather="check" class="icon-xs text-success"></i>
+                                    {% else %}
+                                        <i data-feather="x" class="icon-xs text-danger"></i>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if rp.canDelete %}
+                                        <i data-feather="check" class="icon-xs text-success"></i>
+                                    {% else %}
+                                        <i data-feather="x" class="icon-xs text-danger"></i>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">Bu rolün henüz yetkisi bulunmuyor.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <h6 class="mb-2">Kullanıcılar</h6>
+            {% if role.users|length > 0 %}
+                <p class="mb-0"><strong>{{ role.users|length }}</strong> kullanıcı bu role sahip.</p>
+            {% else %}
+                <p class="text-muted mb-0">Bu rolü kullanan kullanıcı bulunmuyor.</p>
+            {% endif %}
+        </div>
+
+        {% if not role.isReadonly %}
+        <div class="border-top pt-3">
+            <a href="/roles/{{ role.id }}/edit" class="btn btn-primary">
+                <i data-feather="edit" class="icon-xs me-1"></i>
+                Rolü Düzenle
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// İkonları güvenli şekilde yükle
+function safeLoadIcons() {
+    if (typeof feather !== 'undefined') {
+        try {
+            const icons = document.querySelectorAll('[data-feather]');
+            icons.forEach(iconEl => {
+                const name = iconEl.getAttribute('data-feather');
+                if (name && feather.icons[name]) {
+                    try {
+                        const svg = feather.icons[name].toSvg({class: iconEl.className});
+                        const temp = document.createElement('div');
+                        temp.innerHTML = svg;
+                        iconEl.parentNode.replaceChild(temp.firstChild, iconEl);
+                    } catch(e) {}
+                }
+            });
+        } catch(e) {}
+    }
+}
+safeLoadIcons();
+setTimeout(safeLoadIcons, 50);
+setTimeout(safeLoadIcons, 150);
+</script>

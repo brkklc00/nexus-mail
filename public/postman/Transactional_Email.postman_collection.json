@@ -1,0 +1,91 @@
+{
+    "info": {
+        "name": "Nexusaaa Panel - Transactional Email API",
+        "description": "İşlemsel Email gönderme ve geçmiş API koleksiyonu",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Email Gönder",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "X-API-Key",
+                        "value": "{{api_key}}",
+                        "type": "text"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"to_email\": \"test@example.com\",\n    \"to_name\": \"Test User\",\n    \"subject\": \"Test Email\",\n    \"body\": \"<h1>Merhaba!<\\/h1><p>Bu bir test emailidir.<\\/p>\",\n    \"from_email\": \"sender@example.com\",\n    \"from_name\": \"G\\u00f6nderici\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost/api/transactional-email/send",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "path": [
+                        "api",
+                        "transactional-email",
+                        "send"
+                    ]
+                },
+                "description": "İşlemsel email gönderir. HTML içerik destekler."
+            }
+        },
+        {
+            "name": "Email Geçmişi",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "X-API-Key",
+                        "value": "{{api_key}}",
+                        "type": "text"
+                    }
+                ],
+                "url": {
+                    "raw": "http://localhost/api/transactional-email/history?page=1&limit=20&status=all",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "path": [
+                        "api",
+                        "transactional-email",
+                        "history"
+                    ],
+                    "query": [
+                        {
+                            "key": "page",
+                            "value": "1"
+                        },
+                        {
+                            "key": "limit",
+                            "value": "20"
+                        },
+                        {
+                            "key": "status",
+                            "value": "all"
+                        }
+                    ]
+                },
+                "description": "Gönderilen email'lerin geçmişini listeler. Status: all, sent, failed, pending"
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "api_key",
+            "value": "66982e9f6c55495514916826516b277fc8244cb4ae9432a445cbbefa8b5d1c57",
+            "type": "string"
+        }
+    ]
+}

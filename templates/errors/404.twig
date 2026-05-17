@@ -1,0 +1,119 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}404 - Sayfa Bulunamadı - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{# Breadcrumb'ı override et - hata sayfalarında breadcrumb gerekmez #}
+{% block page_title %}
+<div class="row">
+    <div class="col-12">
+        <div class="page-title-box">
+            <h4 class="page-title">
+                <i data-feather="alert-circle" class="icon-sm text-danger me-2"></i>
+                Sayfa Bulunamadı
+            </h4>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card border-0 shadow-lg">
+            <div class="card-body p-5 text-center">
+                
+                <!-- Error Icon -->
+                <div class="mb-4">
+                    <div class="error-icon-wrapper mx-auto" style="width: 120px; height: 120px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i data-feather="alert-circle" style="width: 60px; height: 60px; color: white;"></i>
+                    </div>
+                </div>
+                
+                <!-- Error Code -->
+                <h1 class="display-1 fw-bold text-primary mb-3">404</h1>
+                
+                <!-- Error Title -->
+                <h3 class="mb-3">
+                    <i data-feather="search" class="icon-xs text-muted me-2"></i>
+                    Sayfa Bulunamadı
+                </h3>
+                
+                <!-- Error Message -->
+                <p class="text-muted mb-4 fs-5">
+                    Üzgünüz, aradığınız sayfa mevcut değil.<br>
+                    Sayfa taşınmış, silinmiş veya hiç var olmamış olabilir.
+                </p>
+                
+                <!-- Helpful Info -->
+                <div class="alert alert-info border-0 shadow-sm mb-4" role="alert">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0">
+                            <i data-feather="info" class="icon-lg text-info"></i>
+                        </div>
+                        <div class="flex-grow-1 ms-3 text-start">
+                            <strong class="d-block mb-2">Ne yapabilirsiniz?</strong>
+                            <ul class="mb-0 small">
+                                <li>URL'yi kontrol edin ve tekrar deneyin</li>
+                                <li>Ana sayfaya giderek başlayın</li>
+                                <li>Bir önceki sayfaya dönün</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center mb-4">
+                    <a href="/" class="btn btn-primary px-4">
+                        <i data-feather="home" class="icon-xs me-2"></i>
+                        Ana Sayfa
+                    </a>
+                    <a href="javascript:history.back()" class="btn btn-secondary px-4">
+                        <i data-feather="arrow-left" class="icon-xs me-2"></i>
+                        Geri Dön
+                    </a>
+                </div>
+                
+                <!-- Help Text -->
+                <div class="border-top pt-4 mt-4">
+                    <p class="text-muted small mb-2">
+                        <i data-feather="life-buoy" class="icon-xs me-1"></i>
+                        Sorun devam ediyorsa destek ekibimize başvurabilirsiniz.
+                    </p>
+                    <p class="mb-0">
+                        <a href="/tickets" class="text-decoration-none">
+                            <i data-feather="headphones" class="icon-xs me-1"></i>
+                            Destek Talepleri
+                        </a>
+                    </p>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Feather icons
+if (typeof feather !== 'undefined') {
+    try {
+        const icons = document.querySelectorAll('[data-feather]');
+        icons.forEach(iconEl => {
+            const name = iconEl.getAttribute('data-feather');
+            if (name && feather.icons && feather.icons[name]) {
+                try {
+                    const svg = feather.icons[name].toSvg({class: iconEl.className, 'stroke-width': 2});
+                    const temp = document.createElement('div');
+                    temp.innerHTML = svg;
+                    if (temp.firstChild && iconEl.parentNode) {
+                        iconEl.parentNode.replaceChild(temp.firstChild, iconEl);
+                    }
+                } catch(e) {}
+            }
+        });
+    } catch(e) {}
+}
+</script>
+{% endblock %}
+

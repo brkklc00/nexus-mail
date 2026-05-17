@@ -1,0 +1,1116 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Mail Siparişlerim - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+<li class="breadcrumb-item active" aria-current="page">Mail Gönder</li>
+{% endblock %}
+
+{% block page_title %}
+<div class="row nx-orders-page-head">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head pb-0">
+            <div class="d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div class="min-w-0">
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+                            <li class="breadcrumb-item active">Mail Gönder</li>
+                        </ol>
+                    </div>
+                    <h4 class="page-title nx-page-title mb-1">Mail Gönder</h4>
+                    <p class="nx-page-lead text-muted mb-0">Mail siparişlerinizi oluşturun, durumlarını takip edin ve gönderim performansını görüntüleyin.</p>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 nx-orders-toolbar">
+                    <button type="button" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page" id="nxEmailOrdersHeadRefresh" title="Yenile">
+                        <i data-feather="refresh-cw" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yenile</span>
+                    </button>
+                    <a href="/email-templates" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page">
+                        <i data-feather="file-text" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Şablonlar</span>
+                    </a>
+                    <a href="/email-phonebooks" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page">
+                        <i data-feather="book" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Rehber</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_icon %}{% endblock %}
+{% block title_text %}{% endblock %}
+
+{% block styles %}
+<style>
+    /* Mail içeriği gösterimi için CSS koruması */
+    .mail-content-display {
+        max-width: 100%;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        word-break: break-word;
+        overflow-x: auto;
+        overflow-y: auto;
+    }
+    
+    .mail-content-display img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .mail-content-display table {
+        max-width: 100%;
+        overflow-x: auto;
+        display: block;
+    }
+    
+    /* Modal içeriklerinin taşmasını önle */
+    .modal-body {
+        overflow-x: hidden;
+        word-wrap: break-word;
+    }
+    
+</style>
+{% endblock %}
+
+{% block content %}
+
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i data-feather="{{ flash_icon|default('check-circle') }}" class="align-self-center icon-xs me-2"></i>
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="{{ flash_icon|default('alert-circle') }}" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+    </div>
+    {% endif %}
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 9999; backdrop-filter: blur(5px);">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+            <div class="spinner-border text-light mb-3" role="status" style="width: 4rem; height: 4rem; border-width: 0.3rem;">
+                <span class="visually-hidden">Yükleniyor...</span>
+            </div>
+            <h4 class="text-white mb-2" id="loadingText">Mail Siparişi Oluşturuluyor...</h4>
+            <p class="text-white-50 mb-3" id="loadingSubtext">Lütfen bekleyin...</p>
+            <div class="progress mx-auto" style="width: 300px; height: 8px; background: rgba(255,255,255,0.2);">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 100%"></div>
+            </div>
+        </div>
+    </div>
+
+    {% set em_delivered = 0 %}
+    {% set em_pending = 0 %}
+    {% set em_failed = 0 %}
+    {% for order in orders %}
+        {% set em_delivered = em_delivered + order.delivered %}
+        {% if order.status.value in ['pending_approval', 'pending'] %}
+            {% set em_pending = em_pending + 1 %}
+        {% elseif order.status.value == 'failed' %}
+            {% set em_failed = em_failed + 1 %}
+        {% endif %}
+    {% endfor %}
+
+    <div class="nx-orders-page nx-email-page nx-orders-shell">
+    <div class="nx-email-kpis nx-orders-kpis mb-3">
+        <div class="nx-orders-kpi nx-email-kpi">
+            <div class="nx-orders-kpi-icon nx-orders-kpi-icon--credit"><i data-feather="credit-card"></i></div>
+            <div class="nx-orders-kpi-body">
+                <div class="nx-orders-kpi-label">Mail bakiyesi</div>
+                <div class="nx-orders-kpi-value">{{ email_credit|number_format(0, ',', '.') }}</div>
+                <div class="nx-orders-kpi-hint">1 mail = 1 kredi</div>
+            </div>
+        </div>
+        <div class="nx-orders-kpi nx-email-kpi">
+            <div class="nx-orders-kpi-icon nx-orders-kpi-icon--orders"><i data-feather="inbox"></i></div>
+            <div class="nx-orders-kpi-body">
+                <div class="nx-orders-kpi-label">Toplam sipariş</div>
+                <div class="nx-orders-kpi-value">{{ orders|length|number_format(0, ',', '.') }}</div>
+                <div class="nx-orders-kpi-hint">Bu listedeki kayıtlar</div>
+            </div>
+        </div>
+        <div class="nx-orders-kpi nx-email-kpi">
+            <div class="nx-orders-kpi-icon nx-orders-kpi-icon--sent"><i data-feather="check-circle"></i></div>
+            <div class="nx-orders-kpi-body">
+                <div class="nx-orders-kpi-label">Başarılı gönderim</div>
+                <div class="nx-orders-kpi-value">{{ em_delivered|number_format(0, ',', '.') }}</div>
+                <div class="nx-orders-kpi-hint">Teslim edilen (tümü)</div>
+            </div>
+        </div>
+        <div class="nx-orders-kpi nx-email-kpi">
+            <div class="nx-orders-kpi-icon nx-orders-kpi-icon--warn"><i data-feather="alert-triangle"></i></div>
+            <div class="nx-orders-kpi-body">
+                <div class="nx-orders-kpi-label">Bekleyen / Hatalı</div>
+                <div class="nx-orders-kpi-value nx-email-kpi-dual">
+                    <span class="nx-email-kpi-num">{{ em_pending|number_format(0, ',', '.') }}</span>
+                    <span class="nx-email-kpi-sep" aria-hidden="true">/</span>
+                    <span class="nx-email-kpi-num nx-email-kpi-num--fail">{{ em_failed|number_format(0, ',', '.') }}</span>
+                </div>
+                <div class="nx-orders-kpi-hint">Sipariş bazında</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="nx-orders-cols nx-email-cols">
+        <main class="nx-orders-main">
+        <div class="card nx-card nx-orders-list-card">
+            <div class="nx-orders-card-head nx-orders-card-head--title-only">
+                <div class="nx-orders-card-head-main">
+                    <div class="nx-orders-icon-chip"><i data-feather="mail"></i></div>
+                    <div>
+                        <h4 class="nx-orders-card-title mb-0">Siparişlerim</h4>
+                    </div>
+                </div>
+            </div>
+            {% if orders is not empty %}
+            <div class="nx-orders-toolbar-strip">
+                <div class="nx-orders-list-toolbar orders-toolbar">
+                    <input type="search" class="form-control form-control-sm nx-orders-search-input" id="nxEmailOrderSearch" placeholder="Sipariş no, konu, durum…" autocomplete="off" aria-label="Siparişlerde ara">
+                    <select class="form-select form-select-sm nx-orders-filter-select" id="nxEmailOrderStatusFilter" aria-label="Durum filtresi">
+                        <option value="">Tümü</option>
+                        <option value="pending">Onay / Bekliyor</option>
+                        <option value="processing">Gönderiliyor</option>
+                        <option value="sent">Gönderildi</option>
+                        <option value="failed">Hatalı</option>
+                        <option value="other">Diğer</option>
+                    </select>
+                    <button type="button" class="btn nx-orders-icon-refresh" id="nxEmailOrdersToolbarRefresh" title="Listeyi yenile" aria-label="Listeyi yenile">
+                        <i data-feather="refresh-cw"></i>
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+            <div class="card-body nx-orders-list-body">
+                {% if orders is empty %}
+                <div class="nx-orders-empty text-center py-5 px-3">
+                    <div class="nx-orders-empty-icon mb-3"><i data-feather="mail"></i></div>
+                    <h5 class="fw-semibold mb-2">Henüz mail siparişi yok</h5>
+                    <p class="text-muted small mb-4">Sağdaki formdan ilk siparişinizi oluşturabilirsiniz.</p>
+                    <a href="#nx-new-mail-order" class="btn nx-orders-primary-btn btn-sm">
+                        <i data-feather="send" class="align-self-center icon-xs me-1"></i> Mail gönder
+                    </a>
+                </div>
+                {% else %}
+                <div class="table-responsive nx-orders-table-wrap nx-email-table-wrap">
+                    <table class="table table-hover mb-0 nx-orders-table nx-email-orders-table" id="nxEmailOrdersTable">
+                        <thead>
+                            <tr>
+                                <th class="nx-email-col-id">No</th>
+                                <th class="nx-email-col-subject">Konu</th>
+                                <th class="nx-email-col-status">Durum</th>
+                                <th class="text-end nx-email-col-num">Toplam</th>
+                                <th class="text-end nx-email-col-num">OK</th>
+                                <th class="text-end nx-email-col-num">Hata</th>
+                                <th class="nx-email-col-rate">Oran</th>
+                                <th class="nx-email-col-date">Oluşturulma</th>
+                                <th class="text-end nx-orders-col-action nx-email-col-action">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for order in orders %}
+                            {% set sv = order.status.value %}
+                            {% set stFilter = sv in ['sent','completed'] ? 'sent' : (sv in ['pending_approval','pending'] ? 'pending' : (sv == 'processing' ? 'processing' : (sv == 'failed' ? 'failed' : 'other'))) %}
+                            {% set createdStr = order.createdAt|date('d.m.Y H:i') %}
+                            <tr class="nx-email-order-row" data-status="{{ stFilter }}" data-search="#{{ order.id }} {{ order.id }} {{ order.subject|e('html_attr') }} {{ createdStr }}">
+                                <td><span class="nx-orders-id">#{{ order.id }}</span></td>
+                                <td class="nx-email-td-subject">
+                                    <a href="/email-orders/{{ order.id }}" class="nx-email-subject-link text-decoration-none" title="{{ order.subject|e('html_attr') }}">
+                                        <span class="nx-email-subject-clamp">{{ order.subject }}</span>
+                                    </a>
+                                </td>
+                                <td>
+                                    {% if sv == 'pending_approval' %}
+                                        <span class="badge nx-orders-status-badge bg-warning-subtle text-warning-emphasis">Onay Bekliyor</span>
+                                    {% elseif sv == 'pending' %}
+                                        <span class="badge nx-orders-status-badge bg-secondary-subtle text-secondary-emphasis">Bekliyor</span>
+                                    {% elseif sv == 'processing' %}
+                                        <span class="badge nx-orders-status-badge bg-info-subtle text-info-emphasis">Gönderiliyor</span>
+                                    {% elseif sv == 'sent' or sv == 'completed' %}
+                                        <span class="badge nx-orders-status-badge bg-success-subtle text-success-emphasis">Gönderildi</span>
+                                    {% elseif sv == 'failed' %}
+                                        <span class="badge nx-orders-status-badge bg-danger-subtle text-danger-emphasis">Başarısız</span>
+                                    {% elseif sv == 'cancelled' %}
+                                        <span class="badge nx-orders-status-badge bg-secondary-subtle text-secondary-emphasis">İptal</span>
+                                    {% else %}
+                                        <span class="badge nx-orders-status-badge bg-secondary-subtle text-secondary-emphasis">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">{{ order.total|number_format(0, ',', '.') }}</td>
+                                <td class="text-end nx-orders-sent">{{ order.delivered|number_format(0, ',', '.') }}</td>
+                                <td class="text-end nx-orders-fail">{{ order.failed|number_format(0, ',', '.') }}</td>
+                                <td class="nx-email-td-rate">
+                                    {% if order.total > 0 %}
+                                    <div class="nx-email-rate-cell">
+                                        <div class="progress nx-email-rate-bar" role="progressbar" aria-valuenow="{{ order.successRate }}" aria-valuemin="0" aria-valuemax="100" aria-label="Başarı oranı {{ order.successRate }}%">
+                                            <div class="progress-bar bg-{{ order.successRate >= 90 ? 'success' : (order.successRate >= 70 ? 'warning' : 'danger') }}" style="width: {{ order.successRate }}%"></div>
+                                        </div>
+                                        <span class="nx-email-rate-badge {{ order.successRate >= 90 ? 'nx-email-rate-badge--ok' : (order.successRate >= 70 ? 'nx-email-rate-badge--mid' : 'nx-email-rate-badge--low') }}">{{ order.successRate|number_format(1) }}%</span>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted small">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="nx-email-td-date">
+                                    <div class="nx-email-date-stack">
+                                        <span class="nx-email-date-line">{{ order.createdAt|date('d.m.Y') }}</span>
+                                        <span class="nx-email-time-line">{{ order.createdAt|date('H:i') }}</span>
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" onclick="viewOrderDetails({{ order.id }})" class="btn nx-orders-icon-btn" title="Detay">
+                                        <i data-feather="eye" class="icon-xs"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        </main>
+
+        <aside class="nx-orders-side" id="nx-new-mail-order">
+        <div class="card nx-card nx-orders-form-card">
+            <div class="nx-orders-card-head nx-orders-card-head--form nx-orders-card-head--compact">
+                <div class="nx-orders-card-head-main">
+                    <div class="nx-orders-icon-chip nx-orders-icon-chip--accent"><i data-feather="send"></i></div>
+                    <div>
+                        <h4 class="nx-orders-card-title mb-0">Yeni mail siparişi</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body nx-orders-form-body">
+                    <ul class="nav nx-orders-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link active" data-bs-toggle="tab" href="#phonebookTab" role="tab" onclick="refreshIcons()">
+                                <i data-feather="book" class="nx-orders-tab-ic"></i>
+                                <span>Rehberden</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" data-bs-toggle="tab" href="#manualTab" role="tab" onclick="refreshIcons()">
+                                <i data-feather="edit-3" class="nx-orders-tab-ic"></i>
+                                <span>Manuel</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" data-bs-toggle="tab" href="#poolTab" role="tab" onclick="refreshIcons()">
+                                <i data-feather="database" class="nx-orders-tab-ic"></i>
+                                <span>Sistem Havuzu</span>
+                            </a>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content nx-orders-tab-panels">
+                        <!-- Rehberden Gönder -->
+                        <div class="tab-pane fade show active" id="phonebookTab" role="tabpanel">
+                            <form method="POST" action="/email-orders" onsubmit="return showLoading(event)">
+                                <input type="hidden" name="send_type" value="phonebook">
+                                
+                                <div class="mb-3">
+                                    <label for="phonebook_ids" class="form-label">Rehber Seç <span class="text-danger">*</span></label>
+                                    <select class="form-select nx-orders-multiselect nx-email-multiselect" id="phonebook_ids" name="phonebook_ids[]" multiple size="5" required onchange="calculateCredits()">
+                                        {% for phonebook in phonebooks %}
+                                        <option value="{{ phonebook.id }}" data-count="{{ phonebook.totalContacts }}">{{ phonebook.title }} ({{ phonebook.totalContacts }} mail)</option>
+                                        {% else %}
+                                        <option value="" disabled>Rehber bulunamadı</option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted d-block">Birden fazla rehber seçmek için Ctrl/Cmd tuşuna basılı tutun</small>
+                                    
+                                    <!-- Canlı Hesaplama -->
+                                    <div class="alert alert-info mt-2 py-2 px-3" id="credit_calc" style="display:none;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <small class="text-dark">
+                                                    <strong>Seçilen Mail:</strong> <span id="selected_count">0</span><br>
+                                                    <strong>Gerekli Kredi:</strong> <span id="required_credit">0</span>
+                                                </small>
+                                            </div>
+                                            <div>
+                                                <span class="badge bg-success" id="status_badge">Yeterli</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Mail Şablonu - ZORUNLU (body POST'ta gönderilmez, post_max_size önlenir) -->
+                                <div class="mb-3">
+                                    <label for="template_pb" class="form-label nx-email-template-head">
+                                        <span class="nx-email-template-head-l">
+                                            <i data-feather="file-text" class="icon-xs me-1"></i>
+                                            Mail Şablonu <span class="text-danger">*</span>
+                                        </span>
+                                        <a href="/email-templates" class="btn btn-sm nx-email-new-template-btn" target="_blank" rel="noopener">
+                                            <i data-feather="plus" class="icon-xs me-1"></i>
+                                            Yeni Şablon
+                                        </a>
+                                    </label>
+                                    <select class="form-select" id="template_pb" name="template_id" required>
+                                        <option value="">-- Şablon Seçin --</option>
+                                        {% for template in templates %}
+                                        <option value="{{ template.id }}" data-subject="{{ template.subject|e('html_attr') }}">
+                                            {{ template.name }}
+                                            {% if template.category %}
+                                            <small class="text-muted">({{ template.category }})</small>
+                                            {% endif %}
+                                        </option>
+                                        {% else %}
+                                        <option value="" disabled>Henüz şablon oluşturmadınız</option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted">Şablon seçerek gönderim yapın (içerik sunucuda yüklenir, post_max_size sorunu önlenir)</small>
+                                </div>
+
+                                <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
+                                    <i data-feather="send" class="align-self-center icon-xs me-1"></i>
+                                    Mail Gönder
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Manuel Gönder -->
+                        <div class="tab-pane fade" id="manualTab" role="tabpanel">
+                            <form method="POST" action="/email-orders" onsubmit="return showLoading(event)">
+                                <input type="hidden" name="send_type" value="manual">
+                                
+                                <div class="mb-3">
+                                    <label for="manual_emails" class="form-label d-flex justify-content-between align-items-center">
+                                        <span>Mail Adresleri <span class="text-danger">*</span></span>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="showImportModal()">
+                                            <i data-feather="upload" class="icon-xs me-1"></i>
+                                            Dosyadan İçe Aktar
+                                        </button>
+                                    </label>
+                                    <textarea class="form-control font-monospace" id="manual_emails" name="manual_emails" rows="6" required placeholder="Her satıra bir mail:&#10;user@example.com&#10;info@company.com" oninput="calculateManualCredits()"></textarea>
+                                    <small class="text-muted d-block">
+                                        Her satıra bir mail adresi • 
+                                        <strong>Toplam: <span id="email_count_display">0</span> mail</strong>
+                                    </small>
+                                    
+                                    <!-- Yetersiz Bakiye Uyarısı -->
+                                    <div class="alert alert-danger mt-2 py-2 px-3" id="credit_warning_manual" style="display:none;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <small class="text-dark">
+                                                    <strong>⚠️ YETERSİZ KREDİ!</strong><br>
+                                                    <strong>Gerekli:</strong> <span id="required_credit_manual">0</span> • 
+                                                    <strong>Eksik:</strong> <span id="shortage_amount">0</span>
+                                                </small>
+                                            </div>
+                                            <div>
+                                                <span class="badge bg-danger">YETERSİZ</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Mail Şablonu - ZORUNLU (body POST'ta gönderilmez, post_max_size önlenir) -->
+                                <div class="mb-3">
+                                    <label for="template_manual" class="form-label nx-email-template-head">
+                                        <span class="nx-email-template-head-l">
+                                            <i data-feather="file-text" class="icon-xs me-1"></i>
+                                            Mail Şablonu <span class="text-danger">*</span>
+                                        </span>
+                                        <a href="/email-templates" class="btn btn-sm nx-email-new-template-btn" target="_blank" rel="noopener">
+                                            <i data-feather="plus" class="icon-xs me-1"></i>
+                                            Yeni Şablon
+                                        </a>
+                                    </label>
+                                    <select class="form-select" id="template_manual" name="template_id" required>
+                                        <option value="">-- Şablon Seçin --</option>
+                                        {% for template in templates %}
+                                        <option value="{{ template.id }}" data-subject="{{ template.subject|e('html_attr') }}">
+                                            {{ template.name }}
+                                            {% if template.category %}
+                                            <small class="text-muted">({{ template.category }})</small>
+                                            {% endif %}
+                                        </option>
+                                        {% else %}
+                                        <option value="" disabled>Henüz şablon oluşturmadınız</option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted">Şablon seçerek gönderim yapın (içerik sunucuda yüklenir, post_max_size sorunu önlenir)</small>
+                                </div>
+
+                                <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
+                                    <i data-feather="send" class="align-self-center icon-xs me-1"></i>
+                                    Mail Gönder
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Sistem Havuzundan Gönder - Şablon zorunlu (post_max_size önlenir) -->
+                        <div class="tab-pane fade" id="poolTab" role="tabpanel">
+                            <form method="POST" action="/email-orders" onsubmit="return showLoadingPool(event)">
+                                <input type="hidden" name="send_type" value="pool">
+                                
+                                <div class="alert alert-info py-2 px-3 small mb-3 nx-email-pool-hint">
+                                    <i data-feather="info" class="icon-xs me-1 align-text-top"></i>
+                                    <strong>Havuz:</strong> Rastgele adresler; şablon zorunlu (güvenli gönderim).
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="pool_count" class="form-label">Kaç Mail Gönderilecek? <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" id="pool_count" name="pool_count" required min="1" placeholder="Örn: 1000" oninput="calculatePoolCredits()">
+                                    <small class="text-muted d-block">
+                                        Mevcut bakiyeniz: <strong>{{ email_credit|number_format(0, ',', '.') }} kredi</strong>
+                                    </small>
+                                    
+                                    <div class="alert alert-warning mt-2 py-2 px-3" id="pool_credit_calc" style="display:none;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <small class="text-dark">
+                                                    <strong>Gönderilecek:</strong> <span id="pool_count_display">0</span><br>
+                                                    <strong>Gerekli Kredi:</strong> <span id="pool_required_credit">0</span>
+                                                </small>
+                                            </div>
+                                            <div>
+                                                <span class="badge bg-success" id="pool_status_badge">Yeterli</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Mail Şablonu - ZORUNLU (body POST'ta gönderilmez, sunucuda şablondan alınır) -->
+                                <div class="mb-3">
+                                    <label for="template_pool" class="form-label nx-email-template-head">
+                                        <span class="nx-email-template-head-l">
+                                            <i data-feather="file-text" class="icon-xs me-1"></i>
+                                            Mail Şablonu <span class="text-danger">*</span>
+                                        </span>
+                                        <a href="/email-templates" class="btn btn-sm nx-email-new-template-btn" target="_blank" rel="noopener">
+                                            <i data-feather="plus" class="icon-xs me-1"></i>
+                                            Yeni Şablon
+                                        </a>
+                                    </label>
+                                    <select class="form-select" id="template_pool" name="template_id" required>
+                                        <option value="">-- Şablon Seçin --</option>
+                                        {% for template in templates %}
+                                        <option value="{{ template.id }}" data-subject="{{ template.subject|e('html_attr') }}">
+                                            {{ template.name }}
+                                            {% if template.category %}
+                                            <small class="text-muted">({{ template.category }})</small>
+                                            {% endif %}
+                                        </option>
+                                        {% else %}
+                                        <option value="" disabled>Henüz şablon oluşturmadınız</option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted">Şablon seçerek gönderim yapın (içerik sunucuda yüklenir, post_max_size sorunu önlenir)</small>
+                                </div>
+
+                                <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
+                                    <i data-feather="send" class="align-self-center icon-xs me-1"></i>
+                                    Mail Gönder
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+    </div>
+    </div>
+
+<!-- Import Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2"><i data-feather="upload" class="icon-xs"></i> Dosyadan içe aktar</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <input type="file" id="importFile" accept=".txt,.csv,.xlsx,.xls" class="form-control">
+                <div id="importProgress" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div id="importProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <small class="text-muted mt-1" id="importStatus"></small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+                <button type="button" class="btn btn-primary" onclick="processImport()">İçe Aktar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detay Modal -->
+<div class="modal fade" id="orderDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2">
+                    <i data-feather="mail" class="icon-xs"></i>
+                    Sipariş detayı #<span id="modalOrderId"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body" id="orderDetailContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Yükleniyor...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const creditBalance = {{ email_credit }};
+
+function refreshIcons() {
+    setTimeout(() => feather.replace(), 50);
+}
+
+// Pool form submit - body yok, sadece pool_count, subject, template_id
+function showLoadingPool(event) {
+    const form = event ? event.target : null;
+    if (form) {
+        const poolCount = parseInt(form.querySelector('[name="pool_count"]')?.value) || 0;
+        const templateId = form.querySelector('[name="template_id"]')?.value;
+        
+        if (poolCount <= 0) {
+            alert('Lütfen gönderilecek mail sayısını girin!');
+            return false;
+        }
+        if (!templateId) {
+            alert('Lütfen bir mail şablonu seçin!');
+            return false;
+        }
+    }
+    document.getElementById('loadingOverlay').style.display = 'block';
+    return true;
+}
+
+function calculateCredits() {
+    const select = document.getElementById('phonebook_ids');
+    const selectedOptions = Array.from(select.selectedOptions);
+    let totalCount = 0;
+    
+    selectedOptions.forEach(option => {
+        totalCount += parseInt(option.dataset.count);
+    });
+    
+    const calcDiv = document.getElementById('credit_calc');
+    const badge = document.getElementById('status_badge');
+    
+    if (totalCount > 0) {
+        document.getElementById('selected_count').textContent = totalCount.toLocaleString('tr-TR');
+        document.getElementById('required_credit').textContent = totalCount.toLocaleString('tr-TR');
+        
+        if (totalCount > creditBalance) {
+            badge.className = 'badge bg-danger';
+            badge.textContent = 'Yetersiz';
+        } else {
+            badge.className = 'badge bg-success';
+            badge.textContent = 'Yeterli';
+        }
+        
+        calcDiv.style.display = 'block';
+    } else {
+        calcDiv.style.display = 'none';
+    }
+}
+
+function calculateManualCredits() {
+    const textarea = document.getElementById('manual_emails');
+    const lines = textarea.value.split('\n').filter(line => line.trim() && line.includes('@'));
+    const count = lines.length;
+    
+    document.getElementById('email_count_display').textContent = count.toLocaleString('tr-TR');
+    
+    const warningDiv = document.getElementById('credit_warning_manual');
+    
+    if (count > 0 && count > creditBalance) {
+        const shortage = count - creditBalance;
+        document.getElementById('required_credit_manual').textContent = count.toLocaleString('tr-TR');
+        document.getElementById('shortage_amount').textContent = shortage.toLocaleString('tr-TR');
+        warningDiv.style.display = 'block';
+    } else {
+        warningDiv.style.display = 'none';
+    }
+}
+
+function calculatePoolCredits() {
+    const input = document.getElementById('pool_count');
+    const count = parseInt(input.value) || 0;
+    
+    const calcDiv = document.getElementById('pool_credit_calc');
+    const badge = document.getElementById('pool_status_badge');
+    
+    if (count > 0) {
+        document.getElementById('pool_count_display').textContent = count.toLocaleString('tr-TR');
+        document.getElementById('pool_required_credit').textContent = count.toLocaleString('tr-TR');
+        
+        if (count > creditBalance) {
+            badge.className = 'badge bg-danger';
+            badge.textContent = 'Yetersiz';
+            calcDiv.className = 'alert alert-danger mt-2 py-2 px-3';
+        } else {
+            badge.className = 'badge bg-success';
+            badge.textContent = 'Yeterli';
+            calcDiv.className = 'alert alert-warning mt-2 py-2 px-3';
+        }
+        
+        calcDiv.style.display = 'block';
+    } else {
+        calcDiv.style.display = 'none';
+    }
+}
+
+function showImportModal() {
+    new bootstrap.Modal(document.getElementById('importModal')).show();
+    feather.replace();
+}
+
+function processImport() {
+    const file = document.getElementById('importFile').files[0];
+    if (!file) {
+        alert('Lütfen bir dosya seçin');
+        return;
+    }
+
+    const progressDiv = document.getElementById('importProgress');
+    const progressBar = document.getElementById('importProgressBar');
+    const statusText = document.getElementById('importStatus');
+    
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '50%';
+    statusText.textContent = 'Dosya işleniyor...';
+
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        const content = e.target.result;
+        let emails = [];
+
+        if (file.name.endsWith('.txt') || file.name.endsWith('.csv')) {
+            const lines = content.split('\n');
+            emails = lines.filter(line => line.trim() && line.includes('@')).map(line => line.trim());
+        } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+            const workbook = XLSX.read(content, {type: 'binary'});
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+            emails = data.flat().filter(cell => cell && String(cell).includes('@'));
+        }
+
+        const textarea = document.getElementById('manual_emails');
+        const currentValue = textarea.value.trim();
+        const newValue = emails.join('\n');
+        
+        textarea.value = currentValue ? currentValue + '\n' + newValue : newValue;
+        
+        progressBar.style.width = '100%';
+        progressBar.classList.add('bg-success');
+        statusText.textContent = `✓ ${emails.length.toLocaleString('tr-TR')} mail adresi yüklendi`;
+        
+        calculateManualCredits();
+        
+        setTimeout(() => {
+            bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+            progressDiv.style.display = 'none';
+            progressBar.style.width = '0%';
+            progressBar.classList.remove('bg-success');
+        }, 1500);
+    };
+
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        reader.readAsBinaryString(file);
+    } else {
+        reader.readAsText(file);
+    }
+}
+
+// Sipariş detayı göster
+function viewOrderDetails(orderId) {
+    const modal = new bootstrap.Modal(document.getElementById('orderDetailModal'));
+    document.getElementById('modalOrderId').textContent = orderId;
+    document.getElementById('orderDetailContent').innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Yükleniyor...</span>
+            </div>
+        </div>
+    `;
+    modal.show();
+    
+    fetch(`/email-orders/${orderId}/details`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error('Sunucu JSON yanıtı döndürmedi');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                renderOrderDetails(data.order, data.emails, data);
+            } else {
+                console.error('API Error:', data);
+                document.getElementById('orderDetailContent').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i data-feather="alert-circle" class="me-2"></i> 
+                        <strong>${data.message || 'Bilinmeyen bir hata oluştu'}</strong>
+                        ${data.error ? `<br><small class="text-muted mt-2">Hata detayı: ${data.error}</small>` : ''}
+                    </div>
+                `;
+                feather.replace();
+            }
+        })
+        .catch(error => {
+            console.error('Fetch Error:', error);
+            document.getElementById('orderDetailContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <i data-feather="alert-circle" class="me-2"></i> 
+                    <strong>Bir hata oluştu:</strong><br>
+                    ${error.message}<br>
+                    <small class="text-muted mt-2">Lütfen sayfayı yenileyin ve tekrar deneyin.</small>
+                </div>
+            `;
+            feather.replace();
+        });
+}
+
+// Global değişkenler
+let currentOrderData = null;
+let currentEmailPage = 1;
+const emailsPerPage = 50;
+
+function renderOrderDetails(order, emails, data = {}) {
+    // Global'e kaydet (sadece ilk çağrıda currentEmailPage = 1 yap)
+    if (!currentOrderData) {
+        currentEmailPage = 1;
+    }
+    currentOrderData = { order, emails, data };
+    
+    console.log('Rendering page:', currentEmailPage, 'Total emails:', emails.length);
+    
+    const statusBadges = {
+        'pending': '<span class="badge bg-secondary">Bekliyor</span>',
+        'processing': '<span class="badge bg-warning">İşleniyor</span>',
+        'sent': '<span class="badge bg-success">Gönderildi</span>',
+        'completed': '<span class="badge bg-success">Gönderildi</span>',
+        'failed': '<span class="badge bg-danger">Başarısız</span>',
+        'cancelled': '<span class="badge bg-dark">İptal</span>'
+    };
+    
+    const emailStatusBadges = {
+        'pending': '<span class="badge bg-secondary">Bekliyor</span>',
+        'sent': '<span class="badge bg-success">Başarılı</span>',
+        'delivered': '<span class="badge bg-success">Başarılı</span>',
+        'bounced': '<span class="badge bg-warning">Geri Döndü</span>',
+        'failed': '<span class="badge bg-danger">Başarısız</span>'
+    };
+    
+    let html = `
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card border">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted mb-3">
+                            <i data-feather="user" class="icon-sm me-1"></i> Kullanıcı Bilgileri
+                        </h6>
+                        <p><strong>Ad:</strong> ${order.user.name}</p>
+                        <p><strong>Email:</strong> ${order.user.email}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card border">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted mb-3">
+                            <i data-feather="info" class="icon-sm me-1"></i> Sipariş Bilgileri
+                        </h6>
+                        <p><strong>Durum:</strong> ${statusBadges[order.status]}</p>
+                        <p><strong>Oluşturma:</strong> ${order.createdAt}</p>
+                        ${order.completedAt ? `<p><strong>Tamamlanma:</strong> ${order.completedAt}</p>` : ''}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-3">
+            <div class="col-md-3">
+                <div class="card border">
+                    <div class="card-body text-center">
+                        <i data-feather="mail" class="icon-md text-muted mb-2"></i>
+                        <h3 class="mb-0">${order.total.toLocaleString()}</h3>
+                        <p class="text-muted mb-0">Toplam Email</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border">
+                    <div class="card-body text-center">
+                        <i data-feather="check-circle" class="icon-md text-success mb-2"></i>
+                        <h3 class="mb-0 text-success">${order.delivered.toLocaleString()}</h3>
+                        <p class="text-muted mb-0">Başarılı</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border">
+                    <div class="card-body text-center">
+                        <i data-feather="x-circle" class="icon-md text-danger mb-2"></i>
+                        <h3 class="mb-0 text-danger">${order.failed.toLocaleString()}</h3>
+                        <p class="text-muted mb-0">Başarısız</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border">
+                    <div class="card-body text-center">
+                        <i data-feather="percent" class="icon-md text-primary mb-2"></i>
+                        <h3 class="mb-0 text-primary">${order.total > 0 ? ((order.delivered / order.total) * 100).toFixed(1) : 0}%</h3>
+                        <p class="text-muted mb-0">Başarı Oranı</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card border mt-3">
+            <div class="card-body">
+                <h6 class="card-title text-muted mb-3">
+                    <i data-feather="mail" class="icon-sm me-1"></i> Mail İçeriği
+                </h6>
+                <p><strong>Konu:</strong> ${order.subject}</p>
+                <div class="border rounded p-3 mt-2 mail-content-display" style="max-height: 300px;">
+                    ${order.body}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Email listesi - sadece sistem havuzu değilse göster
+    if (!data.isPoolOrder) {
+        const totalEmails = emails.length;
+        const totalPages = Math.ceil(totalEmails / emailsPerPage);
+        const startIdx = (currentEmailPage - 1) * emailsPerPage;
+        const endIdx = startIdx + emailsPerPage;
+        const paginatedEmails = emails.slice(startIdx, endIdx);
+        
+        html += `
+        <div class="card border mt-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="card-title text-muted mb-0">
+                        <i data-feather="list" class="icon-sm me-1"></i> Email Listesi
+                    </h6>
+                    <small class="text-muted">
+                        ${startIdx + 1}-${Math.min(endIdx, totalEmails)} / ${totalEmails}
+                    </small>
+                </div>
+                <div class="table-responsive" style="max-height: 400px;">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Email</th>
+                                <th>Durum</th>
+                                <th>Tarih</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        if (paginatedEmails.length === 0) {
+            html += `
+                <tr>
+                    <td colspan="3" class="text-center text-muted py-3">Henüz email gönderilmemiş</td>
+                </tr>
+            `;
+        } else {
+            paginatedEmails.forEach(email => {
+                const statusDisplay = emailStatusBadges[email.status] || `<span class="badge bg-info">${email.status}</span>`;
+                const dateDisplay = email.deliveredAt || email.sentAt || '-';
+                html += `
+                    <tr>
+                        <td><small>${email.email}</small></td>
+                        <td>${statusDisplay}</td>
+                        <td><small>${dateDisplay}</small></td>
+                    </tr>
+                `;
+            });
+        }
+        
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+        `;
+        
+        // Sayfalandırma
+        if (totalPages > 1) {
+            html += `
+                <div class="d-flex justify-content-between align-items-center mt-3 px-2">
+                    <div>
+                        ${currentEmailPage > 1 ? 
+                            `<button class="btn btn-sm btn-outline-primary" onclick="changeEmailPage(${currentEmailPage - 1})">
+                                « Önceki
+                            </button>` : 
+                            '<button class="btn btn-sm btn-outline-secondary" disabled>« Önceki</button>'}
+                    </div>
+                    
+                    <span class="text-muted small">Sayfa <strong>${currentEmailPage}</strong> / ${totalPages}</span>
+                    
+                    <div>
+                        ${currentEmailPage < totalPages ? 
+                            `<button class="btn btn-sm btn-outline-primary" onclick="changeEmailPage(${currentEmailPage + 1})">
+                                Sonraki »
+                            </button>` : 
+                            '<button class="btn btn-sm btn-outline-secondary" disabled>Sonraki »</button>'}
+                    </div>
+                </div>
+            `;
+        }
+        
+        html += `
+            </div>
+        </div>
+        `;
+    } else {
+        // Sistem havuzu siparişi için bilgi mesajı
+        html += `
+        <div class="card border mt-3 bg-light">
+            <div class="card-body text-center py-4">
+                <i data-feather="lock" class="icon-lg text-muted mb-3"></i>
+                <h6 class="text-muted mb-2">Email Listesi Gizli</h6>
+                <p class="text-muted small mb-0">
+                    Sistem havuzundan gönderilen siparişlerde güvenlik nedeniyle mail listesi görüntülenemez.
+                </p>
+            </div>
+        </div>
+        `;
+    }
+    
+    html += `
+    `;
+    
+    document.getElementById('orderDetailContent').innerHTML = html;
+    feather.replace();
+}
+
+function changeEmailPage(page) {
+    if (!currentOrderData) {
+        console.error('currentOrderData is null');
+        return;
+    }
+    
+    console.log('Changing to page:', page);
+    currentEmailPage = page;
+    
+    renderOrderDetails(
+        currentOrderData.order,
+        currentOrderData.emails,
+        currentOrderData.data
+    );
+    
+    // Scroll to top of modal
+    const modalBody = document.querySelector('#orderDetailModal .modal-body');
+    if (modalBody) {
+        modalBody.scrollTop = 0;
+    }
+}
+
+function showLoading(event) {
+    const form = event ? event.target : null;
+    
+    if (form) {
+        const sendType = form.querySelector('[name="send_type"]')?.value;
+        const templateId = form.querySelector('[name="template_id"]')?.value;
+        
+        if (!templateId) {
+            alert('Lütfen bir mail şablonu seçin!');
+            return false;
+        }
+        
+        // Rehberden: en az bir rehber seçilmeli
+        if (sendType === 'phonebook') {
+            const select = form.querySelector('[name="phonebook_ids[]"]');
+            const selected = select ? Array.from(select.selectedOptions) : [];
+            if (!selected.length) {
+                alert('Lütfen en az bir rehber seçin!');
+                return false;
+            }
+        }
+        
+        // Manuel: en az bir geçerli mail adresi
+        if (sendType === 'manual') {
+            const textarea = form.querySelector('[name="manual_emails"]');
+            const text = textarea ? textarea.value : '';
+            const lines = text.split('\n').filter(l => l.trim() && l.includes('@'));
+            if (lines.length === 0) {
+                alert('Lütfen en az bir geçerli mail adresi girin (her satıra bir mail)!');
+                return false;
+            }
+        }
+        
+        // Sistem havuzu: pool formu showLoadingPool kullanır, buraya düşmez
+    }
+    
+    document.getElementById('loadingOverlay').style.display = 'block';
+    return true;
+}
+
+function nxEmailOrdersApplyFilters() {
+    const q = (document.getElementById('nxEmailOrderSearch')?.value || '').toLowerCase().trim();
+    const st = document.getElementById('nxEmailOrderStatusFilter')?.value || '';
+    document.querySelectorAll('.nx-email-order-row').forEach(function(row) {
+        const hay = (row.getAttribute('data-search') || '').toLowerCase();
+        const rowSt = row.getAttribute('data-status') || '';
+        const okQ = !q || hay.includes(q);
+        let okS = !st;
+        if (st) okS = rowSt === st;
+        row.style.display = okQ && okS ? '' : 'none';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+
+    document.getElementById('nxEmailOrderSearch')?.addEventListener('input', nxEmailOrdersApplyFilters);
+    document.getElementById('nxEmailOrderStatusFilter')?.addEventListener('change', nxEmailOrdersApplyFilters);
+    document.getElementById('nxEmailOrdersToolbarRefresh')?.addEventListener('click', function() { location.reload(); });
+    document.getElementById('nxEmailOrdersHeadRefresh')?.addEventListener('click', function() { location.reload(); });
+    
+    // URL parametresi ile modal açma (email-transactions'dan gelince)
+    const urlParams = new URLSearchParams(window.location.search);
+    const modalOrderId = urlParams.get('modal');
+    
+    if (modalOrderId) {
+        // URL'den modal parametresini temizle
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+        
+        // Modal aç
+        setTimeout(function() {
+            viewOrderDetails(parseInt(modalOrderId));
+        }, 500);
+    }
+});
+</script>
+{% endblock %}

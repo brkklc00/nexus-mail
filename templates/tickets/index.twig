@@ -1,0 +1,622 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Destek Talepleri - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block page_title %}
+<div class="row nx-tickets-page-head-row">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head nx-dash-page-head-wrap pb-0 mb-0">
+            <div class="nx-dash-page-head d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div class="min-w-0 flex-grow-1">
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item active" aria-current="page">Destek Talepleri</li>
+                        </ol>
+                    </div>
+                    <h4 class="page-title nx-page-title mb-1">Destek Talepleri</h4>
+                    <p class="nx-page-lead text-muted mb-0 nx-tickets-lead">Taleplerinizi oluşturun ve durumlarını takip edin.</p>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 nx-dash-toolbar nx-tickets-head-actions">
+                    <button type="button" class="btn btn-sm nx-dash-tool-btn" id="nxTicketsRefresh" title="Sayfayı yenile">
+                        <i data-feather="refresh-cw" class="nx-dash-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yenile</span>
+                    </button>
+                    <button type="button" class="btn btn-sm nx-dash-tool-btn" id="nxTicketsShowAll" title="Tüm talepleri göster">
+                        <i data-feather="layers" class="nx-dash-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Tüm Talepler</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{# İstatistikler (liste üzerinden) #}
+{% set stats_total = tickets|length %}
+{% set stats_open = tickets|filter(t => t.status.value == 'open')|length %}
+{% set stats_pending = tickets|filter(t => t.status.value == 'pending')|length %}
+{% set stats_closed = tickets|filter(t => t.status.value == 'closed')|length %}
+{% set stats_active = stats_open + stats_pending %}
+
+<div class="nx-tickets-page nx-tickets-page--simple pb-3">
+    {% if _session.flash_success %}
+    <div id="nxTicketsFlashSuccess" class="d-none" data-message="{{ _session.flash_success|e('html_attr') }}"></div>
+    {% endif %}
+
+    <div class="mb-2 mb-md-3">
+        {# Üç KPI satırı tam genişlikte (URL sayfası 4 kart / %25; burada 3 kart / %33) #}
+        <div class="row nx-dash-kpi-row nx-url-kpi-row row-cols-1 row-cols-md-3 g-3 mb-0">
+            <div class="col">
+                {% include 'dashboard/_partials/kpi-card.twig' with {
+                    icon: 'inbox',
+                    label: 'Toplam Talep',
+                    value: stats_total,
+                    hint: 'Kayıtlı destek talebi',
+                    trend: null,
+                    extra_class: 'nx-url-kpi'
+                } only %}
+            </div>
+            <div class="col">
+                {% include 'dashboard/_partials/kpi-card.twig' with {
+                    icon: 'unlock',
+                    label: 'Açık Talepler',
+                    value: stats_active,
+                    hint: 'İşlem bekliyor',
+                    trend: stats_pending > 0 ? (stats_pending ~ ' yanıt bekliyor') : null,
+                    extra_class: 'nx-url-kpi'
+                } only %}
+            </div>
+            <div class="col">
+                {% include 'dashboard/_partials/kpi-card.twig' with {
+                    icon: 'check-circle',
+                    label: 'Kapanan Talepler',
+                    value: stats_closed,
+                    hint: 'Tamamlanan talepler',
+                    trend: null,
+                    extra_class: 'nx-url-kpi'
+                } only %}
+            </div>
+        </div>
+    </div>
+
+    <div class="nx-tickets-grid nx-tickets-grid--simple">
+        {# Sol: Form #}
+        <aside class="nx-tickets-form-col" id="nx-new-ticket-form">
+            <div class="card nx-card-premium nx-ticket-form-card nx-ticket-form-card--simple border-0 h-100">
+                <div class="nx-ticket-form-card-head nx-ticket-form-card-head--simple">
+                    <div class="d-flex align-items-start gap-2 gap-md-3">
+                        <div class="nx-icon-chip nx-icon-chip--light nx-icon-chip--sm">
+                            <i data-feather="plus-circle" class="nx-icon-chip-ic"></i>
+                        </div>
+                        <div>
+                            <h2 class="nx-ticket-form-card-title mb-1">Yeni Destek Talebi</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body nx-ticket-form-body">
+                    <form method="POST" action="/tickets" id="createTicketForm" novalidate>
+                        <div class="mb-2 mb-md-3">
+                            <label for="subject" class="form-label nx-label nx-label--simple">Konu <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control nx-input-premium nx-input-premium--simple" id="subject" name="subject" required maxlength="255" placeholder="Kısa başlık" autocomplete="off">
+                        </div>
+                        <div class="mb-3">
+                            <label for="message" class="form-label nx-label nx-label--simple">Mesaj <span class="text-danger">*</span></label>
+                            <textarea class="form-control nx-input-premium nx-input-premium--simple nx-textarea-ticket nx-textarea-ticket--simple" id="message" name="message" rows="5" required minlength="10" maxlength="8000" placeholder="Mesajınızı yazın"></textarea>
+                            <div class="d-flex justify-content-between align-items-center mt-1 pt-1">
+                                <small class="text-muted nx-helper-single">En az 10 karakter yazın.</small>
+                                <small class="nx-char-count nx-char-count--simple text-muted"><span id="nxMsgLen">0</span>/8000</small>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn nx-btn-ticket-submit nx-btn-ticket-submit--simple w-100" id="nxTicketSubmitBtn">
+                            <span class="nx-btn-ticket-inner">
+                                <i data-feather="send" class="nx-btn-ticket-ic"></i>
+                                <span class="nx-btn-ticket-label">Talep Oluştur</span>
+                            </span>
+                            <span class="nx-btn-ticket-loading d-none spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </aside>
+
+        {# Sağ: Liste #}
+        <section class="nx-tickets-list-col">
+            <div class="card nx-card-premium nx-ticket-list-card nx-ticket-list-card--simple border-0 h-100">
+                <div class="card-body p-0 d-flex flex-column">
+                    <div class="nx-ticket-list-toolbar nx-ticket-list-toolbar--simple px-3 px-md-4 pt-3 pb-3 border-bottom">
+                        <div class="d-flex flex-column gap-3">
+                            <div class="min-w-0">
+                                <h2 class="nx-ticket-list-title mb-0">Taleplerim</h2>
+                                <p class="text-muted nx-ticket-count-sub mb-0" id="nxTicketCountLabel">Toplam {{ stats_total }} talep</p>
+                            </div>
+                            <div class="row g-2 align-items-stretch align-items-md-center">
+                                <div class="col-12 col-md">
+                                    <div class="position-relative nx-ticket-search-wrap">
+                                        <i data-feather="search" class="nx-ticket-search-ic"></i>
+                                        <input type="search" class="form-control form-control-sm nx-input-premium nx-input-premium--simple nx-ticket-search" id="nxTicketSearch" placeholder="Konu veya talep no ara..." autocomplete="off" aria-label="Taleplerde ara">
+                                    </div>
+                                </div>
+                                <div class="col-12 col-md-auto">
+                                    <label class="visually-hidden" for="nxTicketFilterSelect">Durum</label>
+                                    <select class="form-select form-select-sm nx-ticket-filter-select" id="nxTicketFilterSelect" aria-label="Duruma göre filtrele">
+                                        <option value="all" selected>Tümü</option>
+                                        <option value="open">Açık</option>
+                                        <option value="closed">Kapalı</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex-grow-1 px-2 px-md-3 pb-2 pb-md-3">
+                        <div id="nxTicketList" class="nx-ticket-list">
+                            {% for ticket in tickets %}
+                            {% set sv = attribute(ticket.status, 'value') ?? ticket.status %}
+                            <article class="nx-ticket-row nx-ticket-row--simple"
+                                     data-ticket-id="{{ ticket.id }}"
+                                     data-status="{{ sv }}"
+                                     data-search="{{ ('#' ~ ticket.id ~ ' ' ~ ticket.subject)|lower }}">
+                                <div class="nx-ticket-row-left">
+                                    <div class="nx-ticket-row-num">#{{ ticket.id }}</div>
+                                    <h3 class="nx-ticket-row-subject">{{ ticket.subject }}</h3>
+                                    <p class="nx-ticket-row-created text-muted small mb-0">
+                                        Oluşturulma: {{ ticket.createdAt|date('d.m.Y H:i') }}
+                                    </p>
+                                </div>
+                                <div class="nx-ticket-row-right">
+                                    <div class="nx-ticket-row-aside-top">
+                                        <span class="nx-ticket-status nx-ticket-status--{{ sv }} nx-ticket-status--simple">
+                                            {% if sv == 'pending' %}Yanıt Bekleyen{% else %}{{ ticket.status.getLabel() }}{% endif %}
+                                        </span>
+                                        <button type="button" class="btn btn-sm nx-btn-ticket-detail nx-btn-ticket-detail--minimal"
+                                                onclick="viewTicket({{ ticket.id }})"
+                                                data-ticket-id="{{ ticket.id }}">
+                                            <i data-feather="eye" class="nx-btn-detail-ic"></i>
+                                            Detay
+                                        </button>
+                                    </div>
+                                    <p class="nx-ticket-row-last mb-0">
+                                        Son aktivite: {{ ticket.lastActivityAt|date('d.m.Y H:i') }}
+                                    </p>
+                                </div>
+                            </article>
+                            {% else %}
+                            <div class="nx-ticket-empty py-5 px-3" id="nxTicketEmptyInitial">
+                                <div class="nx-ticket-empty-icon">
+                                    <i data-feather="life-buoy"></i>
+                                </div>
+                                <h3 class="h5 fw-semibold mt-3 mb-2">Henüz destek talebiniz yok</h3>
+                                <p class="text-muted mb-4 small">Yeni destek talebi oluşturarak ekibimizden yardım alabilirsiniz.</p>
+                                <a href="#nx-new-ticket-form" class="btn nx-btn-ticket-submit btn-sm px-4 nx-scroll-to-form">Talep Oluştur</a>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <div id="nxTicketEmptyFilter" class="nx-ticket-empty nx-ticket-empty--filter py-5 px-3 d-none">
+                            <div class="nx-ticket-empty-icon">
+                                <i data-feather="filter"></i>
+                            </div>
+                            <h3 class="h6 fw-semibold mt-3 mb-2">Sonuç bulunamadı</h3>
+                            <p class="text-muted mb-3 small">Arama veya filtreye uygun talep yok. Filtreyi sıfırlayıp tekrar deneyin.</p>
+                            <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill" id="nxTicketsResetFilter">Filtreyi sıfırla</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- Ticket Detay Modal -->
+<div class="modal fade" id="ticketDetailModal" tabindex="-1" aria-labelledby="ticketDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog nx-modal-ticket modal-dialog-scrollable modal-dialog-centered">
+        <div class="modal-content nx-modal-ticket-content">
+            <div class="modal-header nx-modal-ticket-header border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2 mb-0" id="ticketDetailModalLabel">
+                    <span class="nx-modal-head-ic"><i data-feather="message-square" class="icon-sm"></i></span>
+                    Talep Detayı
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body p-4" id="ticketDetailContent">
+                    <div class="nx-modal-skeleton py-2">
+                        <div class="nx-skel-line w-75 mb-3"></div>
+                        <div class="nx-skel-line w-50 mb-2"></div>
+                        <div class="nx-skel-line w-100 mb-2"></div>
+                        <div class="nx-skel-line mb-4" style="width:92%"></div>
+                        <div class="nx-skel-line w-100 mb-2"></div>
+                        <div class="nx-skel-line mb-2" style="width:80%"></div>
+                        <div class="nx-skel-line" style="width:60%"></div>
+                    </div>
+            </div>
+            <div class="modal-footer nx-modal-ticket-footer border-0">
+                <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Close Ticket Confirmation Modal -->
+<div class="modal fade" id="closeTicketModal" tabindex="-1" aria-labelledby="closeTicketModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content nx-close-ticket-modal rounded-4 border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-semibold d-flex align-items-center gap-2" id="closeTicketModalLabel">
+                    <span class="text-danger"><i data-feather="alert-triangle" class="align-self-center icon-sm"></i></span>
+                    Talebi Kapat
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body pt-2">
+                <div class="alert alert-warning border-0 mb-3 small" role="alert">
+                    <strong>Dikkat.</strong> Kapatılan talepler tekrar açılamaz.
+                </div>
+                <div class="text-center mb-4">
+                    <div class="mb-3 opacity-75">
+                        <i data-feather="x-circle" class="icon-xxl text-danger"></i>
+                    </div>
+                    <h5 class="mb-2 fs-6 fw-semibold">Bu talebi kapatmak istediğinizden emin misiniz?</h5>
+                    <p class="text-muted mb-0 small">
+                        Talep kapatıldıktan sonra yeni mesaj gönderemezsiniz.
+                    </p>
+                </div>
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" id="confirmCloseTicket">
+                    <label class="form-check-label small" for="confirmCloseTicket">
+                        <strong>Evet, bu talebi kapatmak istiyorum</strong>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    <i data-feather="arrow-left" class="align-self-center icon-xs me-1"></i>
+                    Vazgeç
+                </button>
+                <button type="button"
+                        class="btn btn-danger"
+                        id="confirmCloseTicketBtn"
+                        disabled>
+                    <i data-feather="x-circle" class="align-self-center icon-xs me-1"></i>
+                    Evet, Kapat
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay (form gönderimi) -->
+<div id="loadingOverlay" class="nx-loading-overlay" style="display:none;" aria-hidden="true">
+    <div class="text-center">
+        <div class="spinner-border text-light" style="width: 2.5rem; height: 2.5rem;" role="status">
+            <span class="visually-hidden">Yükleniyor...</span>
+        </div>
+        <p class="text-white mt-3 mb-0 small">İşleminiz gerçekleştiriliyor...</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    feather.replace();
+
+    var flashEl = document.getElementById('nxTicketsFlashSuccess');
+    if (flashEl && typeof iziToast !== 'undefined') {
+        iziToast.success({
+            title: 'Başarılı',
+            message: flashEl.getAttribute('data-message') || 'İşlem tamamlandı.',
+            position: 'topRight',
+            timeout: 4500
+        });
+    }
+
+    function nxToastErr(msg) {
+        if (typeof iziToast !== 'undefined') {
+            iziToast.error({ title: 'Hata', message: msg, position: 'topRight', timeout: 5000 });
+        } else {
+            alert(msg);
+        }
+    }
+
+    var form = document.getElementById('createTicketForm');
+    var msgField = document.getElementById('message');
+    var msgLen = document.getElementById('nxMsgLen');
+    var submitBtn = document.getElementById('nxTicketSubmitBtn');
+
+    function syncMsgLen() {
+        if (!msgField || !msgLen) return;
+        msgLen.textContent = String(msgField.value.length);
+    }
+    if (msgField) {
+        msgField.addEventListener('input', syncMsgLen);
+        syncMsgLen();
+    }
+
+    if (form && submitBtn) {
+        form.addEventListener('submit', function (e) {
+            var subj = (document.getElementById('subject').value || '').trim();
+            var body = (msgField.value || '').trim();
+            if (body.length < 10) {
+                e.preventDefault();
+                nxToastErr('Mesaj en az 10 karakter olmalıdır.');
+                msgField.focus();
+                return;
+            }
+            if (!subj.length) {
+                e.preventDefault();
+                nxToastErr('Lütfen konu girin.');
+                return;
+            }
+            submitBtn.disabled = true;
+            submitBtn.classList.add('is-loading');
+            var spin = submitBtn.querySelector('.nx-btn-ticket-loading');
+            var inner = submitBtn.querySelector('.nx-btn-ticket-inner');
+            if (spin) spin.classList.remove('d-none');
+            if (inner) inner.classList.add('opacity-50');
+            document.getElementById('loadingOverlay').style.display = 'flex';
+        });
+    }
+
+    function reloadTickets() {
+        window.location.reload();
+    }
+
+    var searchInput = document.getElementById('nxTicketSearch');
+    var filterSelect = document.getElementById('nxTicketFilterSelect');
+    var listEl = document.getElementById('nxTicketList');
+    var emptyFilter = document.getElementById('nxTicketEmptyFilter');
+    var countLabel = document.getElementById('nxTicketCountLabel');
+    var currentFilter = 'all';
+
+    var refreshBtn = document.getElementById('nxTicketsRefresh');
+    if (refreshBtn) refreshBtn.addEventListener('click', reloadTickets);
+
+    var showAllBtn = document.getElementById('nxTicketsShowAll');
+    if (showAllBtn) {
+        showAllBtn.addEventListener('click', function () {
+            if (filterSelect) filterSelect.value = 'all';
+            if (searchInput) searchInput.value = '';
+            applyFilter('all');
+            filterTickets();
+        });
+    }
+
+    function getRows() {
+        return listEl ? listEl.querySelectorAll('.nx-ticket-row') : [];
+    }
+
+    function statusMatchesFilter(st, filter) {
+        if (filter === 'all') return true;
+        if (filter === 'closed') return st === 'closed';
+        if (filter === 'open') return st === 'open' || st === 'pending';
+        return true;
+    }
+
+    function applyFilter(filter) {
+        currentFilter = filter;
+        if (filterSelect && filterSelect.value !== filter) {
+            filterSelect.value = filter;
+        }
+        filterTickets();
+    }
+
+    function filterTickets() {
+        if (filterSelect) {
+            currentFilter = filterSelect.value || 'all';
+        }
+        var q = (searchInput && searchInput.value || '').trim().toLowerCase();
+        var rows = getRows();
+        var visible = 0;
+        rows.forEach(function (row) {
+            var st = row.getAttribute('data-status') || '';
+            var hay = (row.getAttribute('data-search') || '');
+            var okFilter = statusMatchesFilter(st, currentFilter);
+            var okSearch = !q || hay.indexOf(q) !== -1;
+            var show = okFilter && okSearch;
+            row.classList.toggle('d-none', !show);
+            if (show) visible++;
+        });
+        if (emptyFilter) {
+            var hasRows = rows.length > 0;
+            if (!hasRows) {
+                emptyFilter.classList.add('d-none');
+            } else {
+                emptyFilter.classList.toggle('d-none', visible > 0);
+            }
+        }
+        if (countLabel) {
+            var total = rows.length;
+            var qActive = !!q;
+            if (total === 0) {
+                countLabel.textContent = 'Toplam 0 talep';
+            } else if (!qActive && currentFilter === 'all' && visible === total) {
+                countLabel.textContent = 'Toplam ' + total + ' talep';
+            } else {
+                countLabel.textContent = 'Görünen ' + visible + ' / ' + total + ' talep';
+            }
+        }
+    }
+
+    if (searchInput) searchInput.addEventListener('input', filterTickets);
+
+    if (filterSelect) {
+        filterSelect.addEventListener('change', function () {
+            applyFilter(filterSelect.value || 'all');
+        });
+    }
+
+    var resetFilterBtn = document.getElementById('nxTicketsResetFilter');
+    if (resetFilterBtn) {
+        resetFilterBtn.addEventListener('click', function () {
+            if (searchInput) searchInput.value = '';
+            if (filterSelect) filterSelect.value = 'all';
+            applyFilter('all');
+        });
+    }
+
+    document.querySelectorAll('.nx-scroll-to-form').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+            e.preventDefault();
+            var t = document.getElementById('nx-new-ticket-form');
+            if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+
+    filterTickets();
+})();
+
+function modalSkeletonHtml() {
+    return (
+        '<div class="nx-modal-skeleton py-2">' +
+        '<div class="nx-skel-line w-75 mb-3"></div>' +
+        '<div class="nx-skel-line w-50 mb-2"></div>' +
+        '<div class="nx-skel-line w-100 mb-2"></div>' +
+        '<div class="nx-skel-line mb-4" style="width:92%"></div>' +
+        '<div class="nx-skel-line w-100 mb-2"></div>' +
+        '<div class="nx-skel-line mb-2" style="width:80%"></div>' +
+        '<div class="nx-skel-line" style="width:60%"></div>' +
+        '</div>'
+    );
+}
+
+function viewTicket(ticketId) {
+    var modalEl = document.getElementById('ticketDetailModal');
+    var modal = new bootstrap.Modal(modalEl);
+    var content = document.getElementById('ticketDetailContent');
+    var modalTitle = document.getElementById('ticketDetailModalLabel');
+
+    content.innerHTML = modalSkeletonHtml();
+    modal.show();
+
+    fetch('/tickets/' + ticketId + '/detail')
+        .then(function (response) {
+            if (!response.ok) throw new Error('HTTP');
+            return response.text();
+        })
+        .then(function (html) {
+            content.innerHTML = html;
+            modalTitle.innerHTML =
+                '<span class="nx-modal-head-ic"><i data-feather="message-square" class="icon-sm"></i></span> Talep #' + ticketId;
+            feather.replace();
+            var scrollEl = content.querySelector('.nx-ticket-messages-scroll');
+            if (scrollEl) {
+                scrollEl.scrollTop = scrollEl.scrollHeight;
+            }
+        })
+        .catch(function () {
+            content.innerHTML =
+                '<div class="alert alert-danger border-0 m-3"><i data-feather="alert-circle" class="icon-xs me-2"></i>' +
+                'Talep detayı yüklenirken bir hata oluştu. Lütfen tekrar deneyin.</div>';
+            feather.replace();
+            if (typeof iziToast !== 'undefined') {
+                iziToast.error({
+                    title: 'Hata',
+                    message: 'Talep detayı yüklenemedi. Lütfen tekrar deneyin.',
+                    position: 'topRight'
+                });
+            }
+        });
+}
+
+function submitReply(ticketId) {
+    var form = document.getElementById('replyForm');
+    var formData = new FormData(form);
+
+    document.getElementById('loadingOverlay').style.display = 'flex';
+
+    fetch('/tickets/' + ticketId + '/reply', {
+        method: 'POST',
+        body: formData
+    })
+        .then(function (response) {
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                throw new Error('Hata oluştu');
+            }
+        })
+        .catch(function () {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            if (typeof iziToast !== 'undefined') {
+                iziToast.error({
+                    title: 'Hata',
+                    message: 'Yanıt gönderilemedi. Lütfen tekrar deneyin.',
+                    position: 'topRight'
+                });
+            }
+            var errorAlert = document.createElement('div');
+            errorAlert.className = 'alert alert-danger alert-dismissible fade show mt-3 mx-3';
+            errorAlert.innerHTML =
+                '<i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>' +
+                'Bir hata oluştu. Lütfen tekrar deneyin.' +
+                '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>';
+            var modalBody = document.getElementById('ticketDetailContent');
+            modalBody.insertBefore(errorAlert, modalBody.firstChild);
+            feather.replace();
+            setTimeout(function () {
+                errorAlert.remove();
+            }, 6000);
+        });
+
+    return false;
+}
+
+var ticketToClose = null;
+
+function showCloseTicketModal(ticketId) {
+    ticketToClose = ticketId;
+
+    var detailModal = bootstrap.Modal.getInstance(document.getElementById('ticketDetailModal'));
+    if (detailModal) {
+        detailModal.hide();
+    }
+
+    var checkbox = document.getElementById('confirmCloseTicket');
+    if (checkbox) checkbox.checked = false;
+    var cbtn = document.getElementById('confirmCloseTicketBtn');
+    if (cbtn) cbtn.disabled = true;
+
+    setTimeout(function () {
+        var closeModal = new bootstrap.Modal(document.getElementById('closeTicketModal'));
+        closeModal.show();
+        setTimeout(function () {
+            feather.replace();
+        }, 100);
+    }, 300);
+}
+
+function closeTicket(ticketId) {
+    document.getElementById('loadingOverlay').style.display = 'flex';
+
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/tickets/' + ticketId + '/close';
+    document.body.appendChild(form);
+    form.submit();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    var checkbox = document.getElementById('confirmCloseTicket');
+    var closeBtn = document.getElementById('confirmCloseTicketBtn');
+
+    if (checkbox) {
+        checkbox.addEventListener('change', function () {
+            if (closeBtn) closeBtn.disabled = !checkbox.checked;
+        });
+    }
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', function () {
+            if (ticketToClose) {
+                var modal = bootstrap.Modal.getInstance(document.getElementById('closeTicketModal'));
+                modal.hide();
+                closeTicket(ticketToClose);
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

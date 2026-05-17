@@ -1,0 +1,405 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Domain Ayarları - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item active">Domain Ayarları</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="globe" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Domain Ayarları{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title mb-0">Domain Listesi</h4>
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createDomainModal" onclick="resetCreateForm()">
+                            <i data-feather="plus" class="icon-xs me-1"></i>
+                            Yeni Domain Ekle
+                        </button>
+                    </div>
+
+                    {% if domains|length > 0 %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Site Başlığı</th>
+                                    <th>Logo</th>
+                                    <th>Favicon</th>
+                                    <th>Açıklama</th>
+                                    <th>İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in domains %}
+                                <tr>
+                                    <td><strong>{{ item.domain }}</strong></td>
+                                    <td>{{ item.config.site_title|default('-') }}</td>
+                                    <td>
+                                        {% if item.config.site_logo %}
+                                        <img src="{{ item.config.site_logo }}" alt="Logo" style="max-height: 30px; max-width: 100px;" onerror="this.style.display='none'">
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if item.config.site_favicon %}
+                                        <img src="{{ item.config.site_favicon }}" alt="Favicon" style="max-height: 20px; max-width: 20px;" onerror="this.style.display='none'">
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ item.config.site_description|default('-')|slice(0, 50) }}{% if item.config.site_description|length > 50 %}...{% endif %}</td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#editDomainModal" 
+                                                onclick="loadDomainConfig('{{ item.domain|url_encode }}')">
+                                            <i data-feather="edit" class="icon-xs"></i>
+                                            Düzenle
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteDomainModal" 
+                                                onclick="prepareDeleteDomain('{{ item.domain|url_encode }}', '{{ item.domain }}')">
+                                            <i data-feather="trash-2" class="icon-xs"></i>
+                                            Sil
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i data-feather="info" class="icon-xs me-2"></i>
+                        Henüz domain ayarı eklenmemiş. <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createDomainModal" onclick="resetCreateForm()">Yeni domain eklemek için tıklayın</button>.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Domain Modal -->
+<div class="modal fade" id="createDomainModal" tabindex="-1" aria-labelledby="createDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createDomainModalLabel">Yeni Domain Ekle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="createDomainForm" method="POST" action="/admin/domain-settings">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="create_domain" class="form-label">Domain Adı <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="create_domain" name="domain" required 
+                               placeholder="ornek.com">
+                        <small class="form-text text-muted">Domain adını girin (örn: prime-medya.com, hub-nexus.com)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="create_site_title" class="form-label">Site Başlığı</label>
+                        <input type="text" class="form-control" id="create_site_title" name="site_title" 
+                               placeholder="Site Başlığı">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="create_site_logo" class="form-label">Site Logo URL</label>
+                        <input type="url" class="form-control" id="create_site_logo" name="site_logo" 
+                               placeholder="https://example.com/logo.png">
+                        <small class="form-text text-muted">Logo URL'si (harici link desteklenir)</small>
+                        <div class="mt-2" id="create_logo_preview"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="create_site_favicon" class="form-label">Favicon URL</label>
+                        <input type="url" class="form-control" id="create_site_favicon" name="site_favicon" 
+                               placeholder="https://example.com/favicon.png">
+                        <small class="form-text text-muted">Favicon URL'si (harici link desteklenir)</small>
+                        <div class="mt-2" id="create_favicon_preview"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="create_site_default_avatar" class="form-label">Varsayılan Avatar URL</label>
+                        <input type="url" class="form-control" id="create_site_default_avatar" name="site_default_avatar" 
+                               placeholder="https://example.com/avatar.png">
+                        <small class="form-text text-muted">Varsayılan kullanıcı avatar URL'si (harici link desteklenir)</small>
+                        <div class="mt-2" id="create_avatar_preview"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="create_site_description" class="form-label">Site Açıklaması</label>
+                        <textarea class="form-control" id="create_site_description" name="site_description" rows="3" 
+                                  placeholder="Site açıklaması"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i data-feather="x" class="icon-xs me-1"></i>
+                        İptal
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="save" class="icon-xs me-1"></i>
+                        Kaydet
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Domain Modal -->
+<div class="modal fade" id="deleteDomainModal" tabindex="-1" aria-labelledby="deleteDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteDomainModalLabel">
+                    <i data-feather="alert-triangle" class="align-self-center icon-sm me-2"></i>
+                    Domain Ayarları Silinecek
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="deleteDomainForm">
+                <div class="modal-body">
+                    <div class="alert alert-danger border-0 mb-3" role="alert">
+                        <strong>⚠️ DİKKAT!</strong> Bu işlem <strong>GERİ ALINAMAZ!</strong>
+                    </div>
+                    
+                    <div class="text-center mb-4">
+                        <div class="mb-3">
+                            <i data-feather="trash-2" class="icon-xxl text-danger"></i>
+                        </div>
+                        <h5 class="text-danger mb-2" id="deleteDomainName"></h5>
+                        <p class="text-muted mb-0">
+                            Bu domain ayarları kalıcı olarak silinecektir.
+                        </p>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="confirmDeleteDomain">
+                        <label class="form-check-label" for="confirmDeleteDomain">
+                            <strong>Evet, bu domain ayarlarını silmek istiyorum</strong>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i data-feather="x" class="align-self-center icon-xs me-1"></i>
+                        İptal
+                    </button>
+                    <button type="submit" 
+                            class="btn btn-danger" 
+                            id="confirmDeleteDomainBtn" 
+                            disabled>
+                        <i data-feather="trash-2" class="align-self-center icon-xs me-1"></i>
+                        Evet, Sil
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Domain Modal -->
+<div class="modal fade" id="editDomainModal" tabindex="-1" aria-labelledby="editDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editDomainModalLabel">Domain Düzenle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editDomainForm" method="POST">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="edit_domain" class="form-label">Domain Adı</label>
+                        <input type="text" class="form-control" id="edit_domain" disabled>
+                        <small class="form-text text-muted">Domain adı değiştirilemez</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_site_title" class="form-label">Site Başlığı</label>
+                        <input type="text" class="form-control" id="edit_site_title" name="site_title" placeholder="Site Başlığı">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_site_logo" class="form-label">Site Logo URL</label>
+                        <input type="url" class="form-control" id="edit_site_logo" name="site_logo" placeholder="https://example.com/logo.png">
+                        <small class="form-text text-muted">Logo URL'si (harici link desteklenir)</small>
+                        <div class="mt-2" id="edit_logo_preview"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_site_favicon" class="form-label">Favicon URL</label>
+                        <input type="url" class="form-control" id="edit_site_favicon" name="site_favicon" placeholder="https://example.com/favicon.png">
+                        <small class="form-text text-muted">Favicon URL'si (harici link desteklenir)</small>
+                        <div class="mt-2" id="edit_favicon_preview"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_site_default_avatar" class="form-label">Varsayılan Avatar URL</label>
+                        <input type="url" class="form-control" id="edit_site_default_avatar" name="site_default_avatar" placeholder="https://example.com/avatar.png">
+                        <small class="form-text text-muted">Varsayılan kullanıcı avatar URL'si (harici link desteklenir)</small>
+                        <div class="mt-2" id="edit_avatar_preview"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_site_description" class="form-label">Site Açıklaması</label>
+                        <textarea class="form-control" id="edit_site_description" name="site_description" rows="3" placeholder="Site açıklaması"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="save" class="icon-xs me-1"></i>
+                        Güncelle
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function resetCreateForm() {
+    document.getElementById('createDomainForm').reset();
+    document.getElementById('create_logo_preview').innerHTML = '';
+    document.getElementById('create_favicon_preview').innerHTML = '';
+    document.getElementById('create_avatar_preview').innerHTML = '';
+}
+
+// Create form için URL değiştiğinde preview'ları güncelle
+document.getElementById('create_site_logo')?.addEventListener('input', function() {
+    const preview = document.getElementById('create_logo_preview');
+    if (this.value) {
+        preview.innerHTML = '<img src="' + this.value + '" alt="Logo Önizleme" style="max-height: 50px; max-width: 200px;" onerror="this.style.display=\'none\'">';
+    } else {
+        preview.innerHTML = '';
+    }
+});
+
+document.getElementById('create_site_favicon')?.addEventListener('input', function() {
+    const preview = document.getElementById('create_favicon_preview');
+    if (this.value) {
+        preview.innerHTML = '<img src="' + this.value + '" alt="Favicon Önizleme" style="max-height: 32px; max-width: 32px;" onerror="this.style.display=\'none\'">';
+    } else {
+        preview.innerHTML = '';
+    }
+});
+
+document.getElementById('create_site_default_avatar')?.addEventListener('input', function() {
+    const preview = document.getElementById('create_avatar_preview');
+    if (this.value) {
+        preview.innerHTML = '<img src="' + this.value + '" alt="Avatar Önizleme" style="max-height: 50px; max-width: 50px; border-radius: 50%;" onerror="this.style.display=\'none\'">';
+    } else {
+        preview.innerHTML = '';
+    }
+});
+
+// Modal kapandığında form'u temizle
+document.getElementById('createDomainModal')?.addEventListener('hidden.bs.modal', function () {
+    resetCreateForm();
+});
+
+function prepareDeleteDomain(domainEncoded, domainName) {
+    document.getElementById('deleteDomainName').textContent = domainName;
+    document.getElementById('deleteDomainForm').action = '/admin/domain-settings/' + domainEncoded + '/delete';
+    document.getElementById('confirmDeleteDomain').checked = false;
+    document.getElementById('confirmDeleteDomainBtn').disabled = true;
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Delete confirmation checkbox kontrolü
+document.getElementById('confirmDeleteDomain')?.addEventListener('change', function() {
+    document.getElementById('confirmDeleteDomainBtn').disabled = !this.checked;
+});
+
+// Modal kapandığında checkbox'ı sıfırla
+document.getElementById('deleteDomainModal')?.addEventListener('hidden.bs.modal', function () {
+    document.getElementById('confirmDeleteDomain').checked = false;
+    document.getElementById('confirmDeleteDomainBtn').disabled = true;
+});
+
+function loadDomainConfig(domain) {
+    // Form ve preview'ları temizle
+    document.getElementById('editDomainForm').reset();
+    document.getElementById('edit_logo_preview').innerHTML = '';
+    document.getElementById('edit_favicon_preview').innerHTML = '';
+    document.getElementById('edit_avatar_preview').innerHTML = '';
+    
+    // Domain config'i yükle
+    fetch('/admin/domain-settings/' + encodeURIComponent(domain) + '/config')
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            
+            // Form alanlarını doldur
+            document.getElementById('edit_domain').value = data.domain;
+            document.getElementById('edit_site_title').value = data.config.site_title || '';
+            document.getElementById('edit_site_logo').value = data.config.site_logo || '';
+            document.getElementById('edit_site_favicon').value = data.config.site_favicon || '';
+            document.getElementById('edit_site_default_avatar').value = data.config.site_default_avatar || '';
+            document.getElementById('edit_site_description').value = data.config.site_description || '';
+            
+            // Form action'ını ayarla
+            document.getElementById('editDomainForm').action = '/admin/domain-settings/' + encodeURIComponent(data.domain);
+            
+            // Preview'ları göster
+            if (data.config.site_logo) {
+                document.getElementById('edit_logo_preview').innerHTML = 
+                    '<img src="' + data.config.site_logo + '" alt="Logo Önizleme" style="max-height: 50px; max-width: 200px;" onerror="this.style.display=\'none\'">';
+            }
+            if (data.config.site_favicon) {
+                document.getElementById('edit_favicon_preview').innerHTML = 
+                    '<img src="' + data.config.site_favicon + '" alt="Favicon Önizleme" style="max-height: 32px; max-width: 32px;" onerror="this.style.display=\'none\'">';
+            }
+            if (data.config.site_default_avatar) {
+                document.getElementById('edit_avatar_preview').innerHTML = 
+                    '<img src="' + data.config.site_default_avatar + '" alt="Avatar Önizleme" style="max-height: 50px; max-width: 50px; border-radius: 50%;" onerror="this.style.display=\'none\'">';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Domain ayarları yüklenirken bir hata oluştu.');
+        });
+}
+
+// URL değiştiğinde preview'ları güncelle
+document.getElementById('edit_site_logo').addEventListener('input', function() {
+    const preview = document.getElementById('edit_logo_preview');
+    if (this.value) {
+        preview.innerHTML = '<img src="' + this.value + '" alt="Logo Önizleme" style="max-height: 50px; max-width: 200px;" onerror="this.style.display=\'none\'">';
+    } else {
+        preview.innerHTML = '';
+    }
+});
+
+document.getElementById('edit_site_favicon').addEventListener('input', function() {
+    const preview = document.getElementById('edit_favicon_preview');
+    if (this.value) {
+        preview.innerHTML = '<img src="' + this.value + '" alt="Favicon Önizleme" style="max-height: 32px; max-width: 32px;" onerror="this.style.display=\'none\'">';
+    } else {
+        preview.innerHTML = '';
+    }
+});
+
+document.getElementById('edit_site_default_avatar').addEventListener('input', function() {
+    const preview = document.getElementById('edit_avatar_preview');
+    if (this.value) {
+        preview.innerHTML = '<img src="' + this.value + '" alt="Avatar Önizleme" style="max-height: 50px; max-width: 50px; border-radius: 50%;" onerror="this.style.display=\'none\'">';
+    } else {
+        preview.innerHTML = '';
+    }
+});
+</script>
+{% endblock %}

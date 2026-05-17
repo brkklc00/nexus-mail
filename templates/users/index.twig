@@ -1,0 +1,1470 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Kullanıcılar - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item active">Kullanıcılar</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="users" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Kullanıcı Yönetimi{% endblock %}
+
+{% block styles %}
+<style>
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if _session.flash_success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+    {{ _session.flash_success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<!-- İstatistik Kartları -->
+<div class="row mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Toplam Kullanıcı</p>
+                        <h4 class="mb-0">{{ stats.total_users|number_format(0, ',', '.') }}</h4>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="users" class="text-primary" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Aktif Kullanıcı</p>
+                        <h4 class="mb-0">{{ stats.active_users|number_format(0, ',', '.') }}</h4>
+                        <p class="text-muted mb-0 fs-12">
+                            <span class="text-danger">{{ stats.inactive_users }}</span> pasif
+                        </p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="user-check" class="text-success" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Toplam Bakiye</p>
+                        <h4 class="mb-0">{{ stats.total_balance|number_format(0, ',', '.') }}</h4>
+                        <p class="text-muted mb-0 fs-12">kredi</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="dollar-sign" class="text-warning" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Son 30 Gün Mail</p>
+                        <h4 class="mb-0">{{ stats.total_email_30d|number_format(0, ',', '.') }}</h4>
+                        <p class="text-muted mb-0 fs-12">toplam mail</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="message-square" class="text-info" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h4 class="card-title mb-0">
+                            <i data-feather="users" class="align-self-center icon-xs me-2"></i>
+                            Kullanıcı Listesi
+                        </h4>
+                        <small class="text-muted">{{ total }} kullanıcı bulundu</small>
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-primary" onclick="showCreateModal()">
+                            <i data-feather="user-plus" class="icon-xs me-1"></i>
+                            Yeni Kullanıcı
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Arama ve Filtreler -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="position-relative">
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="searchInput" 
+                                   placeholder="Ad, kullanıcı adı veya e-posta ile ara..."
+                                   value="{{ search }}"
+                                   onkeyup="handleSearch(event)">
+                            <i data-feather="search" class="position-absolute top-50 end-0 translate-middle-y me-2" style="width: 16px; height: 16px;"></i>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select" id="statusFilter" onchange="applyFilters()">
+                            <option value="all" {{ statusFilter == 'all' ? 'selected' : '' }}>Tüm Durumlar</option>
+                            <option value="active" {{ statusFilter == 'active' ? 'selected' : '' }}>Aktif</option>
+                            <option value="inactive" {{ statusFilter == 'inactive' ? 'selected' : '' }}>Pasif</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select" id="roleFilter" onchange="applyFilters()">
+                            <option value="all" {{ roleFilter == 'all' ? 'selected' : '' }}>Tüm Roller</option>
+                            {% for role in roles %}
+                            <option value="{{ role.id }}" {{ roleFilter == role.id ? 'selected' : '' }}>{{ role.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select" id="perPageSelect" onchange="changePerPage()">
+                            <option value="10" {{ perPage == 10 ? 'selected' : '' }}>10 / sayfa</option>
+                            <option value="25" {{ perPage == 25 ? 'selected' : '' }}>25 / sayfa</option>
+                            <option value="50" {{ perPage == 50 ? 'selected' : '' }}>50 / sayfa</option>
+                            <option value="100" {{ perPage == 100 ? 'selected' : '' }}>100 / sayfa</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-outline-success w-100" onclick="exportToExcel()">
+                            <i data-feather="download" class="icon-xs me-1"></i>
+                            Excel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Toplu İşlem Bar (gizli olarak başlar) -->
+                <div id="bulkActionBar" class="alert alert-info mb-3" style="display: none;">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <strong><span id="selectedCount">0</span> kullanıcı seçildi</strong>
+                        </div>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-success" onclick="bulkAction('activate')">
+                                <i data-feather="check-circle" class="icon-xs me-1"></i> Aktif Et
+                            </button>
+                            <button type="button" class="btn btn-sm btn-warning" onclick="bulkAction('deactivate')">
+                                <i data-feather="x-circle" class="icon-xs me-1"></i> Pasif Et
+                            </button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="bulkAction('delete')">
+                                <i data-feather="trash-2" class="icon-xs me-1"></i> Sil
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table id="nxUsersListTable" class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40px;">
+                                    <input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleSelectAll(this)">
+                                </th>
+                                <th style="cursor: pointer;" onclick="sortBy('id')">
+                                    # 
+                                    {% if sortBy == 'id' %}
+                                        <i data-feather="{{ sortDir == 'ASC' ? 'chevron-up' : 'chevron-down' }}" class="icon-xs"></i>
+                                    {% endif %}
+                                </th>
+                                <th style="cursor: pointer;" onclick="sortBy('name')">
+                                    Kullanıcı 
+                                    {% if sortBy == 'name' %}
+                                        <i data-feather="{{ sortDir == 'ASC' ? 'chevron-up' : 'chevron-down' }}" class="icon-xs"></i>
+                                    {% endif %}
+                                </th>
+                                <th style="cursor: pointer;" onclick="sortBy('email')">
+                                    E-posta 
+                                    {% if sortBy == 'email' %}
+                                        <i data-feather="{{ sortDir == 'ASC' ? 'chevron-up' : 'chevron-down' }}" class="icon-xs"></i>
+                                    {% endif %}
+                                </th>
+                                <th>Roller</th>
+                                <th style="cursor: pointer;" onclick="sortBy('lastLoginAt')">
+                                    Son Giriş 
+                                    {% if sortBy == 'lastLoginAt' %}
+                                        <i data-feather="{{ sortDir == 'ASC' ? 'chevron-up' : 'chevron-down' }}" class="icon-xs"></i>
+                                    {% endif %}
+                                </th>
+                                <th>Durum</th>
+                                <th class="text-end">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td>
+                                    <input type="checkbox" 
+                                           class="form-check-input user-checkbox" 
+                                           value="{{ user.id }}"
+                                           onchange="updateBulkActionBar()">
+                                </td>
+                                <td><strong>#{{ user.id }}</strong></td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar-xs me-2">
+                                            <span class="avatar-title rounded-circle bg-primary-subtle text-primary">
+                                                {{ user.name|slice(0, 1)|upper }}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <div class="fw-semibold">{{ user.name }}</div>
+                                            <small class="text-muted">@{{ user.username }}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>{{ user.email }}</td>
+                                <td>
+                                    {% for role in user.roles %}
+                                    <span class="badge bg-info-subtle text-info">{{ role.name }}</span>
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    {% if user.lastLoginAt %}
+                                        <small class="text-muted" title="{{ user.lastLoginAt|date('d.m.Y H:i') }}">
+                                            {{ user.lastLoginAt|date('d.m.Y') }}
+                                        </small>
+                                    {% else %}
+                                        <small class="text-muted fst-italic">Hiç giriş yapmadı</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge {{ user.isActive ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' }}">
+                                        {{ user.isActive ? 'Aktif' : 'Pasif' }}
+                                    </span>
+                                    {% if user.isAccountManager %}
+                                    <br><span class="badge bg-primary-subtle text-primary mt-1">
+                                        <i data-feather="users" class="icon-xs me-1"></i>
+                                        Hesap Yöneticisi
+                                    </span>
+                                    {% endif %}
+                                    {% if user.isChildAccount %}
+                                    <br><span class="badge bg-info-subtle text-info mt-1">
+                                        <i data-feather="user" class="icon-xs me-1"></i>
+                                        Personel
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group">
+                                        <button type="button" class="btn btn-sm btn-soft-primary" onclick="viewUser({{ user.id }})" title="Detay">
+                                            <i data-feather="eye" class="icon-xs"></i>
+                                        </button>
+                                        <button type="button"
+                                                class="btn btn-sm btn-soft-success nx-open-balance-modal"
+                                                title="Bakiye"
+                                                data-nx-bal="{{ {
+                                                    id: user.id,
+                                                    name: user.name,
+                                                    mailCredit: user.emailCredit|default(0)
+                                                }|json_encode|e('html_attr') }}">
+                                            <i data-feather="dollar-sign" class="icon-xs"></i>
+                                        </button>
+                                        {% if user.isActive %}
+                                        <button type="button" 
+                                                class="btn btn-sm btn-soft-warning" 
+                                                title="Kullanıcı Adına Giriş Yap"
+                                                onclick="showImpersonateConfirm({{ user.id }}, '{{ user.name|e('js') }}')">
+                                            <i data-feather="user-check" class="icon-xs"></i>
+                                        </button>
+                                        {% endif %}
+                                        <div class="btn-group" role="group">
+                                            <button type="button" class="btn btn-sm btn-soft-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Diğer İşlemler">
+                                                <i data-feather="more-vertical" class="icon-xs"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                <li>
+                                                    <a class="dropdown-item" href="javascript:void(0)" onclick="showEditModal({{ user.id }})">
+                                                        <i data-feather="edit" class="icon-xs me-2"></i> Düzenle
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <form method="POST" action="/users/{{ user.id }}/toggle" class="m-0">
+                                                        <button type="submit" class="dropdown-item">
+                                                            <i data-feather="{{ user.isActive ? 'eye-off' : 'eye' }}" class="icon-xs me-2"></i>
+                                                            {{ user.isActive ? 'Pasif Yap' : 'Aktif Yap' }}
+                                                        </button>
+                                                    </form>
+                                                </li>
+                                                {% if not user.isAccountManager and not user.isChildAccount %}
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <a class="dropdown-item" href="#" onclick='showManageAccountsModal({{ user.id }}, {{ user.name|json_encode|raw }}, true); return false;'>
+                                                        <i data-feather="users" class="icon-xs me-2"></i> Hesap Yöneticisi Yap
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                                {% if user.isAccountManager %}
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <a class="dropdown-item" href="#" onclick='showManageAccountsModal({{ user.id }}, {{ user.name|json_encode|raw }}); return false;'>
+                                                        <i data-feather="user-plus" class="icon-xs me-2"></i> Personel Yönet
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <a class="dropdown-item text-danger" href="javascript:void(0)" onclick="showDeleteModal({{ user.id }}, '{{ user.name|e('js') }}')">
+                                                        <i data-feather="trash-2" class="icon-xs me-2"></i> Sil
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    <i data-feather="inbox" class="icon-lg mb-2"></i>
+                                    <p class="mb-0">Henüz kullanıcı bulunmamaktadır.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                {# Pagination #}
+                {% if totalPages > 1 %}
+                <nav class="mt-3">
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
+                            <a class="page-link" href="/users?page={{ currentPage - 1 }}">Önceki</a>
+                        </li>
+                        
+                        {% for page in 1..totalPages %}
+                            {% if page == currentPage %}
+                                <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                            {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                                <li class="page-item"><a class="page-link" href="/users?page={{ page }}">{{ page }}</a></li>
+                            {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
+                            <a class="page-link" href="/users?page={{ currentPage + 1 }}">Sonraki</a>
+                        </li>
+                    </ul>
+                </nav>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- User Detay Modal -->
+<div class="modal fade" id="userDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="user" class="icon-xs me-2"></i>
+                    Kullanıcı Detayı
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="userDetailContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Yükleniyor...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Yeni Kullanıcı Modal -->
+<div class="modal fade" id="createUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="user-plus" class="icon-xs me-2"></i>
+                    Yeni Kullanıcı Ekle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="/users" id="createUserForm">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="create_name" class="form-label">Ad Soyad <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="create_name" name="name" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="create_username" class="form-label">Kullanıcı Adı <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="create_username" name="username" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="create_email" class="form-label">E-posta <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="create_email" name="email" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="create_phone" class="form-label">Telefon</label>
+                            <input type="tel" class="form-control" id="create_phone" name="phone">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="create_password" class="form-label">Şifre <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="create_password" name="password" required minlength="6">
+                            <small class="text-muted">En az 6 karakter</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="create_roles" class="form-label">Roller <span class="text-danger">*</span></label>
+                            <select class="form-select" id="create_roles" name="roles[]" multiple required>
+                                {% for role in roles %}
+                                <option value="{{ role.id }}">{{ role.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="create_email_delivery_percentage" class="form-label">Mail Gönderim Yüzdesi (%)</label>
+                            <input type="number" class="form-control" id="create_email_delivery_percentage" name="email_delivery_percentage" value="100" min="0" max="100" required>
+                            <small class="text-muted">0-100 arası bir değer girin (Default: 100)</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="create_is_active" name="is_active" checked>
+                                <label class="form-check-label" for="create_is_active">
+                                    Kullanıcı Aktif
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="create_refund_enabled" name="refund_enabled" checked>
+                                <label class="form-check-label" for="create_refund_enabled">
+                                    Email İade Sistemi Aktif
+                                </label>
+                                <small class="d-block text-muted">Başarısız email gönderimleri otomatik iade edilsin mi?</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="check" class="icon-xs me-1"></i>
+                        Kullanıcı Ekle
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Kullanıcı Düzenle Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="edit" class="icon-xs me-2"></i>
+                    Kullanıcı Düzenle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="editUserForm">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_name" class="form-label">Ad Soyad <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="edit_name" name="name" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_username" class="form-label">Kullanıcı Adı <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="edit_username" name="username" required>
+                            <small class="text-muted">Benzersiz kullanıcı adı girin</small>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_email" class="form-label">E-posta <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="edit_email" name="email" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_phone" class="form-label">Telefon</label>
+                            <input type="tel" class="form-control" id="edit_phone" name="phone">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_password" class="form-label">Yeni Şifre</label>
+                            <input type="password" class="form-control" id="edit_password" name="password" minlength="6">
+                            <small class="text-muted">Boş bırakılırsa şifre değişmez</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_roles" class="form-label">Roller <span class="text-danger">*</span></label>
+                            <select class="form-select" id="edit_roles" name="roles[]" multiple required>
+                                {% for role in roles %}
+                                <option value="{{ role.id }}">{{ role.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="edit_email_delivery_percentage" class="form-label">Mail Gönderim Yüzdesi (%)</label>
+                            <input type="number" class="form-control" id="edit_email_delivery_percentage" name="email_delivery_percentage" value="100" min="0" max="100" required>
+                            <small class="text-muted">0-100 arası bir değer girin</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="edit_is_active" name="is_active">
+                                <label class="form-check-label" for="edit_is_active">
+                                    Kullanıcı Aktif
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="edit_refund_enabled" name="refund_enabled">
+                                <label class="form-check-label" for="edit_refund_enabled">
+                                    Email İade Sistemi Aktif
+                                </label>
+                                <small class="d-block text-muted">Başarısız email gönderimleri otomatik iade edilsin mi?</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="save" class="icon-xs me-1"></i>
+                        Değişiklikleri Kaydet
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Kullanıcı Silme Modal -->
+<div class="modal fade" id="deleteUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i data-feather="alert-triangle" class="icon-xs me-2"></i>
+                    Kullanıcı Silinecek
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger">
+                    <strong>DİKKAT!</strong> Bu işlem geri alınamaz!
+                </div>
+                
+                <p class="mb-3">
+                    <strong>Kullanıcı:</strong> <span id="delete_user_name"></span>
+                </p>
+                
+                <p class="text-muted mb-3">
+                    Bu kullanıcı ve tüm ilişkili verileri (siparişler, rehberler, bakiye geçmişi vb.) 
+                    <strong class="text-danger">kalıcı olarak silinecektir</strong>.
+                </p>
+                
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="confirmDeleteUser">
+                    <label class="form-check-label" for="confirmDeleteUser">
+                        <strong>Evet, bu kullanıcıyı silmek istiyorum</strong>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteUserBtn" disabled>
+                    <i data-feather="trash" class="icon-xs me-1"></i>
+                    Evet, Sil
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bakiye İşlemi Modal -->
+<div class="modal fade" id="balanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="dollar-sign" class="icon-xs me-2"></i>
+                    Bakiye İşlemi - <span id="balanceModalUserName"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-4">
+                    <div class="col-12">
+                        <div class="card border-0 bg-success-subtle h-100">
+                            <div class="card-body text-center py-3">
+                                <i data-feather="mail" class="icon-sm text-success mb-1"></i>
+                                <h6 class="mb-1 small">Mail Kredi</h6>
+                                <h5 class="mb-0 text-success" id="currentMailCredit">0</h5>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <input type="hidden" name="balanceType" id="mailCredit" value="mail_credit">
+
+                <!-- İşlem Türü -->
+                <div class="mb-4">
+                    <label class="form-label fw-semibold">İşlem Türü</label>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <input type="radio" class="btn-check" name="operationType" id="add" value="add" autocomplete="off" checked>
+                            <label class="btn btn-outline-success w-100" for="add">
+                                <i data-feather="plus-circle" class="icon-xs me-1"></i>
+                                Ekle
+                            </label>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="radio" class="btn-check" name="operationType" id="deduct" value="deduct" autocomplete="off">
+                            <label class="btn btn-outline-danger w-100" for="deduct">
+                                <i data-feather="minus-circle" class="icon-xs me-1"></i>
+                                Çıkar
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form -->
+                <form id="balanceForm" method="POST">
+                    <input type="hidden" id="amountFieldName" name="credits" value="">
+                    <div class="mb-3">
+                        <label for="balanceAmount" class="form-label">Miktar <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="balanceAmount" required min="1" placeholder="0">
+                        <div class="form-text" id="amountHelp">Lütfen eklenecek/çıkarılacak miktarı girin</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="balanceNote" class="form-label">Not (Opsiyonel)</label>
+                        <textarea class="form-control" id="balanceNote" name="note" rows="2" placeholder="İşlem açıklaması"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            <i data-feather="check" class="icon-xs me-1"></i>
+                            İşlemi Gerçekleştir
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Personel Yönetimi Modal -->
+<div class="modal fade" id="manageAccountsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="users" class="icon-xs me-2"></i>
+                    Personel Yönetimi - <span id="accountManagerName"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Personel Listesi -->
+                <div class="mb-4">
+                    <h6 class="mb-3">
+                        <i data-feather="users" class="icon-xs me-2"></i>
+                        Personel Hesapları (<span id="childUsersCount">0</span>)
+                    </h6>
+                    <div id="childUsersList" style="max-height: 300px; overflow-y: auto;">
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Yükleniyor...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Personel Ekleme Formu -->
+                <div class="border-top pt-4">
+                    <h6 class="mb-3">
+                        <i data-feather="user-plus" class="icon-xs me-2"></i>
+                        Yeni Personel Ekle
+                    </h6>
+                    <form id="addChildUserForm">
+                        <input type="hidden" id="accountManagerId" name="account_manager_id">
+                        <div class="mb-3">
+                            <label for="child_user_id" class="form-label">Personel Seçin</label>
+                            <select class="form-select" id="child_user_id" name="child_user_id" required>
+                                <option value="">-- Personel Seçin --</option>
+                            </select>
+                            <small class="text-muted">Henüz hesap yöneticisine atanmamış kullanıcılar listelenmektedir.</small>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i data-feather="user-plus" class="icon-xs me-1"></i>
+                            Personel Ekle
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Genel Onay Modal -->
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="alert-circle" class="icon-xs me-2"></i>
+                    Onay Gerekli
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmModalMessage" class="mb-0"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-primary" id="confirmModalBtn">
+                    <i data-feather="check" class="icon-xs me-1"></i>
+                    Onayla
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Genel Bilgi/Hata Modal -->
+<div class="modal fade" id="alertModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" id="alertModalHeader">
+                <h5 class="modal-title" id="alertModalTitle">
+                    <i data-feather="info" class="icon-xs me-2"></i>
+                    Bilgi
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="alertModalMessage" class="mb-0"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Tamam</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999;">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+        <div class="text-center">
+            <div class="spinner-border text-light" style="width: 4rem; height: 4rem;" role="status">
+                <span class="visually-hidden">Yükleniyor...</span>
+            </div>
+            <h5 class="text-white mt-3 mb-0">İşleminiz gerçekleştiriliyor...</h5>
+            <p class="text-white-50 mt-1 mb-0">Lütfen bekleyin</p>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+feather.replace();
+
+let currentUserId = null;
+let searchTimeout = null;
+let confirmCallback = null;
+
+/** Tek Modal örneği: ardışık new bootstrap.Modal backdrop/odak hatasına yol açmasın */
+function nxUsersGetModal(elementOrId) {
+    const el = typeof elementOrId === 'string' ? document.getElementById(elementOrId) : elementOrId;
+    if (!el || typeof bootstrap === 'undefined') return null;
+    return bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    var tbl = document.getElementById('nxUsersListTable');
+    if (!tbl) return;
+    tbl.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('.nx-open-balance-modal');
+        if (!btn) return;
+        var raw = btn.getAttribute('data-nx-bal');
+        if (!raw) return;
+        var d;
+        try {
+            d = JSON.parse(raw);
+        } catch (e) {
+            return;
+        }
+        showBalanceModal(
+            d.id,
+            d.name,
+            Number(d.mailCredit) || 0
+        );
+    });
+});
+
+// Modal ile onay göster
+function showConfirmModal(message, callback) {
+    confirmCallback = callback;
+    document.getElementById('confirmModalMessage').textContent = message;
+    const modal = nxUsersGetModal('confirmModal');
+    if (!modal) return;
+    modal.show();
+    
+    // Onay butonuna event listener ekle
+    const confirmBtn = document.getElementById('confirmModalBtn');
+    const newConfirmBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+    
+    newConfirmBtn.addEventListener('click', function() {
+        if (confirmCallback) {
+            confirmCallback();
+        }
+        bootstrap.Modal.getInstance(document.getElementById('confirmModal')).hide();
+    });
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Modal ile alert göster
+function showAlertModal(message, type = 'info') {
+    const modal = nxUsersGetModal('alertModal');
+    if (!modal) return;
+    const header = document.getElementById('alertModalHeader');
+    const title = document.getElementById('alertModalTitle');
+    const messageEl = document.getElementById('alertModalMessage');
+    
+    messageEl.textContent = message;
+    
+    // Tip'e göre stil ayarla
+    header.className = 'modal-header';
+    title.innerHTML = '<i data-feather="info" class="icon-xs me-2"></i> Bilgi';
+    
+    if (type === 'error' || type === 'danger') {
+        header.className = 'modal-header bg-danger text-white';
+        title.innerHTML = '<i data-feather="alert-circle" class="icon-xs me-2"></i> Hata';
+    } else if (type === 'success') {
+        header.className = 'modal-header bg-success text-white';
+        title.innerHTML = '<i data-feather="check-circle" class="icon-xs me-2"></i> Başarılı';
+    } else if (type === 'warning') {
+        header.className = 'modal-header bg-warning text-dark';
+        title.innerHTML = '<i data-feather="alert-triangle" class="icon-xs me-2"></i> Uyarı';
+    }
+    
+    modal.show();
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Arama fonksiyonu (debounced)
+function handleSearch(event) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        applyFilters();
+    }, 500);
+}
+
+// Filtre uygula
+function applyFilters() {
+    const search = document.getElementById('searchInput').value;
+    const status = document.getElementById('statusFilter').value;
+    const role = document.getElementById('roleFilter').value;
+    const perPage = document.getElementById('perPageSelect').value;
+    
+    const url = new URL(window.location.href);
+    url.searchParams.set('search', search);
+    url.searchParams.set('status', status);
+    url.searchParams.set('role', role);
+    url.searchParams.set('per_page', perPage);
+    url.searchParams.set('page', '1'); // Reset to page 1
+    
+    window.location.href = url.toString();
+}
+
+// Sayfa başına kayıt değiştir
+function changePerPage() {
+    applyFilters();
+}
+
+// Sıralama
+function sortBy(column) {
+    const url = new URL(window.location.href);
+    const currentSort = url.searchParams.get('sort');
+    const currentDir = url.searchParams.get('dir');
+    
+    // Aynı kolona tıklandıysa direction'ı değiştir
+    if (currentSort === column) {
+        url.searchParams.set('dir', currentDir === 'ASC' ? 'DESC' : 'ASC');
+    } else {
+        url.searchParams.set('sort', column);
+        url.searchParams.set('dir', 'DESC');
+    }
+    
+    window.location.href = url.toString();
+}
+
+// Tümünü seç/kaldır
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.user-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateBulkActionBar();
+}
+
+// Toplu işlem bar'ını güncelle
+function updateBulkActionBar() {
+    const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+    const count = checkboxes.length;
+    const bar = document.getElementById('bulkActionBar');
+    const countSpan = document.getElementById('selectedCount');
+    
+    if (count > 0) {
+        bar.style.display = 'block';
+        countSpan.textContent = count;
+    } else {
+        bar.style.display = 'none';
+        document.getElementById('selectAll').checked = false;
+    }
+    
+    feather.replace();
+}
+
+// Toplu işlem
+async function bulkAction(action) {
+    const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+    const userIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+    
+    if (userIds.length === 0) {
+        showAlertModal('Lütfen en az bir kullanıcı seçin', 'warning');
+        return;
+    }
+    
+    const actionNames = {
+        'activate': 'aktif etmek',
+        'deactivate': 'pasif yapmak',
+        'enable_refund': 'iade sistemini aktif etmek',
+        'disable_refund': 'iade sistemini devre dışı bırakmak',
+        'delete': 'silmek'
+    };
+    
+    const confirmMessage = `${userIds.length} kullanıcıyı ${actionNames[action]} istediğinize emin misiniz?`;
+    
+    showConfirmModal(confirmMessage, async function() {
+        document.getElementById('loadingOverlay').style.display = 'block';
+        
+        try {
+            const response = await fetch('/users/bulk-action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: action,
+                    user_ids: userIds
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showAlertModal(data.message, 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showAlertModal('Hata: ' + (data.error || 'İşlem başarısız'), 'error');
+                document.getElementById('loadingOverlay').style.display = 'none';
+            }
+        } catch (error) {
+            showAlertModal('Bir hata oluştu: ' + error.message, 'error');
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+    });
+}
+
+// Export to Excel
+function exportToExcel() {
+    const url = new URL(window.location.href);
+    url.pathname = '/users/export';
+    // Filtreleri koru
+    window.open(url.toString(), '_blank');
+}
+
+// User detayını göster
+function viewUser(userId) {
+    const modal = nxUsersGetModal('userDetailModal');
+    if (!modal) return;
+    const content = document.getElementById('userDetailContent');
+    
+    content.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+    modal.show();
+    
+    fetch('/users/' + userId)
+        .then(response => response.text())
+        .then(html => {
+            content.innerHTML = html;
+            feather.replace();
+        })
+        .catch(error => {
+            content.innerHTML = '<div class="alert alert-danger">Hata oluştu</div>';
+        });
+}
+
+// Bakiye modal göster
+function showBalanceModal(userId, userName, mailCredit) {
+    mailCredit = Number(mailCredit) || 0;
+
+    currentUserId = userId;
+    document.getElementById('balanceModalUserName').textContent = userName;
+    
+    document.getElementById('currentMailCredit').textContent = mailCredit.toLocaleString('tr-TR');
+    
+    // Formu resetle
+    document.getElementById('balanceForm').reset();
+    
+    // İlk seçenekleri aktif yap
+    document.getElementById('mailCredit').checked = true;
+    document.getElementById('add').checked = true;
+    
+    // Form action'ını güncelle
+    updateFormAction();
+    
+    const modal = nxUsersGetModal('balanceModal');
+    if (!modal) return;
+    modal.show();
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Form action'ını güncelle
+function updateFormAction() {
+    let balanceType = document.getElementById('mailCredit')?.value || 'mail_credit';
+    const operationType = document.querySelector('input[name="operationType"]:checked')?.value;
+    
+    if (!balanceType || !operationType) return;
+    balanceType = 'mail_credit';
+    
+    let actionUrl = '';
+    let fieldName = '';
+    
+    if (balanceType === 'mail_credit') {
+        fieldName = 'credits';
+        actionUrl = operationType === 'add' ? 
+            `/users/${currentUserId}/mail-credit/add` : 
+            `/users/${currentUserId}/mail-credit/deduct`;
+    }
+    
+    document.getElementById('balanceForm').action = actionUrl;
+    
+    // Input field name'ini güncelle
+    document.getElementById('balanceAmount').setAttribute('name', fieldName);
+    
+    // Submit butonunu güncelle
+    const submitBtn = document.getElementById('submitBtn');
+    const operationText = operationType === 'add' ? 'Ekle' : 'Çıkar';
+    
+    // Bakiye türü metinleri
+    const balanceLabels = {
+        'mail_credit': 'Mail Kredi'
+    };
+    
+    const balanceText = balanceLabels[balanceType] || balanceType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    submitBtn.innerHTML = `<i data-feather="check" class="icon-xs me-1"></i> ${balanceText} ${operationText}`;
+    
+    // Buton rengini güncelle
+    submitBtn.className = operationType === 'add' ? 'btn btn-success' : 'btn btn-danger';
+    
+    feather.replace();
+}
+
+// Form submit - loading göster
+document.getElementById('createUserForm').addEventListener('submit', function() {
+    document.getElementById('loadingOverlay').style.display = 'block';
+});
+
+document.getElementById('editUserForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    document.getElementById('loadingOverlay').style.display = 'block';
+    
+    const formData = new FormData(this);
+    const action = this.action;
+    
+    try {
+        const response = await fetch(action, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            // Başarılı - sayfayı yenile
+            location.reload();
+        } else {
+            showAlertModal('Bir hata oluştu', 'error');
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+    } catch (error) {
+        showAlertModal('Bir hata oluştu: ' + error.message, 'error');
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
+});
+
+document.getElementById('balanceForm').addEventListener('submit', async function(e) {
+    document.getElementById('loadingOverlay').style.display = 'block';
+});
+
+// Create modal göster
+function showCreateModal() {
+    document.getElementById('createUserForm').reset();
+    const modal = nxUsersGetModal('createUserModal');
+    if (!modal) return;
+    modal.show();
+    
+    // Modal açıldıktan sonra feather iconları render et
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Edit modal göster
+function showEditModal(userId) {
+    const modal = nxUsersGetModal('editUserModal');
+    if (!modal) return;
+    modal.show();
+    
+    // AJAX ile kullanıcı bilgilerini yükle
+    fetch('/users/' + userId + '/edit-data')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('edit_name').value = data.name;
+            document.getElementById('edit_username').value = data.username;
+            document.getElementById('edit_email').value = data.email;
+            document.getElementById('edit_phone').value = data.phone || '';
+            document.getElementById('edit_is_active').checked = data.isActive;
+            document.getElementById('edit_refund_enabled').checked = data.refundEnabled;
+            document.getElementById('edit_email_delivery_percentage').value = data.emailDeliveryPercentage || 100;
+            
+            // Rolleri seç
+            const rolesSelect = document.getElementById('edit_roles');
+            Array.from(rolesSelect.options).forEach(option => {
+                option.selected = data.roles.includes(parseInt(option.value));
+            });
+            
+            // Form action'ı ayarla
+            document.getElementById('editUserForm').action = '/users/' + userId + '/edit';
+            
+            feather.replace();
+        })
+        .catch(error => {
+            showAlertModal('Kullanıcı bilgileri yüklenemedi', 'error');
+            modal.hide();
+        });
+}
+
+// Personel Yönetimi Modal Göster
+function showManageAccountsModal(userId, userName, isNewAccountManager = false) {
+    document.getElementById('accountManagerId').value = userId;
+    document.getElementById('accountManagerName').textContent = userName;
+    
+    // Modal'ı aç
+    const modal = nxUsersGetModal('manageAccountsModal');
+    if (!modal) return;
+    modal.show();
+    
+    // Yeni hesap yöneticisi ise önce hesap yöneticisi yap
+    if (isNewAccountManager) {
+        fetch(`/users/${userId}/make-account-manager`, {
+            method: 'POST'
+        })
+        .then(response => {
+            if (response.ok) {
+                // Başarılı - personel listesini yükle
+                loadChildUsers(userId);
+                loadAvailableUsers(userId);
+            } else {
+                showAlertModal('Hesap yöneticisi yapılırken bir hata oluştu', 'error');
+                modal.hide();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlertModal('Bir hata oluştu', 'error');
+            modal.hide();
+        });
+    } else {
+        // Zaten hesap yöneticisi - direkt yükle
+        loadChildUsers(userId);
+        loadAvailableUsers(userId);
+    }
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Personel listesini yükle
+function loadChildUsers(accountManagerId) {
+    const container = document.getElementById('childUsersList');
+    const countSpan = document.getElementById('childUsersCount');
+    
+    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Yükleniyor...</span></div></div>';
+    
+    fetch(`/users/${accountManagerId}/manage-accounts-data`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.childUsers) {
+                countSpan.textContent = data.childUsers.length;
+                
+                if (data.childUsers.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-4">
+                            <i data-feather="users" class="icon-lg text-muted mb-2"></i>
+                            <p class="text-muted mb-0">Henüz personel hesabı bulunmamaktadır.</p>
+                        </div>
+                    `;
+                } else {
+                    let html = '<div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>Personel</th><th>E-posta</th><th>Durum</th><th class="text-end">İşlemler</th></tr></thead><tbody>';
+                    
+                    data.childUsers.forEach(childUser => {
+                        html += `
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar-xs me-2">
+                                            <span class="avatar-title rounded-circle bg-primary-subtle text-primary">
+                                                ${childUser.name.charAt(0).toUpperCase()}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <div class="fw-semibold small">${childUser.name}</div>
+                                            <small class="text-muted">@${childUser.username}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><small>${childUser.email}</small></td>
+                                <td>
+                                    <span class="badge ${childUser.isActive ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}">
+                                        ${childUser.isActive ? 'Aktif' : 'Pasif'}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-soft-danger" 
+                                            onclick="removeChildUser(${accountManagerId}, ${childUser.id}, '${childUser.name.replace(/'/g, "\\'")}')"
+                                            title="Kaldır">
+                                        <i data-feather="user-minus" class="icon-xs"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</tbody></table></div>';
+                    container.innerHTML = html;
+                }
+                
+                feather.replace();
+            } else {
+                container.innerHTML = '<div class="alert alert-danger">Personel listesi yüklenemedi.</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            container.innerHTML = '<div class="alert alert-danger">Bir hata oluştu.</div>';
+        });
+}
+
+// Mevcut olmayan personelleri yükle (ekleme için)
+function loadAvailableUsers(accountManagerId) {
+    const select = document.getElementById('child_user_id');
+    select.innerHTML = '<option value="">-- Personel Seçin --</option>';
+    
+    fetch(`/users/${accountManagerId}/manage-accounts-data`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.availableUsers) {
+                data.availableUsers.forEach(user => {
+                    const option = document.createElement('option');
+                    option.value = user.id;
+                    option.textContent = `${user.name} (@${user.username})`;
+                    select.appendChild(option);
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+}
+
+// Personel Ekle
+document.getElementById('addChildUserForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const accountManagerId = document.getElementById('accountManagerId').value;
+    const childUserId = document.getElementById('child_user_id').value;
+    
+    if (!childUserId) {
+        showAlertModal('Lütfen bir personel seçin', 'warning');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('child_user_id', childUserId);
+    
+    fetch(`/users/${accountManagerId}/add-child-user`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (response.ok) {
+            // Başarılı - listeyi yenile
+            loadChildUsers(accountManagerId);
+            loadAvailableUsers(accountManagerId);
+            
+            // Form'u temizle
+            document.getElementById('addChildUserForm').reset();
+            document.getElementById('accountManagerId').value = accountManagerId;
+            
+            // Sayfayı yenile (badge'leri güncellemek için)
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showAlertModal('Personel eklenirken bir hata oluştu', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlertModal('Bir hata oluştu', 'error');
+    });
+});
+
+// Personel Kaldır
+function removeChildUser(accountManagerId, childUserId, childUserName) {
+    showConfirmModal(`${childUserName} adlı personeli hesap yöneticisinden kaldırmak istediğinize emin misiniz?`, function() {
+        fetch(`/users/${accountManagerId}/remove-child-user/${childUserId}`, {
+            method: 'POST'
+        })
+        .then(response => {
+            if (response.ok) {
+                // Başarılı - listeyi yenile
+                loadChildUsers(accountManagerId);
+                loadAvailableUsers(accountManagerId);
+                
+                // Sayfayı yenile (badge'leri güncellemek için)
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showAlertModal('Personel kaldırılırken bir hata oluştu', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlertModal('Bir hata oluştu', 'error');
+        });
+    });
+}
+
+// Impersonate onay modal
+function showImpersonateConfirm(userId, userName) {
+    showConfirmModal(`${userName} adlı kullanıcı adına giriş yapmak istediğinize emin misiniz?`, function() {
+        // Form oluştur ve submit et
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/users/${userId}/impersonate`;
+        document.body.appendChild(form);
+        form.submit();
+    });
+}
+
+// Radio button değişikliklerini dinle
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    
+    // Bakiye türü değiştiğinde
+    document.querySelectorAll('input[name="balanceType"]').forEach(radio => {
+        radio.addEventListener('change', updateFormAction);
+    });
+    
+    // İşlem türü değiştiğinde
+    document.querySelectorAll('input[name="operationType"]').forEach(radio => {
+        radio.addEventListener('change', updateFormAction);
+    });
+});
+
+// Kullanıcı silme modal
+let deleteUserId = null;
+let deleteUserName = null;
+
+function showDeleteModal(userId, userName) {
+    deleteUserId = userId;
+    deleteUserName = userName;
+    
+    document.getElementById('delete_user_name').textContent = userName;
+    
+    // Checkbox'ı sıfırla
+    const checkbox = document.getElementById('confirmDeleteUser');
+    const btn = document.getElementById('confirmDeleteUserBtn');
+    checkbox.checked = false;
+    btn.disabled = true;
+    
+    const modal = nxUsersGetModal('deleteUserModal');
+    if (!modal) return;
+    modal.show();
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Checkbox değiştiğinde buton aktif et
+document.addEventListener('DOMContentLoaded', function() {
+    const checkbox = document.getElementById('confirmDeleteUser');
+    const btn = document.getElementById('confirmDeleteUserBtn');
+    
+    if (checkbox && btn) {
+        checkbox.addEventListener('change', function() {
+            btn.disabled = !this.checked;
+        });
+        
+        btn.addEventListener('click', function() {
+            if (deleteUserId) {
+                // Form submit
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = `/users/${deleteUserId}/delete`;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
+

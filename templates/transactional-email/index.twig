@@ -1,0 +1,691 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Bireysel Mail - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+<li class="breadcrumb-item active" aria-current="page">Bireysel Mail</li>
+{% endblock %}
+
+{% block page_title %}
+<div class="row nx-orders-page-head">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head pb-0">
+            <div class="d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div class="min-w-0">
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+                            <li class="breadcrumb-item active">Bireysel Mail</li>
+                        </ol>
+                    </div>
+                    <h4 class="page-title nx-page-title mb-1">Bireysel Mail</h4>
+                    <p class="nx-page-lead text-muted mb-0">Tekil işlem mailleri gönderin, API bilgilerini görüntüleyin ve geçmiş kayıtları takip edin.</p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page" id="nxTxMailHeadRefresh" title="Yenile">
+                        <i data-feather="refresh-cw" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yenile</span>
+                    </button>
+                    <a href="#nx-tx-mail-history" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page">
+                        <i data-feather="list" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Geçmiş</span>
+                    </a>
+                    <button type="button" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page" data-bs-toggle="collapse" data-bs-target="#nxTxMailApiDocs" aria-expanded="false" aria-controls="nxTxMailApiDocs">
+                        <i data-feather="book-open" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">API</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_icon %}{% endblock %}
+{% block title_text %}{% endblock %}
+
+{% block content %}
+
+<!-- Uyarı Mesajları -->
+<div id="alertContainer" class="mb-3"></div>
+
+{% if success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i data-feather="check-circle" class="icon-xs me-2"></i>
+    {{ success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i data-feather="x-circle" class="icon-xs me-2"></i>
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+    <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-2 g-lg-3 nx-orders-kpis mb-3">
+        <div class="col">
+            <div class="nx-orders-kpi py-2 px-2">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--orders" style="width:36px;height:36px;"><i data-feather="mail" style="width:18px;height:18px;"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value" style="font-size:1.15rem;">{{ stats.total|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Toplam email</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="nx-orders-kpi py-2 px-2">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--sent" style="width:36px;height:36px;"><i data-feather="check-circle" style="width:18px;height:18px;"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value" style="font-size:1.15rem;">{{ stats.sent|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Başarılı</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="nx-orders-kpi py-2 px-2">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--credit" style="width:36px;height:36px;"><i data-feather="clock" style="width:18px;height:18px;"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value" style="font-size:1.15rem;">{{ stats.pending|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Bekleyen</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="nx-orders-kpi py-2 px-2">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--orders" style="width:36px;height:36px;"><i data-feather="x-circle" style="width:18px;height:18px;"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value" style="font-size:1.15rem;">{{ stats.failed|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Başarısız · %{{ stats.success_rate|number_format(1) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="nx-orders-kpi py-2 px-2">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--credit" style="width:36px;height:36px;"><i data-feather="credit-card" style="width:18px;height:18px;"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value text-primary" style="font-size:1.15rem;">{{ user.emailTransactionalBalance|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Mevcut bakiye</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="nx-orders-page nx-email-page nx-orders-shell">
+    <div class="nx-orders-cols">
+        <main class="nx-orders-main" id="nx-tx-mail-history">
+            <div class="card nx-card nx-orders-list-card">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h4 class="card-title mb-0">
+                                <i data-feather="mail" class="align-self-center icon-xs me-2"></i>
+                                Email Geçmişi
+                            </h4>
+                            <small class="text-muted">Toplam {{ total }} email</small>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-primary btn-sm" onclick="toggleFilters()">
+                                <i data-feather="filter" class="align-self-center icon-xs me-1"></i>
+                                Filtrele
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Filtreler -->
+                    <div id="filterSection" style="display: none;" class="mt-3 p-3 bg-light rounded">
+                        <form method="GET" action="/transactional-email" class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label small">Durum</label>
+                                <select name="status" class="form-select form-select-sm">
+                                    <option value="all" {{ filters.status == 'all' ? 'selected' : '' }}>Tümü</option>
+                                    <option value="sent" {{ filters.status == 'sent' ? 'selected' : '' }}>Gönderildi</option>
+                                    <option value="failed" {{ filters.status == 'failed' ? 'selected' : '' }}>Başarısız</option>
+                                    <option value="pending" {{ filters.status == 'pending' ? 'selected' : '' }}>Bekliyor</option>
+                                </select>
+                            </div>
+                            <div class="col-md col-sm-6">
+                                <label class="form-label small">Başlangıç Tarihi</label>
+                                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+                            </div>
+                            <div class="col-md col-sm-6">
+                                <label class="form-label small">Bitiş Tarihi</label>
+                                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary btn-sm me-2">
+                                    <i data-feather="search" class="icon-xs me-1"></i>
+                                    Ara
+                                </button>
+                                <a href="/transactional-email" class="btn btn-secondary btn-sm">
+                                    <i data-feather="x" class="icon-xs"></i>
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if history is empty %}
+                    <div class="nx-orders-empty text-center py-5 px-3">
+                        <div class="nx-orders-empty-icon mb-3"><i data-feather="inbox"></i></div>
+                        <h5 class="fw-semibold mb-2">Henüz email göndermediniz</h5>
+                        <p class="text-muted small mb-0">Sağdaki formdan veya API ile gönderim yapabilirsiniz.</p>
+                    </div>
+                    {% else %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Alıcı</th>
+                                    <th>Konu</th>
+                                    <th>Durum</th>
+                                    <th>Tarih</th>
+                                    <th>İşlem</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for email in history %}
+                                <tr>
+                                    <td><strong>#{{ email.id }}</strong></td>
+                                    <td>
+                                        <div>{{ email.toEmail }}</div>
+                                        {% if email.toName %}
+                                        <small class="text-muted">{{ email.toName }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                            {{ email.subject }}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge {{ email.statusBadgeClass }}">
+                                            {{ email.statusLabel }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div>{{ email.createdAt|date('d.m.Y') }}</div>
+                                        <small class="text-muted">{{ email.createdAt|date('H:i:s') }}</small>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-info" onclick="viewDetails({{ email.id }})">
+                                            <i data-feather="eye" class="icon-xs"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    {% if totalPages > 1 %}
+                    <nav class="mt-3">
+                        <ul class="pagination justify-content-center mb-0">
+                            <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
+                                <a class="page-link" href="/transactional-email?page={{ currentPage - 1 }}&status={{ filters.status }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}">Önceki</a>
+                            </li>
+                            
+                            {% for page in 1..totalPages %}
+                                {% if page == currentPage %}
+                                    <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                                {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                                    <li class="page-item"><a class="page-link" href="/transactional-email?page={{ page }}&status={{ filters.status }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}">{{ page }}</a></li>
+                                {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
+                                <a class="page-link" href="/transactional-email?page={{ currentPage + 1 }}&status={{ filters.status }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}">Sonraki</a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+
+        <aside class="nx-orders-side">
+            <!-- Email Gönder Formu -->
+            <div class="card nx-card nx-orders-form-card mb-3">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h5 class="card-title mb-0">
+                                <i data-feather="send" class="icon-xs me-2"></i>
+                                Email Gönder
+                            </h5>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/transactional-email/send" id="sendEmailForm">
+                        <div class="mb-3">
+                            <label class="form-label small">Alıcı Email <span class="text-danger">*</span></label>
+                            <input type="email" name="to_email" class="form-control form-control-sm" placeholder="test@example.com" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small">Alıcı İsim</label>
+                            <input type="text" name="to_name" class="form-control form-control-sm" placeholder="Opsiyonel">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small">Konu <span class="text-danger">*</span></label>
+                            <input type="text" name="subject" class="form-control form-control-sm" placeholder="Email konusu" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small">Mesaj (HTML) <span class="text-danger">*</span></label>
+                            <textarea name="body" class="form-control form-control-sm" rows="10" placeholder="Email içeriği (HTML kullanabilirsiniz)" required></textarea>
+                            <small class="text-muted">HTML: &lt;h1&gt;, &lt;p&gt;, &lt;strong&gt;, &lt;a&gt;, vb.</small>
+                        </div>
+
+                        <div class="alert alert-info border-0 mb-3">
+                            <small>
+                                <i data-feather="info" class="icon-xs me-1"></i>
+                                Gönderen bilgileri SMTP hesabından otomatik alınır
+                            </small>
+                        </div>
+
+                        <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
+                            <i data-feather="send" class="icon-xs me-1"></i>
+                            Email Gönder
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- API Key -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i data-feather="key" class="icon-xs me-2"></i>
+                        API Key
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label small">API Anahtarınız</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control font-monospace" id="apiKey" value="{{ user.apiKey ?? '' }}" readonly>
+                            <button class="btn btn-outline-primary" onclick="copyApiKey()" title="Kopyala">
+                                <i data-feather="copy" class="icon-xs"></i>
+                            </button>
+                        </div>
+                        <small class="text-muted">
+                            {% if user.apiKey %}
+                                <i data-feather="check-circle" class="icon-xs text-success"></i> API isteklerinde kullanın
+                            {% else %}
+                                <i data-feather="alert-circle" class="icon-xs text-warning"></i> Henüz API key oluşturulmamış
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Dokümantasyonu -->
+            <div class="card nx-card mb-3">
+                <div class="card-header bg-light py-2 cursor-pointer" data-bs-toggle="collapse" data-bs-target="#nxTxMailApiDocs" aria-expanded="false" aria-controls="nxTxMailApiDocs" role="button">
+                    <h5 class="card-title mb-0 d-flex align-items-center justify-content-between small fw-semibold">
+                        <span><i data-feather="book-open" class="icon-xs me-2"></i> API dokümantasyonu</span>
+                        <i data-feather="chevron-down" class="icon-xs text-muted"></i>
+                    </h5>
+                </div>
+                <div id="nxTxMailApiDocs" class="collapse card-body border-top">
+                    <!-- 1. Email Gönder -->
+                    <div class="mb-4">
+                        <h6 class="text-primary mb-2">
+                            <i data-feather="send" class="icon-xs me-1"></i>
+                            1. Email Gönder
+                        </h6>
+                        <p class="small text-muted mb-2">İşlemsel email gönderin (HTML destekler).</p>
+                        
+                        <p class="small mb-1"><strong>Endpoint:</strong></p>
+                        <pre class="bg-light p-2 rounded small mb-2"><code>POST /api/transactional-email/send</code></pre>
+                        
+                        <p class="small mb-1"><strong>Headers:</strong></p>
+                        <pre class="bg-light p-2 rounded small mb-2"><code>X-API-Key: {{ user.apiKey ?? 'YOUR_API_KEY' }}
+Content-Type: application/json</code></pre>
+                        
+                        <p class="small mb-1"><strong>Request Body (Zorunlu):</strong></p>
+                        <pre class="bg-light p-2 rounded small mb-2"><code>{
+  "to_email": "user@example.com",
+  "subject": "Test Email",
+  "body": "&lt;h1&gt;Merhaba!&lt;/h1&gt;&lt;p&gt;Test&lt;/p&gt;"
+}</code></pre>
+                        
+                        <p class="small mb-1"><strong>Opsiyonel Alanlar:</strong></p>
+                        <pre class="bg-light p-2 rounded small mb-2"><code>{
+  "to_name": "Alıcı İsmi"
+}</code></pre>
+                        <small class="text-muted">Not: from_email ve from_name SMTP'den otomatik alınır</small>
+                        
+                        <p class="small mb-1"><strong>cURL Örneği:</strong></p>
+                        <pre class="bg-dark text-light p-2 rounded small mb-0"><code>curl -X POST {{ 'http://' ~ app.request.headers.get('host') }}/api/transactional-email/send \
+  -H "X-API-Key: {{ user.apiKey ?? 'YOUR_API_KEY' }}" \
+  -H "Content-Type: application/json" \
+  -d '{"to_email":"test@example.com","subject":"Test","body":"&lt;h1&gt;Test&lt;/h1&gt;"}'</code></pre>
+                    </div>
+
+                    <!-- 2. Email Geçmişi -->
+                    <div class="mb-4">
+                        <h6 class="text-info mb-2">
+                            <i data-feather="list" class="icon-xs me-1"></i>
+                            2. Email Geçmişi
+                        </h6>
+                        <p class="small text-muted mb-2">Gönderilen email'lerin geçmişini görüntüleyin.</p>
+                        
+                        <p class="small mb-1"><strong>Endpoint:</strong></p>
+                        <pre class="bg-light p-2 rounded small mb-2"><code>GET /api/transactional-email/history</code></pre>
+                        
+                        <p class="small mb-1"><strong>Headers:</strong></p>
+                        <pre class="bg-light p-2 rounded small mb-2"><code>X-API-Key: {{ user.apiKey ?? 'YOUR_API_KEY' }}</code></pre>
+                        
+                        <p class="small mb-1"><strong>Query Parameters:</strong></p>
+                        <pre class="bg-light p-2 rounded small mb-2"><code>page: 1
+limit: 20
+status: all, sent, failed, pending</code></pre>
+                    </div>
+
+                    <!-- Postman Collection -->
+                    <div class="d-grid">
+                        <button class="btn btn-outline-primary btn-sm" onclick="downloadPostmanCollection()">
+                            <i data-feather="download" class="icon-xs me-1"></i>
+                            Postman Koleksiyonu İndir
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bilgilendirme -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">
+                        <i data-feather="info" class="icon-xs me-2 text-primary"></i>
+                        Bilgilendirme
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info border-0 mb-3">
+                        <strong><i data-feather="mail" class="icon-xs me-1"></i> İşlemsel Email Nedir?</strong><br>
+                        <small>Otomatik sistemler için email gönderme servisidir. OTP, sipariş onayı, bildirim gibi işlemler için idealdir.</small>
+                    </div>
+                    
+                    <h6 class="small text-dark mb-2"><strong>Özellikler:</strong></h6>
+                    <ul class="small text-muted mb-3">
+                        <li><strong>HTML Desteği:</strong> Zengin içerik gönderimi</li>
+                        <li><strong>SMTP Havuzu:</strong> Otomatik en iyi SMTP seçimi</li>
+                        <li><strong>Güvenli:</strong> API Key kimlik doğrulama</li>
+                        <li><strong>İzleme:</strong> Gönderim durumu takibi</li>
+                        <li><strong>Başarı Oranı:</strong> %{{ stats.success_rate|number_format(1) }}</li>
+                    </ul>
+                    
+                    <h6 class="small text-dark mb-2"><strong>Kullanım Alanları:</strong></h6>
+                    <ul class="small text-muted mb-3">
+                        <li>OTP/Doğrulama kodları</li>
+                        <li>Sipariş onay email'leri</li>
+                        <li>Kullanıcı kayıt bildirimleri</li>
+                        <li>Şifre sıfırlama email'leri</li>
+                        <li>Otomatik raporlar</li>
+                        <li>Sistem bildirimleri</li>
+                    </ul>
+                    
+                    <h6 class="small text-dark mb-2"><strong>Fiyatlandırma:</strong></h6>
+                    <div class="alert alert-success border-0 mb-0">
+                        <small>
+                            <i data-feather="credit-card" class="icon-xs me-1"></i>
+                            Her email gönderimi için <strong>1 kredi</strong> bakiyeden düşülür.<br>
+                            Mevcut bakiyeniz: <strong class="text-primary">{{ user.emailTransactionalBalance|number_format }} email</strong>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+    </div>
+
+<!-- Email Detay Modal -->
+<div class="modal fade" id="emailDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2 mb-0"><i data-feather="mail" class="icon-xs"></i> Email detayları</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body" id="emailDetailContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Yükleniyor...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function viewDetails(emailId) {
+    const modal = new bootstrap.Modal(document.getElementById('emailDetailModal'));
+    modal.show();
+    
+    fetch(`/transactional-email/${emailId}/details`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const email = data.email;
+                document.getElementById('emailDetailContent').innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-bordered">
+                                <tr><th width="40%">ID</th><td>#${email.id}</td></tr>
+                                <tr><th>Alıcı Email</th><td>${email.to_email}</td></tr>
+                                <tr><th>Alıcı İsim</th><td>${email.to_name || '-'}</td></tr>
+                                <tr><th>Gönderen Email</th><td>${email.from_email || 'SMTP Ayarı'}</td></tr>
+                                <tr><th>Gönderen İsim</th><td>${email.from_name || '-'}</td></tr>
+                                <tr><th>Durum</th><td><span class="badge badge-${email.status === 'sent' ? 'success' : (email.status === 'failed' ? 'danger' : 'warning')}">${email.status_label}</span></td></tr>
+                                <tr><th>Message ID</th><td><small>${email.message_id || '-'}</small></td></tr>
+                                <tr><th>SMTP Hesabı</th><td>${email.smtp_account || '-'}</td></tr>
+                                <tr><th>Oluşturulma</th><td>${email.created_at}</td></tr>
+                                <tr><th>Gönderilme</th><td>${email.sent_at || '-'}</td></tr>
+                                ${email.error ? `<tr><th>Hata</th><td class="text-danger">${email.error}</td></tr>` : ''}
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Konu:</h6>
+                            <div class="alert alert-secondary">${email.subject}</div>
+                            
+                            <h6>İçerik:</h6>
+                            <div class="border p-3" style="max-height: 400px; overflow-y: auto;">
+                                ${email.body}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                feather.replace();
+            } else {
+                document.getElementById('emailDetailContent').innerHTML = `
+                    <div class="alert alert-danger">${data.message}</div>
+                `;
+            }
+        })
+        .catch(err => {
+            document.getElementById('emailDetailContent').innerHTML = `
+                <div class="alert alert-danger">Detaylar yüklenemedi</div>
+            `;
+        });
+}
+
+function copyApiKey() {
+    const apiKeyInput = document.getElementById('apiKey');
+    apiKeyInput.select();
+    document.execCommand('copy');
+    
+    showAlert('success', 'API Key kopyalandı');
+}
+
+function downloadPostmanCollection() {
+    const apiKey = '{{ user.apiKey ?? "YOUR_API_KEY_HERE" }}';
+    const baseUrl = '{{ app_url }}';
+    const siteTitle = '{{ site_title|default("Nexus") }}'.replace(/\s+/g, '_');
+    
+    const collection = {
+        "info": {
+            "name": siteTitle + " Transactional Email API",
+            "description": "İşlemsel Email gönderme ve geçmiş API koleksiyonu - {{ user.name ?? "User" }}",
+            "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "auth": {
+            "type": "apikey",
+            "apikey": [
+                {
+                    "key": "value",
+                    "value": apiKey,
+                    "type": "string"
+                },
+                {
+                    "key": "key",
+                    "value": "X-Api-Token",
+                    "type": "string"
+                },
+                {
+                    "key": "in",
+                    "value": "header",
+                    "type": "string"
+                }
+            ]
+        },
+        "item": [
+            {
+                "name": "1. Email Gönder",
+                "request": {
+                    "method": "POST",
+                    "header": [
+                        {
+                            "key": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ],
+                    "body": {
+                        "mode": "raw",
+                        "raw": JSON.stringify({
+                            "to_email": "test@example.com",
+                            "to_name": "Test User",
+                            "subject": "Test Email",
+                            "body": "<h1>Merhaba!</h1><p>Bu bir test emailidir.</p>",
+                            "from_email": "sender@example.com",
+                            "from_name": "Gönderici"
+                        }, null, 2)
+                    },
+                    "url": {
+                        "raw": baseUrl + "/api/transactional-email/send",
+                        "protocol": baseUrl.includes('https') ? "https" : "http",
+                        "host": [baseUrl.replace(/^https?:\/\//, '')],
+                        "path": ["api", "transactional-email", "send"]
+                    },
+                    "description": "İşlemsel email gönderir. HTML içerik destekler."
+                }
+            },
+            {
+                "name": "2. Email Geçmişi",
+                "request": {
+                    "method": "GET",
+                    "url": {
+                        "raw": baseUrl + "/api/transactional-email/history?page=1&limit=20&status=all",
+                        "protocol": baseUrl.includes('https') ? "https" : "http",
+                        "host": [baseUrl.replace(/^https?:\/\//, '')],
+                        "path": ["api", "transactional-email", "history"],
+                        "query": [
+                            {
+                                "key": "page",
+                                "value": "1",
+                                "description": "Sayfa numarası"
+                            },
+                            {
+                                "key": "limit",
+                                "value": "20",
+                                "description": "Sayfa başına kayıt (max: 100)"
+                            },
+                            {
+                                "key": "status",
+                                "value": "all",
+                                "description": "all, sent, failed, pending"
+                            }
+                        ]
+                    },
+                    "description": "Gönderilen email'lerin geçmişini listeler."
+                }
+            }
+        ]
+    };
+
+    const fileName = `${siteTitle}_Transactional_Email_API.postman_collection.json`;
+    
+    const blob = new Blob([JSON.stringify(collection, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    // Bildirim gösterme - sessiz indirme
+}
+
+function toggleFilters() {
+    const filterSection = document.getElementById('filterSection');
+    if (filterSection.style.display === 'none') {
+        filterSection.style.display = 'block';
+    } else {
+        filterSection.style.display = 'none';
+    }
+    feather.replace();
+}
+
+function showAlert(type, message) {
+    const alertContainer = document.getElementById('alertContainer');
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const icon = type === 'success' ? 'check-circle' : 'alert-circle';
+    
+    const alertHtml = `
+        <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+            <i data-feather="${icon}" class="icon-xs me-2"></i>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    alertContainer.innerHTML = alertHtml;
+    feather.replace();
+    
+    // 3 saniye sonra otomatik kapat
+    setTimeout(() => {
+        const alert = alertContainer.querySelector('.alert');
+        if (alert) {
+            alert.classList.remove('show');
+            setTimeout(() => alertContainer.innerHTML = '', 150);
+        }
+    }, 3000);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    document.getElementById('nxTxMailHeadRefresh')?.addEventListener('click', function () { location.reload(); });
+    
+    // Eğer filtre aktifse, filtre bölümünü aç
+    const hasFilters = '{{ filters.status }}' !== 'all' || '{{ filters.date_from }}' || '{{ filters.date_to }}';
+    if (hasFilters) {
+        document.getElementById('filterSection').style.display = 'block';
+    }
+});
+</script>
+{% endblock %}

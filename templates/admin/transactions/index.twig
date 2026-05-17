@@ -1,0 +1,228 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Tüm İşlem Geçmişi - Yönetim - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item active">İşlem Geçmişi</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="activity" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Tüm İşlem Geçmişi{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    {# İstatistikler #}
+    <div class="row">
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0 me-3">
+                            <div class="avatar-sm rounded-circle bg-soft-primary">
+                                <span class="avatar-title">
+                                    <i data-feather="activity" class="icon-dual-primary"></i>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <p class="text-muted mb-1">Toplam İşlem</p>
+                            <h4 class="mb-0">{{ stats.total_transactions|number_format }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0 me-3">
+                            <div class="avatar-sm rounded-circle bg-soft-success">
+                                <span class="avatar-title">
+                                    <i data-feather="plus-circle" class="icon-dual-success"></i>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <p class="text-muted mb-1">Toplam Kredi Eklemeleri</p>
+                            <h4 class="mb-0">{{ stats.total_credit|number_format }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0 me-3">
+                            <div class="avatar-sm rounded-circle bg-soft-danger">
+                                <span class="avatar-title">
+                                    <i data-feather="minus-circle" class="icon-dual-danger"></i>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <p class="text-muted mb-1">Toplam Kredi Kullanımları</p>
+                            <h4 class="mb-0">{{ stats.total_debit|number_format }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Filtreler ve Tablo #}
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title">
+                        <i data-feather="filter" class="icon-xs me-2"></i>
+                        Filtreler
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="/admin/transactions" class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Kullanıcı</label>
+                            <select name="user_id" class="form-select">
+                                <option value="">Tümü</option>
+                                {% for user in users %}
+                                    <option value="{{ user.id }}" {% if userFilter == user.id ~ '' %}selected{% endif %}>
+                                        {{ user.name }} ({{ user.email }})
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">İşlem Tipi</label>
+                            <select name="type" class="form-select">
+                                <option value="">Tümü</option>
+                                <option value="credit" {% if typeFilter == 'credit' %}selected{% endif %}>Kredi Ekle</option>
+                                <option value="debit" {% if typeFilter == 'debit' %}selected{% endif %}>Kredi Çıkar</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary me-2">
+                                <i data-feather="search" class="icon-xs"></i> Filtrele
+                            </button>
+                            <a href="/admin/transactions" class="btn btn-outline-secondary">
+                                <i data-feather="x" class="icon-xs"></i> Temizle
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title">
+                        İşlem Listesi
+                        <span class="badge bg-primary ms-2">{{ total }} İşlem</span>
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Kullanıcı</th>
+                                    <th>İşlem Tipi</th>
+                                    <th>Miktar</th>
+                                    <th>Açıklama</th>
+                                    <th>Tarih</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if transactions is empty %}
+                                    <tr>
+                                        <td colspan="6" class="text-center py-4">
+                                            <i data-feather="inbox" class="icon-dual icon-lg mb-2"></i>
+                                            <p class="text-muted mb-0">İşlem bulunamadı</p>
+                                        </td>
+                                    </tr>
+                                {% else %}
+                                    {% for transaction in transactions %}
+                                        <tr>
+                                            <td><strong>#{{ transaction.id }}</strong></td>
+                                            <td>
+                                                <div>
+                                                    <strong>{{ transaction.user.name }}</strong>
+                                                    <br>
+                                                    <small class="text-muted">{{ transaction.user.email }}</small>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                {{ transaction.type.label }}
+                                            </td>
+                                            <td>
+                                                {% if transaction.credits > 0 %}
+                                                    <span class="text-success fw-bold">+{{ transaction.credits|number_format }}</span>
+                                                {% else %}
+                                                    <span class="text-danger fw-bold">{{ transaction.credits|number_format }}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <small>{{ transaction.meta.description|default('-') }}</small>
+                                            </td>
+                                            <td>
+                                                <div>
+                                                    {{ transaction.createdAt|date('d.m.Y') }}
+                                                    <br>
+                                                    <small class="text-muted">{{ transaction.createdAt|date('H:i') }}</small>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {# Sayfalama #}
+                    {% if totalPages > 1 %}
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <ul class="pagination justify-content-center mb-0">
+                                    {% if currentPage > 1 %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ currentPage - 1 }}{% if userFilter %}&user_id={{ userFilter }}{% endif %}{% if typeFilter %}&type={{ typeFilter }}{% endif %}">Önceki</a>
+                                        </li>
+                                    {% endif %}
+
+                                    {% for i in 1..totalPages %}
+                                        {% if i == currentPage %}
+                                            <li class="page-item active"><span class="page-link">{{ i }}</span></li>
+                                        {% elseif i == 1 or i == totalPages or (i >= currentPage - 2 and i <= currentPage + 2) %}
+                                            <li class="page-item">
+                                                <a class="page-link" href="?page={{ i }}{% if userFilter %}&user_id={{ userFilter }}{% endif %}{% if typeFilter %}&type={{ typeFilter }}{% endif %}">{{ i }}</a>
+                                            </li>
+                                        {% elseif i == currentPage - 3 or i == currentPage + 3 %}
+                                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                                        {% endif %}
+                                    {% endfor %}
+
+                                    {% if currentPage < totalPages %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ currentPage + 1 }}{% if userFilter %}&user_id={{ userFilter }}{% endif %}{% if typeFilter %}&type={{ typeFilter }}{% endif %}">Sonraki</a>
+                                        </li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

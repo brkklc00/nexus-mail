@@ -1,0 +1,831 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Mail Rehberim - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+<li class="breadcrumb-item active" aria-current="page">Mail Rehberim</li>
+{% endblock %}
+
+{% block page_title %}
+<div class="row nx-orders-page-head">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head pb-0">
+            <div class="d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div class="min-w-0">
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+                            <li class="breadcrumb-item active">Mail Rehberim</li>
+                        </ol>
+                    </div>
+                    <h4 class="page-title nx-page-title mb-1">Mail Rehberim</h4>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button type="button" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page" id="nxPbHeadRefresh" title="Yenile">
+                        <i data-feather="refresh-cw" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yenile</span>
+                    </button>
+                    <a href="/email-orders" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page">
+                        <i data-feather="send" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Mail Gönder</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_icon %}{% endblock %}
+{% block title_text %}{% endblock %}
+
+{% block content %}
+
+    <!-- Success/Error Messages -->
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 9999; backdrop-filter: blur(5px);">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+            <div class="spinner-border text-light mb-3" role="status" style="width: 4rem; height: 4rem; border-width: 0.3rem;">
+                <span class="visually-hidden">Yükleniyor...</span>
+            </div>
+            <h4 class="text-white mb-2" id="loadingText">İşlem Yapılıyor...</h4>
+            <p class="text-white-50 mb-3" id="loadingSubtext">Lütfen bekleyin</p>
+            <div class="progress mx-auto" style="width: 300px; height: 8px; background: rgba(255,255,255,0.2);">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    {% set pb_total_mails = 0 %}
+    {% set latestPb = null %}
+    {% for p in phonebooks %}
+        {% set pb_total_mails = pb_total_mails + p.totalContacts %}
+        {% if latestPb is null or p.createdAt > latestPb.createdAt %}
+            {% set latestPb = p %}
+        {% endif %}
+    {% endfor %}
+
+    <div class="nx-orders-page nx-email-page nx-orders-shell">
+    <div class="row g-3 nx-orders-kpis mb-3">
+        <div class="col-12 col-md-4">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--orders"><i data-feather="book"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ phonebooks|length|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Toplam rehber</div>
+                    <div class="nx-orders-kpi-hint">Oluşturduğunuz listeler</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--sent"><i data-feather="mail"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ pb_total_mails|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Toplam mail</div>
+                    <div class="nx-orders-kpi-hint">Tüm rehberlerdeki adresler</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--credit"><i data-feather="clock"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value text-truncate" style="font-size: 1.25rem;">{{ latestPb ? latestPb.title : '—' }}</div>
+                    <div class="nx-orders-kpi-label">Son oluşturulan</div>
+                    <div class="nx-orders-kpi-hint">{{ latestPb ? latestPb.createdAt|date('d.m.Y H:i') : 'Henüz rehber yok' }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="nx-orders-cols nx-email-cols">
+        <main class="nx-orders-main">
+        <div class="card nx-card nx-orders-list-card">
+            <div class="nx-orders-card-head nx-orders-card-head--title-only">
+                <div class="nx-orders-card-head-main">
+                    <div class="nx-orders-icon-chip"><i data-feather="list"></i></div>
+                    <div>
+                        <h4 class="nx-orders-card-title mb-0">Mail Rehberim</h4>
+                    </div>
+                </div>
+            </div>
+            {% if phonebooks is not empty %}
+            <div class="nx-orders-toolbar-strip">
+                <div class="nx-orders-list-toolbar orders-toolbar">
+                    <input type="search" class="form-control form-control-sm nx-orders-search-input" id="nxPbSearch" placeholder="Rehber adı veya açıklama…" autocomplete="off" aria-label="Rehberde ara">
+                    <span class="nx-orders-toolbar-mid" aria-hidden="true"></span>
+                    <button type="button" class="btn nx-orders-icon-refresh" id="nxPbToolbarRefresh" title="Yenile" aria-label="Yenile"><i data-feather="refresh-cw"></i></button>
+                </div>
+            </div>
+            {% endif %}
+            <div class="card-body nx-orders-list-body">
+                    {% if phonebooks is empty %}
+                    <div class="nx-orders-empty text-center py-5 px-3">
+                        <div class="nx-orders-empty-icon mb-3"><i data-feather="book"></i></div>
+                        <h5 class="fw-semibold mb-2">Henüz rehber yok</h5>
+                        <p class="text-muted small mb-4">Sağdaki formdan ilk listenizi oluşturabilirsiniz.</p>
+                        <a href="#nx-pb-form" class="btn nx-orders-primary-btn btn-sm"><i data-feather="plus-circle" class="icon-xs me-1"></i> Rehber oluştur</a>
+                    </div>
+                    {% else %}
+                    <div class="table-responsive nx-orders-table-wrap">
+                        <table class="table table-hover mb-0 nx-orders-table" id="nxPbTable">
+                            <thead>
+                                <tr>
+                                    <th>Başlık</th>
+                                    <th>Adet</th>
+                                    <th>Açıklama</th>
+                                    <th>Oluşturma</th>
+                                    <th class="text-end nx-orders-col-action">İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for phonebook in phonebooks %}
+                                {% set pbSearch = phonebook.title ~ ' ' ~ (phonebook.description ?? '') ~ ' ' ~ phonebook.createdAt|date('d.m.Y') %}
+                                <tr class="nx-pb-row" data-search="{{ pbSearch|e('html_attr') }}">
+                                    <td>
+                                        <strong>{{ phonebook.title }}</strong>
+                                    </td>
+                                    <td>
+                                        <span class="badge nx-orders-status-badge bg-primary-subtle text-primary-emphasis">{{ phonebook.totalContacts|number_format(0, ',', '.') }} mail</span>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {{ phonebook.description ? (phonebook.description|length > 36 ? phonebook.description|slice(0, 36) ~ '…' : phonebook.description) : '—' }}
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <span class="text-muted small">{{ phonebook.createdAt|date('d.m.Y H:i') }}</span>
+                                    </td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn nx-orders-icon-btn" onclick="viewEmailPhonebook({{ phonebook.id }}, '{{ phonebook.title|e('js') }}')" title="Görüntüle">
+                                            <i data-feather="eye" class="icon-xs"></i>
+                                        </button>
+                                        <button type="button" class="btn nx-orders-icon-btn" onclick="showDownloadModal({{ phonebook.id }}, '{{ phonebook.title }}', {{ phonebook.totalContacts }})" title="İndir">
+                                            <i data-feather="download" class="icon-xs"></i>
+                                        </button>
+                                        <button type="button" onclick="deletePhonebook({{ phonebook.id }}, '{{ phonebook.title }}', {{ phonebook.totalContacts }})" class="btn nx-orders-icon-btn" title="Sil">
+                                            <i data-feather="trash-2" class="icon-xs"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+
+        <aside class="nx-orders-side" id="nx-pb-form">
+            <div class="card nx-card nx-orders-form-card">
+                <div class="nx-orders-card-head nx-orders-card-head--form nx-orders-card-head--compact">
+                    <div class="nx-orders-card-head-main">
+                        <div class="nx-orders-icon-chip nx-orders-icon-chip--accent"><i data-feather="users"></i></div>
+                        <div>
+                            <h4 class="nx-orders-card-title mb-0">Rehber işlemleri</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body nx-orders-form-body">
+                    <ul class="nav nx-orders-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link active" data-bs-toggle="tab" href="#createNewTab" role="tab" onclick="refreshIcons()">
+                                <i data-feather="plus-circle" class="nx-orders-tab-ic"></i>
+                                <span>Yeni Rehber</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" data-bs-toggle="tab" href="#addToExistingTab" role="tab" onclick="refreshIcons()">
+                                <i data-feather="file-plus" class="nx-orders-tab-ic"></i>
+                                <span>Mevcut Rehbere Ekle</span>
+                            </a>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content nx-orders-tab-panels">
+                        <!-- Yeni Rehber Oluştur -->
+                        <div class="tab-pane fade show active" id="createNewTab" role="tabpanel">
+                            <form method="POST" action="/email-phonebooks" enctype="multipart/form-data" onsubmit="return showLoading(event)">
+                                <input type="hidden" name="operation_type" value="create">
+                                
+                                <div class="mb-3">
+                                    <label for="title_new" class="form-label">Rehber Adı <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="title_new" name="title" placeholder="Örn: Müşteri Listesi" required>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="description_new" class="form-label">Açıklama (Opsiyonel)</label>
+                                    <textarea class="form-control" id="description_new" name="description" rows="2" placeholder="Rehber hakkında kısa açıklama"></textarea>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="emails_new" class="form-label">Mail Adresleri (Opsiyonel)</label>
+                                    <textarea class="form-control font-monospace" id="emails_new" name="emails" rows="5" placeholder="Her satıra bir mail adresi&#10;ornek@mail.com&#10;kullanici@mail.com"></textarea>
+                                    <small class="text-muted">Her satıra bir mail adresi yazın</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="file_new" class="form-label">Dosyadan İçe Aktar (Opsiyonel)</label>
+                                    <input type="file" class="form-control" id="file_new" name="file" accept=".csv,.xls,.xlsx,.txt" onchange="handleFileSelect(this, 'emails_new')">
+                                    <small class="text-muted d-block">CSV, Excel, TXT (max 500 MB - Milyonlarca mail)</small>
+                                    <div id="file_progress_new" class="mt-2" style="display: none;">
+                                        <div class="progress">
+                                            <div id="file_progress_bar_new" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
+                                        </div>
+                                        <small class="text-muted mt-1 d-block" id="file_status_new"></small>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
+                                    <i data-feather="save" class="icon-xs me-1"></i>
+                                    Rehber Oluştur
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Mevcut Rehbere Ekle -->
+                        <div class="tab-pane fade" id="addToExistingTab" role="tabpanel">
+                            <form method="POST" action="/email-phonebooks" enctype="multipart/form-data" onsubmit="return showLoading(event)">
+                                <input type="hidden" name="operation_type" value="add">
+                                
+                                <div class="mb-3">
+                                    <label for="phonebook_id_add" class="form-label">Rehber Seç <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="phonebook_id_add" name="existing_phonebook_id" required>
+                                        <option value="">-- Rehber Seçin --</option>
+                                        {% for phonebook in phonebooks %}
+                                        <option value="{{ phonebook.id }}">{{ phonebook.title }} ({{ phonebook.totalContacts }} mail)</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="emails_add" class="form-label">Mail Adresleri (Opsiyonel)</label>
+                                    <textarea class="form-control font-monospace" id="emails_add" name="emails" rows="5" placeholder="Her satıra bir mail adresi&#10;ornek@mail.com&#10;kullanici@mail.com"></textarea>
+                                    <small class="text-muted">Her satıra bir mail adresi yazın</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="file_add" class="form-label">Dosyadan İçe Aktar (Opsiyonel)</label>
+                                    <input type="file" class="form-control" id="file_add" name="file" accept=".csv,.xls,.xlsx,.txt" onchange="handleFileSelect(this, 'emails_add')">
+                                    <small class="text-muted d-block">CSV, Excel, TXT (max 500 MB - Milyonlarca mail)</small>
+                                    <div id="file_progress_add" class="mt-2" style="display: none;">
+                                        <div class="progress">
+                                            <div id="file_progress_bar_add" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
+                                        </div>
+                                        <small class="text-muted mt-1 d-block" id="file_status_add"></small>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
+                                    <i data-feather="plus" class="icon-xs me-1"></i>
+                                    Rehbere Ekle
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nx-orders-info-card nx-orders-info-card--compact mt-3">
+                <div class="nx-orders-info-title nx-orders-info-title--compact mb-2"><i data-feather="info" class="nx-orders-info-title-ic"></i> Bilgi</div>
+                <ul class="nx-orders-info-lines list-unstyled mb-0 small text-muted">
+                    <li class="mb-1"><span class="text-secondary fw-semibold">Formatlar:</span> CSV, Excel (xls/xlsx), TXT</li>
+                    <li class="mb-1"><span class="text-secondary fw-semibold">Boyut:</span> Büyük listeler için dosya yükleme (sunucu limitleri geçerli)</li>
+                    <li class="mb-0"><span class="text-secondary fw-semibold">Not:</span> Adresler genelde ilk sütunda olmalı; geçersiz satırlar elenir.</li>
+                </ul>
+            </div>
+
+        </aside>
+    </div>
+    </div>
+
+<!-- Rehber İndirme Modal -->
+<div class="modal fade" id="downloadModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="download" class="icon-xs"></i>
+                    Rehber indir
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i data-feather="book" class="icon-xxl text-primary"></i>
+                    </div>
+                    <h5 id="downloadPhonebookName" class="text-primary"></h5>
+                    <p class="text-muted mb-0">
+                        <strong id="downloadPhonebookCount"></strong> mail adresi içeren rehberi indirin
+                    </p>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <a id="downloadCsvLink" class="btn btn-outline-primary" href="#">
+                        <i data-feather="file-text" class="icon-xs me-2"></i>
+                        CSV Format (.csv)
+                        <small class="d-block text-muted">Excel ile uyumlu, UTF-8</small>
+                    </a>
+                    <a id="downloadExcelLink" class="btn btn-outline-success" href="#">
+                        <i data-feather="file" class="icon-xs me-2"></i>
+                        Excel Format (.xlsx)
+                        <small class="d-block text-muted">Microsoft Excel</small>
+                    </a>
+                    <a id="downloadTxtLink" class="btn btn-outline-secondary" href="#">
+                        <i data-feather="align-left" class="icon-xs me-2"></i>
+                        TXT Format (.txt)
+                        <small class="d-block text-muted">Sadece mail adresleri</small>
+                    </a>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="icon-xs me-1"></i>
+                    Kapat
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rehber Silme Modal -->
+<!-- Email Phonebook Detail Modal -->
+<div class="modal fade" id="emailPhonebookDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body-content">
+                <!-- İçerik AJAX ile yüklenecek -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deletePhonebookModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i data-feather="alert-triangle" class="align-self-center icon-xs me-2"></i>
+                    Rehber Silinecek
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger border-0 mb-3" role="alert">
+                    <strong>
+                        <i data-feather="alert-circle" class="icon-xs me-1"></i>
+                        DİKKAT!
+                    </strong> Bu işlem GERİ ALINAMAZ!
+                </div>
+                
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i data-feather="trash-2" class="icon-xxl text-danger"></i>
+                    </div>
+                    <h5 class="text-danger mb-2" id="deletePhonebookName"></h5>
+                    <p class="text-muted mb-0">
+                        Bu rehber ve içindeki <strong class="text-danger" id="deletePhonebookCount"></strong> kalıcı olarak silinecektir.
+                    </p>
+                </div>
+                
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="confirmDeletePhonebook">
+                    <label class="form-check-label" for="confirmDeletePhonebook">
+                        <strong>Evet, bu rehberi ve tüm mail adreslerini silmek istiyorum</strong>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="icon-xs me-1"></i>
+                    İptal
+                </button>
+                <form method="POST" id="deletePhonebookForm" class="d-inline" onsubmit="handleDeleteSubmit(event)">
+                    <button type="submit" class="btn btn-danger" id="confirmDeletePhonebookBtn" disabled>
+                        <i data-feather="trash" class="icon-xs me-1"></i>
+                        Evet, Sil
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Dosya işleme - Chunk-based okuma
+function refreshIcons() {
+    setTimeout(() => feather.replace(), 50);
+}
+
+async function handleFileSelect(input, targetTextareaId) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    const progressId = input.id === 'file_new' ? 'new' : 'add';
+    const progressDiv = document.getElementById(`file_progress_${progressId}`);
+    const progressBar = document.getElementById(`file_progress_bar_${progressId}`);
+    const statusText = document.getElementById(`file_status_${progressId}`);
+    
+    // Dosya boyutu kontrolü (500 MB - Milyonlarca kayıt için)
+    const maxSize = 500 * 1024 * 1024;
+    if (file.size > maxSize) {
+        // Sayfa içi hata mesajı
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+        alertDiv.innerHTML = `
+            <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+            Dosya çok büyük! Maksimum 500 MB yükleyebilirsiniz.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        const container = document.querySelector('.page-content .container-fluid');
+        container.insertBefore(alertDiv, container.firstChild);
+        feather.replace();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 5000);
+        
+        input.value = '';
+        return;
+    }
+    
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
+    statusText.textContent = 'Dosya okunuyor...';
+    
+    try {
+        const extension = file.name.split('.').pop().toLowerCase();
+        let emails = [];
+        
+        if (extension === 'txt' || extension === 'csv') {
+            emails = await readTextFileInChunks(file, progressBar, statusText);
+        } else if (extension === 'xls' || extension === 'xlsx') {
+            statusText.textContent = 'Excel dosyası işleniyor...';
+            emails = await readExcelFile(file, progressBar, statusText);
+        }
+        
+        // HYPER FAST validation - Set ile duplicate removal
+        progressBar.style.width = '90%';
+        statusText.textContent = 'Duplicate\'lar temizleniyor...';
+        
+        const validEmails = [...new Set(emails)]; // Zaten lowercase ve filtrelenmiş
+        
+        // Textarea'ya ekle
+        const textarea = document.getElementById(targetTextareaId);
+        const existingEmails = textarea.value.trim();
+        const combined = existingEmails ? existingEmails + '\n' + validEmails.join('\n') : validEmails.join('\n');
+        textarea.value = combined;
+        
+        progressBar.style.width = '100%';
+        progressBar.classList.remove('progress-bar-animated');
+        statusText.textContent = `✓ ${validEmails.length.toLocaleString('tr-TR')} mail adresi yüklendi`;
+        
+        // Sayfa içi başarı mesajı
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-success alert-dismissible fade show';
+        alertDiv.innerHTML = `
+            <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+            <strong>${validEmails.length.toLocaleString('tr-TR')}</strong> mail adresi yüklendi
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        const container = document.querySelector('.page-content .container-fluid');
+        container.insertBefore(alertDiv, container.firstChild);
+        feather.replace();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 5000);
+        
+        setTimeout(() => {
+            progressDiv.style.display = 'none';
+            progressBar.classList.add('progress-bar-animated');
+        }, 3000);
+        
+    } catch (error) {
+        console.error('Dosya okuma hatası:', error);
+        progressBar.style.width = '100%';
+        progressBar.classList.add('bg-danger');
+        statusText.textContent = '✗ Dosya okunamadı';
+        
+        // Sayfa içi hata mesajı
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+        alertDiv.innerHTML = `
+            <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+            Dosya okunamadı: ${error.message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        const container = document.querySelector('.page-content .container-fluid');
+        container.insertBefore(alertDiv, container.firstChild);
+        feather.replace();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 5000);
+    }
+}
+
+// TXT/CSV dosyasını chunk'lar halinde oku
+async function readTextFileInChunks(file, progressBar, statusText) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        const chunkSize = 10 * 1024 * 1024; // 10 MB chunks
+        let offset = 0;
+        let emails = [];
+        let partialLine = '';
+        
+        const readNextChunk = () => {
+            if (offset >= file.size) {
+                resolve(emails);
+                return;
+            }
+            
+            const slice = file.slice(offset, offset + chunkSize);
+            reader.readAsText(slice);
+        };
+        
+        reader.onload = function(e) {
+            const text = partialLine + e.target.result;
+            const lines = text.split(/[\r\n]+/);
+            
+            partialLine = lines.pop() || '';
+            
+            // HYPER FAST extraction - Regex pattern
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const trimmed = lines[i].trim().toLowerCase();
+                if (trimmed.length > 5 && trimmed.indexOf('@') > 0) {
+                    const email = trimmed.indexOf(',') > 0 ? trimmed.split(',')[0].trim() : trimmed;
+                    if (emailRegex.test(email)) {
+                        emails.push(email);
+                    }
+                }
+            }
+            
+            offset += chunkSize;
+            const progress = Math.min((offset / file.size) * 100, 90);
+            progressBar.style.width = progress + '%';
+            statusText.textContent = `${emails.length.toLocaleString('tr-TR')} mail bulundu...`;
+            
+            setTimeout(readNextChunk, 0); // Non-blocking
+        };
+        
+        reader.onerror = function() {
+            reject(new Error('Dosya okunamadı'));
+        };
+        
+        readNextChunk();
+    });
+}
+
+// Excel dosyasını oku
+async function readExcelFile(file, progressBar, statusText) {
+    if (typeof XLSX === 'undefined') {
+        await loadScript('https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js');
+    }
+    
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            try {
+                progressBar.style.width = '50%';
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {
+                    type: 'array',
+                    cellText: false,
+                    cellDates: false,
+                    sheetRows: 0 // Tüm satırları oku
+                });
+                
+                progressBar.style.width = '70%';
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(firstSheet, {
+                    header: 1,
+                    defval: '',
+                    blankrows: false,
+                    raw: true
+                });
+                
+                const emails = [];
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                
+                // HYPER FAST - for loop + regex
+                for (let r = 0; r < rows.length; r++) {
+                    const row = rows[r];
+                    for (let c = 0; c < row.length; c++) {
+                        const cell = row[c];
+                        if (cell && typeof cell === 'string') {
+                            const trimmed = cell.trim().toLowerCase();
+                            if (trimmed.length > 5 && trimmed.indexOf('@') > 0 && emailRegex.test(trimmed)) {
+                                emails.push(trimmed);
+                            }
+                        }
+                    }
+                }
+                
+                statusText.textContent = `${emails.length.toLocaleString('tr-TR')} mail bulundu...`;
+                resolve(emails);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        
+        reader.onerror = function() {
+            reject(new Error('Excel dosyası okunamadı'));
+        };
+        
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+// Script yükleme helper
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+// Loading overlay göster
+function showLoading(event) {
+    const form = event ? event.target : null;
+    
+    if (form) {
+        const operationType = form.querySelector('[name="operation_type"]').value;
+        const emails = operationType === 'create' 
+            ? form.querySelector('#emails_new').value 
+            : form.querySelector('#emails_add').value;
+        
+        if (operationType === 'add' && !emails.trim()) {
+            // Sayfa içi uyarı mesajı
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-warning alert-dismissible fade show';
+            alertDiv.innerHTML = `
+                <i data-feather="alert-triangle" class="align-self-center icon-xs me-2"></i>
+                Lütfen mail adresi girin veya dosya yükleyin!
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            
+            const container = document.querySelector('.page-content .container-fluid');
+            container.insertBefore(alertDiv, container.firstChild);
+            feather.replace();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+            
+            return false;
+        }
+    }
+    
+    document.getElementById('loadingText').textContent = 'İşlem Yapılıyor...';
+    document.getElementById('loadingSubtext').textContent = 'Mail adresleri işleniyor...';
+    document.getElementById('loadingOverlay').style.display = 'block';
+    return true;
+}
+
+// İndirme modal fonksiyonu
+function showDownloadModal(id, title, count) {
+    document.getElementById('downloadPhonebookName').textContent = title;
+    document.getElementById('downloadPhonebookCount').textContent = count + ' mail';
+    
+    // Linkleri güncelle
+    document.getElementById('downloadCsvLink').href = `/email-phonebooks/${id}/download?format=csv`;
+    document.getElementById('downloadExcelLink').href = `/email-phonebooks/${id}/download?format=excel`;
+    document.getElementById('downloadTxtLink').href = `/email-phonebooks/${id}/download?format=txt`;
+    
+    const modal = new bootstrap.Modal(document.getElementById('downloadModal'));
+    modal.show();
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Silme fonksiyonu
+function deletePhonebook(id, title, count) {
+    document.getElementById('deletePhonebookName').textContent = title;
+    document.getElementById('deletePhonebookCount').textContent = count + ' mail';
+    document.getElementById('deletePhonebookForm').action = `/email-phonebooks/${id}/delete`;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deletePhonebookModal'));
+    modal.show();
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Checkbox kontrolü
+document.getElementById('confirmDeletePhonebook')?.addEventListener('change', function() {
+    document.getElementById('confirmDeletePhonebookBtn').disabled = !this.checked;
+});
+
+// Modal kapandığında reset
+document.getElementById('deletePhonebookModal')?.addEventListener('hidden.bs.modal', function () {
+    document.getElementById('confirmDeletePhonebook').checked = false;
+    document.getElementById('confirmDeletePhonebookBtn').disabled = true;
+});
+
+// Form submit handler
+function handleDeleteSubmit(event) {
+    const count = document.getElementById('deletePhonebookCount').textContent;
+    document.getElementById('loadingText').textContent = 'Rehber Siliniyor...';
+    document.getElementById('loadingSubtext').textContent = `${count} kalıcı olarak kaldırılıyor...`;
+    document.getElementById('loadingOverlay').style.display = 'block';
+    return true;
+}
+
+// Email Phonebook Detail Modal
+function viewEmailPhonebook(id, title, page = 1) {
+    const modalEl = document.getElementById('emailPhonebookDetailModal');
+    const modalBody = modalEl.querySelector('.modal-body-content');
+    
+    // Loading göster
+    modalBody.innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Yükleniyor...</span>
+            </div>
+            <p class="text-muted">Mail listesi yükleniyor...</p>
+        </div>
+    `;
+    
+    const modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modalInstance.show();
+    
+    // AJAX ile içerik yükle
+    fetch(`/email-phonebooks/${id}/detail?page=${page}`)
+        .then(res => res.text())
+        .then(html => {
+            modalBody.innerHTML = html;
+            feather.replace();
+        })
+        .catch(err => {
+            modalBody.innerHTML = `
+                <div class="alert alert-danger">
+                    <i data-feather="alert-circle" class="icon-xs me-2"></i>
+                    Yükleme hatası: ${err.message}
+                </div>
+            `;
+            feather.replace();
+        });
+}
+
+function loadEmailPhonebookPage(id, title, page) {
+    viewEmailPhonebook(id, title, page);
+}
+
+// Modal açıldığında icon'ları yenile
+document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('shown.bs.modal', function () {
+        feather.replace();
+    });
+});
+
+function nxPbApplyFilter() {
+    const q = (document.getElementById('nxPbSearch')?.value || '').toLowerCase().trim();
+    document.querySelectorAll('.nx-pb-row').forEach(function (row) {
+        const hay = (row.getAttribute('data-search') || '').toLowerCase();
+        row.style.display = !q || hay.includes(q) ? '' : 'none';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    document.getElementById('nxPbSearch')?.addEventListener('input', nxPbApplyFilter);
+    document.getElementById('nxPbToolbarRefresh')?.addEventListener('click', function () { location.reload(); });
+    document.getElementById('nxPbHeadRefresh')?.addEventListener('click', function () { location.reload(); });
+});
+</script>
+
+{% endblock %}

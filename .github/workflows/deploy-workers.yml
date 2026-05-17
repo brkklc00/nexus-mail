@@ -1,0 +1,230 @@
+# Gerekli GitHub Secrets:
+#   SERVER_HOST, SERVER_USER, SERVER_PATH
+# Kimlik (en az biri):
+#   SERVER_SSH_PRIVATE_KEY — önerilen (sunucuda authorized_keys’e bu public key)
+#   SERVER_PASSWORD         — yalnızca sunucuda parola girişi açıksa
+
+name: Deploy Workers Only
+
+on:
+  workflow_dispatch:  # Manuel tetikleme
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy-workers:
+    name: Deploy Workers to Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚀 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🔑 SSH ortamı (known_hosts + isteğe bağlı deploy anahtarı)
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          if [ -n "${SERVER_SSH_PRIVATE_KEY:-}" ]; then
+            printf '%s\n' "$SERVER_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/github_deploy_key
+            chmod 600 ~/.ssh/github_deploy_key
+            if ! ssh-keygen -lf ~/.ssh/github_deploy_key >/dev/null 2>&1; then
+              echo "::error::SERVER_SSH_PRIVATE_KEY geçersiz veya boş görünüyor."
+              exit 1
+            fi
+            echo "✅ Deploy SSH private key yüklendi (parola gerekmez)."
+          else
+            rm -f ~/.ssh/github_deploy_key
+            echo "ℹ️  SERVER_SSH_PRIVATE_KEY yok — SERVER_PASSWORD ile denenecek."
+          fi
+
+      - name: 🔧 Deploy Workers and PHP Files
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH }}
+          SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEY_FILE="$HOME/.ssh/github_deploy_key"
+          USE_KEY=0
+          [ -f "$KEY_FILE" ] && [ -s "$KEY_FILE" ] && USE_KEY=1
+
+          if [ "$USE_KEY" -eq 0 ]; then
+            if [ -z "${SERVER_PASSWORD:-}" ]; then
+              echo "::error::Ne SERVER_SSH_PRIVATE_KEY ne de SERVER_PASSWORD tanımlı. GitHub Actions secrets ekleyin."
+              exit 1
+            fi
+            export SSHPASS="$SERVER_PASSWORD"
+          fi
+
+          # Ortak ssh/rsync seçenekleri
+          ssh_key_opts="-o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i $KEY_FILE -o ServerAliveInterval=30 -o ServerAliveCountMax=6"
+          ssh_pass_opts="-o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ServerAliveInterval=30 -o ServerAliveCountMax=6"
+
+          remote_rsync() {
+            if [ "$USE_KEY" -eq 1 ]; then
+              rsync -e "ssh $ssh_key_opts" "$@"
+            else
+              sshpass -e rsync -e "ssh $ssh_pass_opts" "$@"
+            fi
+          }
+
+          remote_ssh() {
+            if [ "$USE_KEY" -eq 1 ]; then
+              ssh $ssh_key_opts "$SERVER_USER@$SERVER_HOST" "$@"
+            else
+              sshpass -e ssh $ssh_pass_opts "$SERVER_USER@$SERVER_HOST" "$@"
+            fi
+          }
+
+          echo "🔧 Worker'lar ve PHP dosyaları güncelleniyor..."
+
+          echo "📦 PHP uygulama dosyaları aktarılıyor..."
+          remote_rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='vendor' \
+            --exclude='node_modules' \
+            --exclude='storage/logs/*.log' \
+            --exclude='var/cache' \
+            --exclude='.env' \
+            ./app/ "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/app/"
+
+          remote_rsync -avz --delete \
+            --exclude='.git' \
+            ./config/ "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/config/"
+
+          remote_rsync -avz \
+            ./config/migrations.php ./config/migrations-doctrine.php "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/config/"
+
+          remote_rsync -avz \
+            ./bin/ "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/bin/"
+
+          remote_rsync -avz \
+            ./database/migrations_doctrine/ "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/database/migrations_doctrine/"
+
+          remote_rsync -avz \
+            ./database/migrations/ "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/database/migrations/"
+
+          remote_rsync -avz \
+            ./database/sql/ "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/database/sql/"
+
+          remote_rsync -avz \
+            ./ecosystem.config.js "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/ecosystem.config.js"
+
+          echo "📦 Template dosyaları aktarılıyor..."
+          remote_rsync -avz --delete \
+            --exclude='.git' \
+            ./templates/ "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/templates/"
+
+          echo "📦 Panel statik: nexus-theme + mobil menü (sidebar dahil) + bildirim paneli JS..."
+          remote_rsync -avz ./public/assets/css/nexus-theme.css "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/public/assets/css/"
+          remote_rsync -avz ./public/assets/js/nx-mobile-nav.js "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/public/assets/js/"
+          remote_rsync -avz ./public/assets/js/nx-notification-panel.js "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/public/assets/js/"
+
+          remote_rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='assets' \
+            --exclude='storage' \
+            ./public/index.php "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/public/"
+
+          echo "✅ PHP / template senkronu tamam"
+
+          for worker in email-worker; do
+            if [ -d "./$worker" ] && [ "$(ls -A "./$worker" 2>/dev/null)" ]; then
+              echo "📦 $worker aktarılıyor..."
+              # logs/ tamamen hariç: --delete ile dolu log dizini silinemez uyarısı ve uzun bekleme
+              remote_rsync -avz --delete \
+                --exclude='node_modules' \
+                --exclude='logs/' \
+                "./$worker/" "$SERVER_USER@$SERVER_HOST:$SERVER_PATH/$worker/"
+            else
+              echo "⏭️  $worker dizini bulunamadı veya boş, atlanıyor..."
+            fi
+          done
+
+          remote_ssh "
+            set -e
+            cd $SERVER_PATH || { echo '❌ Dizin bulunamadı: $SERVER_PATH'; exit 1; }
+
+            echo '📁 Cache dizinleri oluşturuluyor...' &&
+            mkdir -p var/cache/doctrine/proxies var/cache/twig var/cache/container || true &&
+
+            echo '🔐 Dosya izinleri ayarlanıyor...' &&
+            find app/ config/ templates/ public/ -type f -exec chmod 644 {} \\; || true &&
+            find app/ config/ templates/ public/ -type d -exec chmod 755 {} \\; || true &&
+            chmod 755 public/index.php || true &&
+            chmod -R 755 bin/ || true &&
+            chmod -R 777 var/cache/ || true &&
+            chmod -R 777 storage/logs/ || true &&
+            mkdir -p public/storage || true &&
+            chmod -R 777 public/storage/ || true &&
+
+            echo '🧹 Cache temizleniyor...' &&
+            rm -rf var/cache/doctrine/proxies/* var/cache/twig/* var/cache/container.php 2>/dev/null || true &&
+
+            echo '🔄 PHP OPcache temizleniyor...' &&
+            php -r 'if (function_exists(\"opcache_reset\")) { opcache_reset(); echo \"OPcache temizlendi\\n\"; } else { echo \"OPcache bulunamadı (atlanıyor)\\n\"; }' || echo '⚠️  OPcache temizleme hatası (devam ediliyor)' &&
+
+            echo '🔄 Composer autoload yenileniyor...' &&
+            composer dump-autoload --no-interaction --quiet 2>&1 || echo '⚠️  Composer autoload hatası (devam ediliyor)' &&
+
+            echo '🔄 email_order_emails claim kolonları (migration öncesi; API locked_at 500)...' &&
+            php bin/apply-email-order-emails-claim-columns.php 2>&1 || echo '⚠️  apply-email-order-emails-claim-columns (devam ediliyor)' &&
+
+            echo '🔄 Veritabanı migration (uzun sürebilir; bekleyen sürüm sayısına bağlı)...' &&
+            echo \"⏱️  migration başlangıç: \$(date -Is)\" &&
+            chmod +x bin/run-doctrine-migrations.sh 2>/dev/null || true &&
+            bash bin/run-doctrine-migrations.sh &&
+            echo \"⏱️  migration bitiş: \$(date -Is)\" &&
+            echo '🔄 Email pool şema yaması (migration atlandıysa)...' &&
+            php bin/apply-email-pool-schema.php 2>&1 || echo '⚠️  apply-email-pool-schema (devam ediliyor)' &&
+
+            echo '🔐 Yetkiler senkronize ediliyor...' &&
+            php bin/sync-permissions 2>&1 || echo '⚠️  Sync-permissions hatası (devam ediliyor)' &&
+
+            echo '📦 NPM bağımlılıkları yükleniyor...' &&
+            for worker in email-worker; do
+              if [ -d \"\$worker\" ] && [ -f \"\$worker/package.json\" ]; then
+                echo \"⚙️  \$worker\" &&
+                cd \$worker && npm install --production --silent 2>&1 && cd .. || echo \"⚠️  \$worker npm install hatası (devam ediliyor)\"
+              else
+                echo \"⏭️  \$worker dizini bulunamadı veya package.json yok, atlanıyor...\"
+              fi
+            done &&
+
+            echo '🔄 PM2 worker yeniden başlatılıyor...' &&
+            if pm2 list 2>/dev/null | grep -qE 'online|stopped'; then
+              for app in email-worker; do
+                if pm2 describe \"\$app\" >/dev/null 2>&1; then
+                  echo \"  ↻ \$app\" &&
+                  pm2 restart \"\$app\" --update-env || echo \"  ⚠️  \$app restart atlandı\"
+                fi
+              done
+            else
+              echo 'PM2 süreç bulunamadı, ecosystem ile başlatılıyor...' &&
+              pm2 start ecosystem.config.js --update-env
+            fi &&
+            pm2 save || true &&
+            pm2 list &&
+
+            echo '✅ Deployment tamamlandı!'
+          " || {
+            echo "❌ Uzak SSH adımı başarısız."
+            exit 1
+          }
+
+      - name: ✅ Workers Deployed
+        run: |
+          echo "════════════════════════════════════════"
+          echo "🔧 Worker Deployment Tamamlandı"
+          echo "════════════════════════════════════════"

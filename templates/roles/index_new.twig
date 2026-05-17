@@ -1,0 +1,810 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Roller & Yetkiler - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title_text %}Roller & Yetkiler{% endblock %}
+
+{% block content %}
+
+{% if success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+    {{ success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+<!-- İstatistik Kartları -->
+<div class="row mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Toplam Rol</p>
+                        <h4 class="mb-0">{{ stats.total_roles }}</h4>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="shield" class="text-primary" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Kullanıcılı Roller</p>
+                        <h4 class="mb-0">{{ stats.roles_with_users }}</h4>
+                        <p class="text-muted mb-0 fs-12">aktif kullanımda</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="users" class="text-success" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Sistem Rolleri</p>
+                        <h4 class="mb-0">{{ stats.system_roles }}</h4>
+                        <p class="text-muted mb-0 fs-12">düzenlenemez</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="lock" class="text-warning" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm" style="min-height: 120px;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-1 text-uppercase fw-semibold fs-13">Toplam Yetki</p>
+                        <h4 class="mb-0">{{ stats.total_permissions }}</h4>
+                        <p class="text-muted mb-0 fs-12">yetki tanımı</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <i data-feather="key" class="text-info" style="width: 40px; height: 40px;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h4 class="card-title mb-0">
+                            <i data-feather="shield" class="align-self-center icon-xs me-2"></i>
+                            Rol Yönetimi
+                        </h4>
+                        <small class="text-muted">{{ roles|length }} rol bulundu</small>
+                    </div>
+                    <div class="col-auto">
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-success" onclick="showTemplateModal()">
+                                <i data-feather="zap" class="icon-xs me-1"></i>
+                                Şablondan Oluştur
+                            </button>
+                            <button type="button" class="btn btn-primary" onclick="showCreateModal()">
+                                <i data-feather="plus" class="align-self-center icon-xs me-1"></i>
+                                Yeni Rol Ekle
+                            </button>
+                            <button type="button" class="btn btn-info" onclick="showCompareModal()">
+                                <i data-feather="git-compare" class="icon-xs me-1"></i>
+                                Karşılaştır
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Arama -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="position-relative">
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="searchInput" 
+                                   placeholder="Rol adı ile ara..."
+                                   value="{{ search }}"
+                                   onkeyup="handleSearch(event)">
+                            <i data-feather="search" class="position-absolute top-50 end-0 translate-middle-y me-2" style="width: 16px; height: 16px;"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Toplu İşlem Bar -->
+                <div id="bulkActionBar" class="alert alert-info mb-3" style="display: none;">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <strong><span id="selectedCount">0</span> rol seçildi</strong>
+                        </div>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-danger" onclick="bulkAction('delete')">
+                                <i data-feather="trash-2" class="icon-xs me-1"></i> Sil
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40px;">
+                                    <input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleSelectAll(this)">
+                                </th>
+                                <th>#</th>
+                                <th>Rol Adı</th>
+                                <th>Yetkiler</th>
+                                <th>Kullanıcılar</th>
+                                <th>Durum</th>
+                                <th class="text-end">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for role in roles %}
+                            <tr>
+                                <td>
+                                    {% if not role.isReadonly %}
+                                    <input type="checkbox" 
+                                           class="form-check-input role-checkbox" 
+                                           value="{{ role.id }}"
+                                           onchange="updateBulkActionBar()">
+                                    {% endif %}
+                                </td>
+                                <td><strong>#{{ role.id }}</strong></td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <i data-feather="shield" class="text-primary me-2" style="width: 20px; height: 20px;"></i>
+                                        <div>
+                                            <strong>{{ role.name }}</strong>
+                                            {% if role.isReadonly %}
+                                                <span class="badge bg-danger-subtle text-danger ms-2">Sistem</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge bg-primary-subtle text-primary">
+                                        <i data-feather="key" class="icon-xs me-1"></i>
+                                        {{ role.permissions|length }} Yetki
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if role.users|length > 0 %}
+                                        <span class="badge bg-success-subtle text-success">
+                                            <i data-feather="users" class="icon-xs me-1"></i>
+                                            {{ role.users|length }} kullanıcı
+                                        </span>
+                                    {% else %}
+                                        <span class="text-muted">Kullanıcısız</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if role.isReadonly %}
+                                        <span class="badge bg-warning-subtle text-warning">Sistem Rolü</span>
+                                    {% else %}
+                                        <span class="badge bg-success-subtle text-success">Özel Rol</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-primary" 
+                                            onclick="viewRole({{ role.id }})"
+                                            title="Detay">
+                                        <i data-feather="eye" class="icon-xs"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-success" 
+                                            onclick="cloneRole({{ role.id }})"
+                                            title="Kopyala">
+                                        <i data-feather="copy" class="icon-xs"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-secondary" 
+                                            onclick="exportRole({{ role.id }})"
+                                            title="Export JSON">
+                                        <i data-feather="download" class="icon-xs"></i>
+                                    </button>
+                                    {% if not role.isReadonly %}
+                                    <button type="button" class="btn btn-sm btn-info" 
+                                            onclick="editRole({{ role.id }})"
+                                            title="Düzenle">
+                                        <i data-feather="edit" class="icon-xs"></i>
+                                    </button>
+                                    <form method="POST" action="/roles/{{ role.id }}/delete" class="d-inline" 
+                                          onsubmit="return confirm('Bu rolü silmek istediğinizden emin misiniz?')">
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Sil">
+                                            <i data-feather="trash-2" class="icon-xs"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    <i data-feather="inbox" class="icon-lg mb-2"></i>
+                                    <p class="mb-0">Henüz rol bulunmamaktadır.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Şablon Modal -->
+<div class="modal fade" id="templateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="zap" class="icon-xs me-2"></i>
+                    Şablondan Rol Oluştur
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Hızlı başlamak için hazır şablonlardan birini seçin:</p>
+                
+                <div class="mb-3">
+                    <label for="template_name" class="form-label">Rol Adı <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="template_name" placeholder="Özel rol adı girin (opsiyonel)">
+                </div>
+                
+                <div class="row g-3">
+                    <div class="col-md-12">
+                        <div class="card border shadow-sm hover-shadow" style="cursor: pointer;" onclick="createFromTemplate('admin')">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <div class="avatar-sm rounded-circle me-3" style="background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);">
+                                        <div class="avatar-title rounded-circle text-white">
+                                            <i data-feather="crown" style="width: 24px; height: 24px;"></i>
+                                        </div>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h5 class="mb-1">Admin</h5>
+                                        <p class="text-muted mb-0 fs-13">Tüm yetkilere sahip</p>
+                                    </div>
+                                    <i data-feather="arrow-right" class="text-primary"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-12">
+                        <div class="card border shadow-sm hover-shadow" style="cursor: pointer;" onclick="createFromTemplate('editor')">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <div class="avatar-sm rounded-circle me-3" style="background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%);">
+                                        <div class="avatar-title rounded-circle text-white">
+                                            <i data-feather="edit-3" style="width: 24px; height: 24px;"></i>
+                                        </div>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h5 class="mb-1">Editor</h5>
+                                        <p class="text-muted mb-0 fs-13">Okuma, oluşturma ve güncelleme</p>
+                                    </div>
+                                    <i data-feather="arrow-right" class="text-primary"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-12">
+                        <div class="card border shadow-sm hover-shadow" style="cursor: pointer;" onclick="createFromTemplate('viewer')">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <div class="avatar-sm rounded-circle me-3" style="background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);">
+                                        <div class="avatar-title rounded-circle text-white">
+                                            <i data-feather="eye" style="width: 24px; height: 24px;"></i>
+                                        </div>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h5 class="mb-1">Viewer</h5>
+                                        <p class="text-muted mb-0 fs-13">Sadece okuma yetkisi</p>
+                                    </div>
+                                    <i data-feather="arrow-right" class="text-primary"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Karşılaştırma Modal -->
+<div class="modal fade" id="compareModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="git-compare" class="icon-xs me-2"></i>
+                    Rol Karşılaştırma
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-5">
+                        <label class="form-label">1. Rol</label>
+                        <select class="form-select" id="compare_role1">
+                            <option value="">Rol seçin...</option>
+                            {% for role in roles %}
+                            <option value="{{ role.id }}">{{ role.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <label class="form-label d-block">&nbsp;</label>
+                        <i data-feather="git-compare" class="text-primary" style="width: 32px; height: 32px;"></i>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">2. Rol</label>
+                        <select class="form-select" id="compare_role2">
+                            <option value="">Rol seçin...</option>
+                            {% for role in roles %}
+                            <option value="{{ role.id }}">{{ role.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="text-center mb-3">
+                    <button type="button" class="btn btn-primary" onclick="compareRoles()">
+                        <i data-feather="search" class="icon-xs me-1"></i>
+                        Karşılaştır
+                    </button>
+                </div>
+                
+                <div id="comparisonResult" style="display: none;">
+                    <hr>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm">
+                            <thead>
+                                <tr class="table-light">
+                                    <th>Yetki</th>
+                                    <th class="text-center" id="role1Name">Rol 1</th>
+                                    <th class="text-center" id="role2Name">Rol 2</th>
+                                </tr>
+                            </thead>
+                            <tbody id="comparisonTable">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Yeni Rol Modal (Güncellenmiş - Gruplandırılmış Yetkilerle) -->
+<div class="modal fade" id="createRoleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="plus-circle" class="icon-xs me-2"></i>
+                    Yeni Rol Ekle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="/roles" id="createRoleForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="create_name" class="form-label">Rol Adı <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="create_name" name="name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Yetkiler</label>
+                        <div class="mb-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectAllPermissions()">
+                                <i data-feather="check-square" class="icon-xs me-1"></i> Tümünü Seç
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="deselectAllPermissions()">
+                                <i data-feather="square" class="icon-xs me-1"></i> Tümünü Kaldır
+                            </button>
+                        </div>
+                        
+                        <!-- Modül bazlı gruplandırma -->
+                        <div class="accordion" id="permissionsAccordion">
+                            {% for module, perms in groupedPermissions %}
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#module{{ loop.index }}">
+                                        <strong>{{ module }}</strong>
+                                        <span class="badge bg-primary ms-2">{{ perms|length }}</span>
+                                    </button>
+                                </h2>
+                                <div id="module{{ loop.index }}" class="accordion-collapse collapse" data-bs-parent="#permissionsAccordion">
+                                    <div class="accordion-body">
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-bordered mb-0">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th style="width: 40%">Yetki</th>
+                                                        <th class="text-center" style="width: 15%">Okuma</th>
+                                                        <th class="text-center" style="width: 15%">Oluşturma</th>
+                                                        <th class="text-center" style="width: 15%">Güncelleme</th>
+                                                        <th class="text-center" style="width: 15%">Silme</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for permission in perms %}
+                                                    <tr>
+                                                        <td><strong>{{ permission.name }}</strong></td>
+                                                        <td class="text-center">
+                                                            <input type="checkbox" class="form-check-input permission-checkbox" 
+                                                                   name="permissions[{{ permission.id }}][read]" value="1">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <input type="checkbox" class="form-check-input permission-checkbox" 
+                                                                   name="permissions[{{ permission.id }}][create]" value="1">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <input type="checkbox" class="form-check-input permission-checkbox" 
+                                                                   name="permissions[{{ permission.id }}][update]" value="1">
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <input type="checkbox" class="form-check-input permission-checkbox" 
+                                                                   name="permissions[{{ permission.id }}][delete]" value="1">
+                                                        </td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="check" class="icon-xs me-1"></i>
+                        Rol Oluştur
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Rol Detay Modal -->
+<div class="modal fade" id="roleDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="shield" class="icon-xs me-2"></i>
+                    Rol Detayı
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="roleDetailContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Yükleniyor...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+    <div class="text-center">
+        <div class="spinner-border text-light" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Yükleniyor...</span>
+        </div>
+        <p class="text-white mt-3">İşleminiz gerçekleştiriliyor...</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block styles %}
+<style>
+.hover-shadow:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+feather.replace();
+
+let searchTimeout = null;
+
+// Arama
+function handleSearch(event) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        const search = document.getElementById('searchInput').value;
+        const url = new URL(window.location.href);
+        url.searchParams.set('search', search);
+        window.location.href = url.toString();
+    }, 500);
+}
+
+// Tümünü seç/kaldır (checkbox)
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.role-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateBulkActionBar();
+}
+
+// Toplu işlem bar'ını güncelle
+function updateBulkActionBar() {
+    const checkboxes = document.querySelectorAll('.role-checkbox:checked');
+    const count = checkboxes.length;
+    const bar = document.getElementById('bulkActionBar');
+    const countSpan = document.getElementById('selectedCount');
+    
+    if (count > 0) {
+        bar.style.display = 'block';
+        countSpan.textContent = count;
+    } else {
+        bar.style.display = 'none';
+        document.getElementById('selectAll').checked = false;
+    }
+    
+    feather.replace();
+}
+
+// Toplu işlem
+async function bulkAction(action) {
+    const checkboxes = document.querySelectorAll('.role-checkbox:checked');
+    const roleIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+    
+    if (roleIds.length === 0) {
+        alert('Lütfen en az bir rol seçin');
+        return;
+    }
+    
+    if (!confirm(`${roleIds.length} rolü silmek istediğinize emin misiniz?`)) {
+        return;
+    }
+    
+    document.getElementById('loadingOverlay').style.display = 'flex';
+    
+    try {
+        const response = await fetch('/roles/bulk-action', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: action,
+                role_ids: roleIds
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Hata: ' + (data.error || 'İşlem başarısız'));
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+    } catch (error) {
+        alert('Bir hata oluştu: ' + error.message);
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
+}
+
+// Şablon modal göster
+function showTemplateModal() {
+    const modal = new bootstrap.Modal(document.getElementById('templateModal'));
+    modal.show();
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Şablondan oluştur
+async function createFromTemplate(template) {
+    const customName = document.getElementById('template_name').value;
+    
+    document.getElementById('loadingOverlay').style.display = 'flex';
+    
+    try {
+        const response = await fetch('/roles/create-from-template', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                template: template,
+                name: customName
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Rol şablondan oluşturuldu!');
+            location.reload();
+        } else {
+            alert('Hata: ' + (data.error || 'İşlem başarısız'));
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+    } catch (error) {
+        alert('Bir hata oluştu: ' + error.message);
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
+}
+
+// Karşılaştırma modal göster
+function showCompareModal() {
+    const modal = new bootstrap.Modal(document.getElementById('compareModal'));
+    document.getElementById('comparisonResult').style.display = 'none';
+    modal.show();
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Rolleri karşılaştır
+async function compareRoles() {
+    const role1 = document.getElementById('compare_role1').value;
+    const role2 = document.getElementById('compare_role2').value;
+    
+    if (!role1 || !role2) {
+        alert('Lütfen iki rol seçin');
+        return;
+    }
+    
+    if (role1 === role2) {
+        alert('Farklı roller seçin');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/roles/compare?role1=${role1}&role2=${role2}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('role1Name').textContent = data.role1.name;
+            document.getElementById('role2Name').textContent = data.role2.name;
+            
+            let html = '';
+            data.comparison.forEach(item => {
+                const r1Read = item.role1.read ? '✓' : '✗';
+                const r1Create = item.role1.create ? '✓' : '✗';
+                const r1Update = item.role1.update ? '✓' : '✗';
+                const r1Delete = item.role1.delete ? '✓' : '✗';
+                
+                const r2Read = item.role2.read ? '✓' : '✗';
+                const r2Create = item.role2.create ? '✓' : '✗';
+                const r2Update = item.role2.update ? '✓' : '✗';
+                const r2Delete = item.role2.delete ? '✓' : '✗';
+                
+                const isDiff = 
+                    item.role1.read !== item.role2.read ||
+                    item.role1.create !== item.role2.create ||
+                    item.role1.update !== item.role2.update ||
+                    item.role1.delete !== item.role2.delete;
+                
+                html += `<tr ${isDiff ? 'class="table-warning"' : ''}>
+                    <td><strong>${item.permission}</strong></td>
+                    <td class="text-center">
+                        <span class="badge bg-${item.role1.read ? 'success' : 'secondary'}">${r1Read} R</span>
+                        <span class="badge bg-${item.role1.create ? 'success' : 'secondary'}">${r1Create} C</span>
+                        <span class="badge bg-${item.role1.update ? 'success' : 'secondary'}">${r1Update} U</span>
+                        <span class="badge bg-${item.role1.delete ? 'success' : 'secondary'}">${r1Delete} D</span>
+                    </td>
+                    <td class="text-center">
+                        <span class="badge bg-${item.role2.read ? 'success' : 'secondary'}">${r2Read} R</span>
+                        <span class="badge bg-${item.role2.create ? 'success' : 'secondary'}">${r2Create} C</span>
+                        <span class="badge bg-${item.role2.update ? 'success' : 'secondary'}">${r2Update} U</span>
+                        <span class="badge bg-${item.role2.delete ? 'success' : 'secondary'}">${r2Delete} D</span>
+                    </td>
+                </tr>`;
+            });
+            
+            document.getElementById('comparisonTable').innerHTML = html;
+            document.getElementById('comparisonResult').style.display = 'block';
+        } else {
+            alert('Hata: ' + data.error);
+        }
+    } catch (error) {
+        alert('Bir hata oluştu: ' + error.message);
+    }
+}
+
+// Rol kopyala
+function cloneRole(roleId) {
+    if (!confirm('Bu rolü kopyalamak istediğinize emin misiniz?')) {
+        return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/roles/' + roleId + '/clone';
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Rol export
+function exportRole(roleId) {
+    window.open('/roles/' + roleId + '/export', '_blank');
+}
+
+// Create modal göster
+function showCreateModal() {
+    document.getElementById('createRoleForm').reset();
+    const modal = new bootstrap.Modal(document.getElementById('createRoleModal'));
+    modal.show();
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Rol detayını göster
+function viewRole(roleId) {
+    const modal = new bootstrap.Modal(document.getElementById('roleDetailModal'));
+    const content = document.getElementById('roleDetailContent');
+    
+    content.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+    modal.show();
+    
+    fetch('/roles/' + roleId)
+        .then(response => response.text())
+        .then(html => {
+            content.innerHTML = html;
+            feather.replace();
+        })
+        .catch(error => {
+            content.innerHTML = '<div class="alert alert-danger">Hata oluştu</div>';
+        });
+}
+
+// Rol düzenle
+function editRole(roleId) {
+    window.location.href = '/roles/' + roleId + '/edit';
+}
+
+// Tüm yetkileri seç
+function selectAllPermissions() {
+    document.querySelectorAll('.permission-checkbox').forEach(cb => cb.checked = true);
+}
+
+// Tüm yetkileri kaldır
+function deselectAllPermissions() {
+    document.querySelectorAll('.permission-checkbox').forEach(cb => cb.checked = false);
+}
+
+// Form submit - loading göster
+document.getElementById('createRoleForm').addEventListener('submit', function() {
+    document.getElementById('loadingOverlay').style.display = 'flex';
+});
+</script>
+{% endblock %}
+

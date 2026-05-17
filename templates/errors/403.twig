@@ -1,0 +1,117 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}403 - Yetkisiz Erişim - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{# Breadcrumb'ı override et - hata sayfalarında breadcrumb gerekmez #}
+{% block page_title %}
+<div class="row">
+    <div class="col-12">
+        <div class="page-title-box">
+            <h4 class="page-title">
+                <i data-feather="alert-triangle" class="icon-sm text-warning me-2"></i>
+                Yetkisiz Erişim
+            </h4>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card border-0 shadow-lg">
+            <div class="card-body p-5 text-center">
+                
+                <!-- Error Icon -->
+                <div class="mb-4">
+                    <div class="error-icon-wrapper mx-auto" style="width: 120px; height: 120px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i data-feather="shield-off" style="width: 60px; height: 60px; color: white;"></i>
+                    </div>
+                </div>
+                
+                <!-- Error Code -->
+                <h1 class="display-1 fw-bold text-danger mb-3">403</h1>
+                
+                <!-- Error Title -->
+                <h3 class="mb-3">
+                    <i data-feather="alert-triangle" class="icon-xs text-warning me-2"></i>
+                    Yetkisiz Erişim
+                </h3>
+                
+                <!-- Error Message -->
+                <p class="text-muted mb-4 fs-5">
+                    Üzgünüz, bu sayfaya erişim yetkiniz bulunmuyor.<br>
+                    Bu işlemi gerçekleştirmek için gerekli izinlere sahip değilsiniz.
+                </p>
+                
+                <!-- Permission Info -->
+                {% if permission and action %}
+                <div class="alert alert-warning border-0 shadow-sm mb-4" role="alert">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <i data-feather="key" class="icon-lg text-warning"></i>
+                        </div>
+                        <div class="flex-grow-1 ms-3 text-start">
+                            <strong class="d-block mb-1">Gereken Yetki:</strong>
+                            <code class="text-warning">{{ permission|upper }} → {{ action|upper }}</code>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Action Buttons -->
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center mb-4">
+                    <a href="/" class="btn btn-primary px-4">
+                        <i data-feather="home" class="icon-xs me-2"></i>
+                        Ana Sayfa
+                    </a>
+                    <a href="javascript:history.back()" class="btn btn-secondary px-4">
+                        <i data-feather="arrow-left" class="icon-xs me-2"></i>
+                        Geri Dön
+                    </a>
+                </div>
+                
+                <!-- Help Text -->
+                <div class="border-top pt-4 mt-4">
+                    <p class="text-muted small mb-2">
+                        <i data-feather="info" class="icon-xs me-1"></i>
+                        Yetki gerekiyorsa, lütfen sistem yöneticinize başvurun.
+                    </p>
+                    <p class="mb-0">
+                        <a href="/tickets" class="text-decoration-none">
+                            <i data-feather="life-buoy" class="icon-xs me-1"></i>
+                            Destek Talepleri
+                        </a>
+                    </p>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Feather icons
+if (typeof feather !== 'undefined') {
+    try {
+        const icons = document.querySelectorAll('[data-feather]');
+        icons.forEach(iconEl => {
+            const name = iconEl.getAttribute('data-feather');
+            if (name && feather.icons && feather.icons[name]) {
+                try {
+                    const svg = feather.icons[name].toSvg({class: iconEl.className, 'stroke-width': 2});
+                    const temp = document.createElement('div');
+                    temp.innerHTML = svg;
+                    if (temp.firstChild && iconEl.parentNode) {
+                        iconEl.parentNode.replaceChild(temp.firstChild, iconEl);
+                    }
+                } catch(e) {}
+            }
+        });
+    } catch(e) {}
+}
+</script>
+{% endblock %}
+

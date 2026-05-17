@@ -1,0 +1,273 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Email İşlem Geçmişi - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+<li class="breadcrumb-item active">İşlemler</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="list" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Email İşlemlerim{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- İstatistik Kartları -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="bg-success-subtle rounded p-3">
+                                <i data-feather="arrow-up-circle" class="align-self-center icon-md text-success"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <p class="text-muted mb-0 fw-semibold">Toplam Gelen</p>
+                            <h3 class="m-0 text-dark">{{ stats.credit_in|number_format(0, ',', '.') }}</h3>
+                            <p class="mb-0 text-truncate text-muted">Kredi</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="bg-danger-subtle rounded p-3">
+                                <i data-feather="arrow-down-circle" class="align-self-center icon-md text-danger"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <p class="text-muted mb-0 fw-semibold">Toplam Giden</p>
+                            <h3 class="m-0 text-dark">{{ stats.credit_out|number_format(0, ',', '.') }}</h3>
+                            <p class="mb-0 text-truncate text-muted">Kredi</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="bg-warning-subtle rounded p-3">
+                                <i data-feather="list" class="align-self-center icon-md text-warning"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <p class="text-muted mb-0 fw-semibold">Toplam İşlem</p>
+                            <h3 class="m-0 text-dark">{{ stats.total_transactions|number_format(0, ',', '.') }}</h3>
+                            <p class="mb-0 text-truncate text-muted">İşlem</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="bg-info-subtle rounded p-3">
+                                <i data-feather="rotate-ccw" class="align-self-center icon-md text-info"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <p class="text-muted mb-0 fw-semibold">Toplam İade</p>
+                            <h3 class="m-0 text-dark">{{ stats.refund|number_format(0, ',', '.') }}</h3>
+                            <p class="mb-0 text-truncate text-muted">Kredi</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- İşlemler Tablosu -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h4 class="card-title mb-0">
+                                <i data-feather="credit-card" class="align-self-center icon-xs me-2"></i>
+                                Mail İşlem Geçmişi
+                            </h4>
+                            <small class="text-muted">Toplam {{ total }} işlem</small>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-primary btn-sm" onclick="toggleFilters()">
+                                <i data-feather="filter" class="align-self-center icon-xs me-1"></i>
+                                Filtrele
+                            </button>
+                            <a href="/email-transactions/export?type={{ filters.type }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}" class="btn btn-success btn-sm">
+                                <i data-feather="download" class="align-self-center icon-xs me-1"></i>
+                                CSV İndir
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Filtreler -->
+                    <div id="filterSection" style="display: none;" class="mt-3 p-3 bg-light rounded">
+                        <form method="GET" action="/email-transactions" class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label small">İşlem Tipi</label>
+                                <select name="type" class="form-select form-select-sm">
+                                    <option value="all" {{ filters.type == 'all' ? 'selected' : '' }}>Tümü</option>
+                                    <option value="credit" {{ filters.type == 'credit' ? 'selected' : '' }}>Ekleme</option>
+                                    <option value="debit" {{ filters.type == 'debit' ? 'selected' : '' }}>Çıkarma</option>
+                                    <option value="refund" {{ filters.type == 'refund' ? 'selected' : '' }}>İade</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">Başlangıç Tarihi</label>
+                                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">Bitiş Tarihi</label>
+                                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary btn-sm me-2">
+                                    <i data-feather="search" class="icon-xs me-1"></i>
+                                    Filtrele
+                                </button>
+                                <a href="/email-transactions" class="btn btn-secondary btn-sm">
+                                    <i data-feather="x" class="icon-xs me-1"></i>
+                                    Temizle
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if transactions is empty %}
+                    <div class="text-center text-muted py-5">
+                        <i data-feather="inbox" style="width: 64px; height: 64px;"></i>
+                        <h5 class="mt-3">Henüz işlem geçmişi yok</h5>
+                        <p class="text-muted">Mail kredisi işlemleriniz burada görünecek</p>
+                    </div>
+                    {% else %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Tarih & Saat</th>
+                                    <th>İşlem Tipi</th>
+                                    <th class="text-end">Tutar</th>
+                                    <th class="text-end">Önceki Bakiye</th>
+                                    <th class="text-end">Sonraki Bakiye</th>
+                                    <th>Açıklama</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for transaction in transactions %}
+                                <tr>
+                                    <td><strong>#{{ transaction.id }}</strong></td>
+                                    <td>
+                                        <div>{{ transaction.createdAt|date('d.m.Y') }}</div>
+                                        <small class="text-muted">{{ transaction.createdAt|date('H:i:s') }}</small>
+                                    </td>
+                                    <td>
+                                        {% if transaction.type.value == 'credit' %}
+                                        <span class="badge bg-success">Ekleme</span>
+                                        {% elseif transaction.type.value == 'debit' %}
+                                        <span class="badge bg-danger">Çıkarma</span>
+                                        {% else %}
+                                        <span class="badge bg-info">İade</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <strong class="{{ transaction.type.value == 'credit' ? 'text-success' : 'text-danger' }}">
+                                            {{ transaction.type.value == 'credit' ? '+' : '-' }}{{ transaction.amount|number_format(0, ',', '.') }}
+                                        </strong>
+                                    </td>
+                                    <td class="text-end">
+                                        <small class="text-muted">{{ transaction.balanceBefore|number_format(0, ',', '.') }}</small>
+                                    </td>
+                                    <td class="text-end">
+                                        <strong>{{ transaction.balanceAfter|number_format(0, ',', '.') }}</strong>
+                                    </td>
+                                    <td>
+                                        {% set description = transaction.description ?? '-' %}
+                                        {% if 'Mail siparişi #' in description %}
+                                            {% set orderId = description|split('#')|last|split(' ')|first %}
+                                            <a href="/email-orders?modal={{ orderId }}" class="text-primary">
+                                                <i data-feather="external-link" class="icon-xs me-1"></i>
+                                                Sipariş #{{ orderId }}
+                                            </a>
+                                        {% else %}
+                                            <small class="text-muted">{{ description }}</small>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    {% if totalPages > 1 %}
+                    <nav class="mt-3">
+                        <ul class="pagination justify-content-center mb-0">
+                            <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
+                                <a class="page-link" href="/email-transactions?page={{ currentPage - 1 }}&type={{ filters.type }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}">Önceki</a>
+                            </li>
+                            
+                            {% for page in 1..totalPages %}
+                                {% if page == currentPage %}
+                                    <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                                {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                                    <li class="page-item"><a class="page-link" href="/email-transactions?page={{ page }}&type={{ filters.type }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}">{{ page }}</a></li>
+                                {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
+                                <a class="page-link" href="/email-transactions?page={{ currentPage + 1 }}&type={{ filters.type }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}">Sonraki</a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleFilters() {
+    const filterSection = document.getElementById('filterSection');
+    if (filterSection.style.display === 'none') {
+        filterSection.style.display = 'block';
+    } else {
+        filterSection.style.display = 'none';
+    }
+    feather.replace();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    
+    // Eğer filtre aktifse, filtre bölümünü aç
+    const hasFilters = '{{ filters.type }}' !== 'all' || '{{ filters.date_from }}' || '{{ filters.date_to }}';
+    if (hasFilters) {
+        document.getElementById('filterSection').style.display = 'block';
+    }
+});
+</script>
+{% endblock %}

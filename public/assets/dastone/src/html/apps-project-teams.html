@@ -1,0 +1,515 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        @@include("./partials/title-meta.html", {"title": "Dastone"})
+
+        @@include('./partials/head-css.html')
+    </head>
+
+    <body>
+        <!-- leftbar-tab-menu -->
+        @@include('./partials/left-sidebar.html')
+        <!-- end leftbar-tab-menu-->
+        
+
+        <div class="page-wrapper">
+        <!-- Top Bar Start -->
+        @@include('./partials/topbar.html')
+        <!-- Top Bar End -->
+
+            <!-- Page Content-->
+            <div class="page-content">
+                <div class="container-fluid">
+                    <!-- Page-Title -->
+                    <div class="row">
+                        <div class="col-sm-12">
+                            <div class="page-title-box">
+                                <div class="row">
+                                    <div class="col">
+                                        <h4 class="page-title">Teams</h4>
+                                        <ol class="breadcrumb">
+                                            <li class="breadcrumb-item"><a href="javascript:void(0);">Dastone</a></li>
+                                            <li class="breadcrumb-item"><a href="javascript:void(0);">Projects</a></li>
+                                            <li class="breadcrumb-item active">Teams</li>
+                                        </ol>
+                                    </div><!--end col-->
+                                    <div class="col-auto align-self-center">
+                                        <a href="#" class="btn btn-sm btn-outline-primary" id="Dash_Date">
+                                            <span class="day-name" id="Day_Name">Today:</span>&nbsp;
+                                            <span class="" id="Select_date">Jan 11</span>
+                                            <i data-feather="calendar" class="align-self-center icon-xs ms-1"></i>
+                                        </a>
+                                        <a href="#" class="btn btn-sm btn-outline-primary">
+                                            <i data-feather="download" class="align-self-center icon-xs"></i>
+                                        </a>
+                                    </div><!--end col-->  
+                                </div><!--end row-->                                                              
+                            </div><!--end page-title-box-->
+                        </div><!--end col-->
+                    </div><!--end row-->
+                    <!-- end page title end breadcrumb -->
+                    <div class="row">
+                        <div class="col-lg-6">
+                            <ul class="list-inline">
+                                <li class="list-inline-item">
+                                    <h5 class="mt-0 font-14">Here the list of all available teams. <span class="badge badge-pink">6</span></h5>
+                                </li>
+                            </ul>
+                        </div><!--end col-->
+
+                        <div class="col-lg-6 text-end">
+                            <div class="text-end">
+                                <ul class="list-inline"> 
+                                    <li class="list-inline-item">
+                                        <button type="button" class="btn btn-soft-primary btn-sm">Create Card</button>
+                                    </li>
+                                </ul>
+                            </div>                            
+                        </div><!--end col-->
+                    </div><!--end row-->
+                    <div class="row">
+                        <div class="col-lg-4">
+                            <div class="card team-card">
+                                <div class="card-body">
+                                    <div class="float-end">                                        
+                                        <div class="dropdown d-inline-block">
+                                            <a class="dropdown-toggle arrow-none" id="dLabel1" data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
+                                                <i class="las la-ellipsis-v font-24 text-muted"></i>
+                                            </a>
+                                            <div class="dropdown-menu dropdown-menu-end" aria-labelledby="dLabel1">
+                                                <a class="dropdown-item" href="#">Open Project</a>
+                                                <a class="dropdown-item" href="#">Edit Card</a> 
+                                                <a class="dropdown-item" href="#">Delete</a>
+                                            </div>
+                                        </div>
+                                    </div> 
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/users/user-4.jpg" alt="" class="rounded-circle user-img">
+                                        <div class="online-circle">
+                                            <i class="fa fa-circle text-success"></i>
+                                        </div>                                        
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Marnie Flowers</h4>
+                                            <p class="text-muted font-12 mb-0">Team Leader</p>                                            
+                                        </div>                                                                           
+                                    </div>                
+                                    <h4 class="m-0 mt-4 font-14 font-weight-semibold">UI/UX Design Team</h4>
+                                    <p class="text-muted mb-0">Contrary to popular belief, Lorem Ipsum is not simply</p>
+                                    <div class="mt-4 d-flex justify-content-between">
+                                        <div class="img-group">
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-6.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-2.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-3.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-4.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a href="" class="avatar-box thumb-xxs align-self-center">
+                                                <span class="avatar-title bg-soft-info rounded-circle font-13 font-weight-normal">+6</span>
+                                            </a>                    
+                                        </div>  
+                                        <div class="align-self-center">
+                                            <button type="button" class="btn btn-xs btn-light btn-round">View Details <i class="mdi mdi-arrow-right"></i></button>
+                                        </div> 
+                                    </div>                                     
+                                   <hr class="hr-dashed my-4">
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/widgets/project2.jpg" alt="" class="rounded-circle thumb-sm">
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Banking</h4>
+                                            <div class="d-flex justify-content-between">
+                                                <span>
+                                                    <a class="" href="#">
+                                                        <i class="mdi mdi-format-list-bulleted text-success"></i>
+                                                        <span class="text-muted">15/100</span>
+                                                    </a>
+                                                </span>
+                                                <span class="text-muted">55% Complete</span>
+                                            </div>
+                                            <div class="progress mt-0" style="height:3px;">
+                                                <div class="progress-bar" role="progressbar" style="width: 55%;" aria-valuenow="55" aria-valuemin="0" aria-valuemax="100"></div>
+                                            </div>                                           
+                                        </div>                                                                           
+                                    </div>     
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div><!--end col-->
+
+                        <div class="col-lg-4">
+                            <div class="card team-card">
+                                <div class="card-body">
+                                    <div class="float-end">                                        
+                                        <div class="dropdown d-inline-block">
+                                            <a class="dropdown-toggle arrow-none" id="dLabel1" data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
+                                                <i class="las la-ellipsis-v font-24 text-muted"></i>
+                                            </a>
+                                            <div class="dropdown-menu dropdown-menu-end" aria-labelledby="dLabel1">
+                                                <a class="dropdown-item" href="#">Open Project</a>
+                                                <a class="dropdown-item" href="#">Edit Card</a> 
+                                                <a class="dropdown-item" href="#">Delete</a>
+                                            </div>
+                                        </div>
+                                    </div> 
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/users/user-5.jpg" alt="" class="rounded-circle user-img">
+                                        <div class="online-circle">
+                                            <i class="fa fa-circle text-success"></i>
+                                        </div>                                        
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Willie Miller</h4>
+                                            <p class="text-muted font-12 mb-0">Team Leader</p>                                            
+                                        </div>                                                                           
+                                    </div>                                  
+                                    
+                                    <h4 class="m-0 mt-4 font-14 font-weight-semibold">Web Design Team</h4>
+                                    <p class="text-muted mb-0">Contrary to popular belief, Lorem Ipsum is not simply</p>
+                                    <div class=" mt-4 d-flex justify-content-between">
+                                        <div class="img-group">
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-1.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-5.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-9.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a href="" class="avatar-box thumb-xxs align-self-center">
+                                                <span class="avatar-title bg-soft-info rounded-circle font-13 font-weight-normal">+6</span>
+                                            </a>                    
+                                        </div>   
+                                        <div class="align-self-center">
+                                            <button type="button" class="btn btn-xs btn-light btn-round">View Details <i class="mdi mdi-arrow-right"></i></button>
+                                        </div>        
+                                    </div>
+                                    <hr class="hr-dashed my-4">
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/widgets/project1.jpg" alt="" class="rounded-circle thumb-sm">
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Payment App</h4>
+                                            <div class="d-flex justify-content-between">
+                                                <span>
+                                                    <a class="" href="#">
+                                                        <i class="mdi mdi-format-list-bulleted text-success"></i>
+                                                        <span class="text-muted">15/100</span>
+                                                    </a>
+                                                </span>
+                                                <span class="text-muted">55% Complete</span>
+                                            </div>
+                                            <div class="progress mt-0" style="height:3px;">
+                                                <div class="progress-bar" role="progressbar" style="width: 55%;" aria-valuenow="55" aria-valuemin="0" aria-valuemax="100"></div>
+                                            </div>                                           
+                                        </div>                                                                           
+                                    </div> 
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div><!--end col-->
+                        <div class="col-lg-4">
+                            <div class="card team-card">
+                                <div class="card-body">
+                                    <div class="float-end">                                        
+                                        <div class="dropdown d-inline-block">
+                                            <a class="dropdown-toggle arrow-none" id="dLabel1" data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
+                                                <i class="las la-ellipsis-v font-24 text-muted"></i>
+                                            </a>
+                                            <div class="dropdown-menu dropdown-menu-end" aria-labelledby="dLabel1">
+                                                <a class="dropdown-item" href="#">Open Project</a>
+                                                <a class="dropdown-item" href="#">Edit Card</a> 
+                                                <a class="dropdown-item" href="#">Delete</a>
+                                            </div>
+                                        </div>
+                                    </div> 
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/users/user-9.jpg" alt="" class="rounded-circle user-img">
+                                        <div class="online-circle">
+                                            <i class="fa fa-circle text-success"></i>
+                                        </div>                                        
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Jason Haston</h4>
+                                            <p class="text-muted font-12 mb-0">Team Leader</p>                                            
+                                        </div>                                                                           
+                                    </div>                                  
+                                    
+                                    <h4 class="m-0 mt-4 font-14 font-weight-semibold">Frontend Developer Team</h4>
+                                    <p class="text-muted mb-0">Contrary to popular belief, Lorem Ipsum is not simply</p>
+                                    <div class="d-flex justify-content-between mt-4">
+                                        <div class="img-group">
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-2.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-1.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>                                        
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-6.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a href="" class="avatar-box thumb-xxs align-self-center">
+                                                <span class="avatar-title bg-soft-info rounded-circle font-13 font-weight-normal">+6</span>
+                                            </a>                    
+                                        </div>
+                                        <div class="align-self-center">
+                                            <button type="button" class="btn btn-xs btn-light btn-round">View Details <i class="mdi mdi-arrow-right"></i></button>
+                                        </div>           
+                                    </div>
+                                    <hr class="hr-dashed my-4">
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/widgets/project3.jpg" alt="" class="rounded-circle thumb-sm">
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Transfer Money</h4>
+                                            <div class="d-flex justify-content-between">
+                                                <span>
+                                                    <a class="" href="#">
+                                                        <i class="mdi mdi-format-list-bulleted text-success"></i>
+                                                        <span class="text-muted">15/100</span>
+                                                    </a>
+                                                </span>
+                                                <span class="text-muted">55% Complete</span>
+                                            </div>
+                                            <div class="progress mt-0" style="height:3px;">
+                                                <div class="progress-bar" role="progressbar" style="width: 55%;" aria-valuenow="55" aria-valuemin="0" aria-valuemax="100"></div>
+                                            </div>                                           
+                                        </div>                                                                           
+                                    </div>
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div><!--end col-->                        
+                    </div><!--end row-->
+
+                    <div class="row">
+                        <div class="col-lg-4">
+                            <div class="card team-card">
+                                <div class="card-body">
+                                    <div class="float-end">                                        
+                                        <div class="dropdown d-inline-block">
+                                            <a class="dropdown-toggle arrow-none" id="dLabel1" data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
+                                                <i class="las la-ellipsis-v font-24 text-muted"></i>
+                                            </a>
+                                            <div class="dropdown-menu dropdown-menu-end" aria-labelledby="dLabel1">
+                                                <a class="dropdown-item" href="#">Open Project</a>
+                                                <a class="dropdown-item" href="#">Edit Card</a> 
+                                                <a class="dropdown-item" href="#">Delete</a>
+                                            </div>
+                                        </div>
+                                    </div> 
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/users/user-10.jpg" alt="" class="rounded-circle user-img">
+                                        <div class="online-circle">
+                                            <i class="fa fa-circle text-success"></i>
+                                        </div>                                        
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Robert Marshall</h4>
+                                            <p class="text-muted font-12 mb-0">Team Leader</p>                                            
+                                        </div>                                                                           
+                                    </div> 
+                                    <h4 class="m-0 mt-4 font-14 font-weight-semibold">UI/UX Design Team</h4>
+                                    <p class="text-muted mb-0">Contrary to popular belief, Lorem Ipsum is not simply</p>
+                                    <div class="mt-4 d-flex justify-content-between">
+                                        <div class="img-group">
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-3.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-5.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a href="" class="avatar-box thumb-xxs align-self-center">
+                                                <span class="avatar-title bg-soft-info rounded-circle font-13 font-weight-normal">+</span>
+                                            </a>                    
+                                        </div> 
+                                        <div class="align-self-center">
+                                            <button type="button" class="btn btn-xs btn-light btn-round">View Details <i class="mdi mdi-arrow-right"></i></button>
+                                        </div> 
+                                    </div>
+                                    <hr class="hr-dashed my-4">
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/widgets/project3.jpg" alt="" class="rounded-circle thumb-sm">
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Transfer Money</h4>
+                                            <div class="d-flex justify-content-between">
+                                                <span>
+                                                    <a class="" href="#">
+                                                        <i class="mdi mdi-format-list-bulleted text-success"></i>
+                                                        <span class="text-muted">15/100</span>
+                                                    </a>
+                                                </span>
+                                                <span class="text-muted">55% Complete</span>
+                                            </div>
+                                            <div class="progress mt-0" style="height:3px;">
+                                                <div class="progress-bar" role="progressbar" style="width: 55%;" aria-valuenow="55" aria-valuemin="0" aria-valuemax="100"></div>
+                                            </div>                                           
+                                        </div>                                                                           
+                                    </div>   
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div><!--end col-->
+                        <div class="col-lg-4">
+                            <div class="card team-card">
+                                <div class="card-body">
+                                    <div class="float-end">                                        
+                                        <div class="dropdown d-inline-block">
+                                            <a class="dropdown-toggle arrow-none" id="dLabel1" data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
+                                                <i class="las la-ellipsis-v font-24 text-muted"></i>
+                                            </a>
+                                            <div class="dropdown-menu dropdown-menu-end" aria-labelledby="dLabel1">
+                                                <a class="dropdown-item" href="#">Open Project</a>
+                                                <a class="dropdown-item" href="#">Edit Card</a> 
+                                                <a class="dropdown-item" href="#">Delete</a>
+                                            </div>
+                                        </div>
+                                    </div> 
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/users/user-2.jpg" alt="" class="rounded-circle user-img">
+                                        <div class="online-circle">
+                                            <i class="fa fa-circle text-success"></i>
+                                        </div>                                        
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Jason Haston</h4>
+                                            <p class="text-muted font-12 mb-0">Team Leader</p>                                            
+                                        </div>                                                                           
+                                    </div>                
+                                    <h4 class="m-0 mt-4 font-14 font-weight-semibold">Frontend Developer Team</h4>
+                                    <p class="text-muted mb-0">Contrary to popular belief, Lorem Ipsum is not simply</p>
+                                    <div class="mt-4 d-flex justify-content-between">
+                                        <div class="img-group">
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-10.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-8.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-6.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a href="" class="avatar-box thumb-xxs align-self-center">
+                                                <span class="avatar-title bg-soft-info rounded-circle font-13 font-weight-normal">+6</span>
+                                            </a>                    
+                                        </div>
+                                        <div class="align-self-center">
+                                            <button type="button" class="btn btn-xs btn-light btn-round">View Details <i class="mdi mdi-arrow-right"></i></button>
+                                        </div> 
+                                    </div>
+                                    <hr class="hr-dashed my-4">
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/widgets/project2.jpg" alt="" class="rounded-circle thumb-sm">
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Banking</h4>
+                                            <div class="d-flex justify-content-between">
+                                                <span>
+                                                    <a class="" href="#">
+                                                        <i class="mdi mdi-format-list-bulleted text-success"></i>
+                                                        <span class="text-muted">15/100</span>
+                                                    </a>
+                                                </span>
+                                                <span class="text-muted">55% Complete</span>
+                                            </div>
+                                            <div class="progress mt-0" style="height:3px;">
+                                                <div class="progress-bar" role="progressbar" style="width: 55%;" aria-valuenow="55" aria-valuemin="0" aria-valuemax="100"></div>
+                                            </div>                                           
+                                        </div>                                                                           
+                                    </div>      
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div><!--end col-->
+                        <div class="col-lg-4">
+                            <div class="card team-card">
+                                <div class="card-body">
+                                    <div class="float-end">                                        
+                                        <div class="dropdown d-inline-block">
+                                            <a class="dropdown-toggle arrow-none" id="dLabel1" data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
+                                                <i class="las la-ellipsis-v font-24 text-muted"></i>
+                                            </a>
+                                            <div class="dropdown-menu dropdown-menu-end" aria-labelledby="dLabel1">
+                                                <a class="dropdown-item" href="#">Open Project</a>
+                                                <a class="dropdown-item" href="#">Edit Card</a> 
+                                                <a class="dropdown-item" href="#">Delete</a>
+                                            </div>
+                                        </div>
+                                    </div> 
+                                    <div class="media align-items-center">                                                
+                                        <img src="assets/images/users/user-1.jpg" alt="" class="rounded-circle user-img">
+                                        <div class="online-circle">
+                                            <i class="fa fa-circle text-success"></i>
+                                        </div>                                        
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Marnie Flowers</h4>
+                                            <p class="text-muted font-12 mb-0">Team Leader</p>                                            
+                                        </div>                                                                           
+                                    </div>
+                                    <h4 class="m-0 mt-4 font-14 font-weight-semibold">Backend Developer Team</h4>
+                                    <p class="text-muted mb-0">Contrary to popular belief, Lorem Ipsum is not simply</p>
+                                    <div class="mt-4 d-flex justify-content-between">
+                                        <div class="img-group">
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-9.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-3.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-7.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a class="user-avatar user-avatar-group" href="#">
+                                                <img src="assets/images/users/user-2.jpg" alt="user" class="rounded-circle thumb-xxs">
+                                            </a>
+                                            <a href="" class="avatar-box thumb-xxs align-self-center">
+                                                <span class="avatar-title bg-soft-info rounded-circle font-13 font-weight-normal">+6</span>
+                                            </a>                    
+                                        </div>  
+                                        <div class="align-self-center">
+                                            <button type="button" class="btn btn-xs btn-light btn-round">View Details <i class="mdi mdi-arrow-right"></i></button>
+                                        </div> 
+                                    </div>
+                                    <hr class="hr-dashed my-4">
+                                    <div class="media align-items-center mt-4">                                                
+                                        <img src="assets/images/widgets/project1.jpg" alt="" class="rounded-circle thumb-sm">
+                                        <div class="media-body ms-3 align-self-center">
+                                            <h4 class="team-leader m-0">Payment App</h4>
+                                            <div class="d-flex justify-content-between">
+                                                <span>
+                                                    <a class="" href="#">
+                                                        <i class="mdi mdi-format-list-bulleted text-success"></i>
+                                                        <span class="text-muted">15/100</span>
+                                                    </a>
+                                                </span>
+                                                <span class="text-muted">55% Complete</span>
+                                            </div>
+                                            <div class="progress mt-0" style="height:3px;">
+                                                <div class="progress-bar" role="progressbar" style="width: 55%;" aria-valuenow="55" aria-valuemin="0" aria-valuemax="100"></div>
+                                            </div>                                           
+                                        </div>                                                                           
+                                    </div>   
+                                             
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div><!--end col-->
+                    </div><!--end row-->
+
+                </div><!-- container -->
+
+                <!--Start Footer-->
+                @@include('./partials/footer.html')                
+                <!--end footer-->
+            </div>
+            <!-- end page content -->
+        </div>
+        <!-- end page-wrapper -->
+
+        
+
+
+        <!-- jQuery  -->
+        <script src="assets/js/vendor.js"></script>
+        <script src="assets/plugins/daterangepicker/daterangepicker.js"></script>
+
+        <!-- App js -->
+        <script src="assets/js/app.js"></script>
+        
+    </body>
+
+</html>

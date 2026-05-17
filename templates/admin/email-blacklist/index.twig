@@ -1,0 +1,432 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Tüm Email Kara Listeler - Yönetim - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item">Email</li>
+<li class="breadcrumb-item active">Kara Listeler</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="mail" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Tüm Email Kara Listeler{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    {# İstatistikler #}
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0 me-3">
+                            <div class="avatar-sm rounded-circle bg-soft-danger">
+                                <span class="avatar-title">
+                                    <i data-feather="slash" class="icon-dual-danger"></i>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <p class="text-muted mb-1">Toplam Engelli Email</p>
+                            <h4 class="mb-0">{{ stats.total_blacklist|number_format }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0 me-3">
+                            <div class="avatar-sm rounded-circle bg-soft-info">
+                                <span class="avatar-title">
+                                    <i data-feather="users" class="icon-dual-info"></i>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <p class="text-muted mb-1">Kara Liste Kullanan Müşteri</p>
+                            <h4 class="mb-0">{{ stats.total_users|number_format }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Filtre #}
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <form method="GET" action="/admin/email-blacklists" class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label">Müşteri Ara</label>
+                            <input type="text" name="search" class="form-control" placeholder="Müşteri adı veya email..." value="{{ search }}">
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary me-2">
+                                <i data-feather="search" class="icon-xs"></i> Ara
+                            </button>
+                            <a href="/admin/email-blacklists" class="btn btn-outline-secondary">
+                                <i data-feather="x" class="icon-xs"></i> Temizle
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Müşteri Listesi #}
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title">
+                        <i data-feather="list" class="icon-xs me-2"></i>
+                        Kara Liste Kayıtları (Müşteri Bazlı)
+                        <span class="badge bg-danger ms-2">{{ userList|length }} Müşteri</span>
+                    </h4>
+                </div>
+                <div class="card-body">
+                    {% if userList is empty %}
+                        <div class="text-center py-5">
+                            <i data-feather="inbox" class="icon-dual icon-lg mb-2"></i>
+                            <p class="text-muted mb-0">Kara liste kaydı bulunamadı</p>
+                        </div>
+                    {% else %}
+                        <div class="list-group list-group-flush">
+                            {% for user in userList %}
+                                <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+                                    <div>
+                                        <strong>{{ user.user_name }}</strong>
+                                        <br>
+                                        <small class="text-muted">{{ user.user_email }}</small>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-danger rounded-pill">{{ user.blacklist_count }} email</span>
+                                        <button type="button" class="btn btn-sm btn-soft-primary" onclick="openDetailModal({{ user.user_id }}, '{{ user.user_name|e('js') }}', '{{ user.user_email|e('js') }}', {{ user.blacklist_count }})">
+                                            <i data-feather="eye" class="icon-xs me-1"></i>
+                                            Detay
+                                        </button>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Detay Modal #}
+<div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailModalLabel">
+                    <i data-feather="mail" class="icon-xs me-2"></i>
+                    <span id="modalUserTitle">Müşteri Kara Listesi</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modalLoading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted">Yükleniyor...</p>
+                </div>
+                <div id="modalContent" style="display: none;">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Email Adresi</th>
+                                    <th>Sebep</th>
+                                    <th>Oluşturulma</th>
+                                    <th class="text-end">İşlem</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modalEmailList"></tbody>
+                        </table>
+                    </div>
+                    <div id="modalPagination" class="d-flex justify-content-center mt-3"></div>
+                </div>
+                <div id="modalEmpty" class="text-center py-5" style="display: none;">
+                    <i data-feather="inbox" class="icon-dual icon-lg mb-2"></i>
+                    <p class="text-muted mb-0">Bu müşterinin kara listesinde email bulunamadı</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Düzenleme Modal #}
+<div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editModalLabel">
+                    <i data-feather="edit" class="icon-xs me-2"></i>
+                    Kara Liste Düzenle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editRecordId">
+                <div class="mb-3">
+                    <label class="form-label">Email Adresi</label>
+                    <input type="email" class="form-control" id="editEmail" required placeholder="ornek@email.com">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Sebep (Opsiyonel)</label>
+                    <input type="text" class="form-control" id="editReason" placeholder="Engelleme sebebi...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-primary" id="editSaveBtn">
+                    <i data-feather="save" class="icon-xs me-1"></i>
+                    Kaydet
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/assets/plugins/sweet-alert2/sweetalert2.min.js"></script>
+<script>
+// Bu sayfa için gerekli izinler (güvenlik: sadece bu sayfada kullanılıyor)
+{% set _ablPerms = (_session.user_permissions|default({})).admin_email_blacklists|default({}) %}
+const _canUpdateEmailBlacklist = {{ (_session.is_admin|default(false) or _ablPerms.update|default(false)) ? 'true' : 'false' }};
+const _canDeleteEmailBlacklist = {{ (_session.is_admin|default(false) or _ablPerms.delete|default(false)) ? 'true' : 'false' }};
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof feather !== 'undefined') feather.replace();
+});
+
+let currentUserId = null;
+let currentPage = 1;
+let totalPages = 1;
+const pageSize = 50;
+
+function openDetailModal(userId, userName, userEmail, totalCount) {
+    currentUserId = userId;
+    currentPage = 1;
+    document.getElementById('modalUserTitle').textContent = userName + ' - Kara Listesi (' + totalCount + ' email)';
+    document.getElementById('modalLoading').style.display = 'block';
+    document.getElementById('modalContent').style.display = 'none';
+    document.getElementById('modalEmpty').style.display = 'none';
+    
+    const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+    modal.show();
+    
+    loadModalEmails(userId, 1);
+}
+
+function loadModalEmails(userId, page) {
+    currentPage = page;
+    document.getElementById('modalLoading').style.display = 'block';
+    document.getElementById('modalContent').style.display = 'none';
+    document.getElementById('modalEmpty').style.display = 'none';
+    
+    fetch('/admin/email-blacklists/user/' + userId + '/emails?page=' + page + '&limit=' + pageSize)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('modalLoading').style.display = 'none';
+            
+            if (!data.success || data.emails.length === 0) {
+                if (data.total === 0) {
+                    document.getElementById('modalEmpty').style.display = 'block';
+                } else {
+                    document.getElementById('modalContent').style.display = 'block';
+                    document.getElementById('modalEmailList').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Kayıt bulunamadı</td></tr>';
+                }
+                return;
+            }
+            
+            totalPages = data.total_pages;
+            let html = '';
+            const startNum = (page - 1) * pageSize;
+            data.emails.forEach((item, idx) => {
+                const num = startNum + idx + 1;
+                const reason = item.reason || '-';
+                const emailEsc = (item.email || '').replace(/"/g, '&quot;');
+                const reasonEsc = (reason === '-' ? '' : reason).replace(/"/g, '&quot;');
+                const canUpdate = _canUpdateEmailBlacklist;
+                const canDelete = _canDeleteEmailBlacklist;
+                let actions = '';
+                if (canUpdate) actions += '<button type="button" class="btn btn-sm btn-soft-primary me-1 btn-edit-record" data-id="' + item.id + '" data-email="' + emailEsc + '" data-reason="' + reasonEsc + '" title="Düzenle"><i data-feather="edit-2" class="icon-xs"></i></button>';
+                if (canDelete) actions += '<button type="button" class="btn btn-sm btn-soft-danger btn-delete-record" data-id="' + item.id + '" data-email="' + emailEsc + '" title="Sil"><i data-feather="trash-2" class="icon-xs"></i></button>';
+                html += '<tr>' +
+                    '<td>' + num + '</td>' +
+                    '<td><code>' + escapeHtml(item.email) + '</code></td>' +
+                    '<td><small class="text-muted">' + escapeHtml(reason) + '</small></td>' +
+                    '<td><small>' + escapeHtml(item.createdAt) + '</small></td>' +
+                    '<td class="text-end">' + (actions || '-') + '</td></tr>';
+            });
+            
+            document.getElementById('modalEmailList').innerHTML = html;
+            document.getElementById('modalContent').style.display = 'block';
+            
+            // Pagination
+            let pagHtml = '';
+            if (totalPages > 1) {
+                pagHtml = '<nav><ul class="pagination mb-0">';
+                if (page > 1) {
+                    pagHtml += '<li class="page-item"><a class="page-link" href="#" onclick="loadModalEmails(' + userId + ', ' + (page - 1) + '); return false;">Önceki</a></li>';
+                }
+                for (let i = 1; i <= Math.min(totalPages, 5); i++) {
+                    pagHtml += '<li class="page-item' + (i === page ? ' active' : '') + '">' +
+                        '<a class="page-link" href="#" onclick="loadModalEmails(' + userId + ', ' + i + '); return false;">' + i + '</a></li>';
+                }
+                if (page < totalPages) {
+                    pagHtml += '<li class="page-item"><a class="page-link" href="#" onclick="loadModalEmails(' + userId + ', ' + (page + 1) + '); return false;">Sonraki</a></li>';
+                }
+                pagHtml += '</ul></nav>';
+            }
+            document.getElementById('modalPagination').innerHTML = pagHtml;
+            
+            if (typeof feather !== 'undefined') feather.replace();
+            
+            // Event delegation for edit/delete buttons
+            document.querySelectorAll('.btn-edit-record').forEach(btn => {
+                btn.onclick = function() {
+                    editRecord(this.dataset.id, this.dataset.email, this.dataset.reason || '');
+                };
+            });
+            document.querySelectorAll('.btn-delete-record').forEach(btn => {
+                btn.onclick = function() {
+                    deleteRecord(this.dataset.id, this.dataset.email);
+                };
+            });
+        })
+        .catch(err => {
+            document.getElementById('modalLoading').style.display = 'none';
+            document.getElementById('modalContent').style.display = 'block';
+            document.getElementById('modalEmailList').innerHTML = '<tr><td colspan="5" class="text-center text-danger">Yükleme hatası</td></tr>';
+        });
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML.replace(/'/g, '&#39;');
+}
+
+function editRecord(id, email, reason) {
+    document.getElementById('editRecordId').value = id;
+    document.getElementById('editEmail').value = (email || '').replace(/&quot;/g, '"');
+    document.getElementById('editReason').value = (reason || '').replace(/&quot;/g, '"');
+    const modal = new bootstrap.Modal(document.getElementById('editModal'));
+    modal.show();
+}
+
+document.getElementById('editSaveBtn').addEventListener('click', function() {
+    const id = document.getElementById('editRecordId').value;
+    const email = document.getElementById('editEmail').value.trim();
+    const reason = document.getElementById('editReason').value.trim();
+    
+    if (!email) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire('Hata', 'Email adresi girin', 'error');
+        } else {
+            alert('Email adresi girin');
+        }
+        return;
+    }
+    
+    fetch('/admin/email-blacklists/record/' + id + '/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify({ email: email, reason: reason || null })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+            loadModalEmails(currentUserId, currentPage);
+            if (typeof Swal !== 'undefined') {
+                Swal.fire('Başarılı', 'Kayıt güncellendi', 'success');
+            } else {
+                alert('Kayıt güncellendi');
+            }
+        } else {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire('Hata', data.error || 'Güncelleme başarısız', 'error');
+            } else {
+                alert(data.error || 'Güncelleme başarısız');
+            }
+        }
+    })
+    .catch(() => {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire('Hata', 'İşlem sırasında hata oluştu', 'error');
+        } else {
+            alert('İşlem sırasında hata oluştu');
+        }
+    });
+});
+
+function deleteRecord(id, email) {
+    const emailDisplay = (email || '').replace(/&quot;/g, '"');
+    
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({
+            title: 'Emin misiniz?',
+            text: emailDisplay + ' kara listeden çıkarılacak',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Evet, Sil'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                doDelete(id);
+            }
+        });
+    } else if (confirm('Bu email adresini kara listeden çıkarmak istediğinize emin misiniz?\n\n' + emailDisplay)) {
+        doDelete(id);
+    }
+}
+
+function doDelete(id) {
+    fetch('/admin/email-blacklists/record/' + id + '/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            loadModalEmails(currentUserId, currentPage);
+            if (typeof Swal !== 'undefined') {
+                Swal.fire('Silindi', 'Kayıt kara listeden çıkarıldı', 'success');
+            } else {
+                alert('Kayıt silindi');
+            }
+        } else {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire('Hata', data.error || 'Silme başarısız', 'error');
+            } else {
+                alert(data.error || 'Silme başarısız');
+            }
+        }
+    })
+    .catch(() => {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire('Hata', 'İşlem sırasında hata oluştu', 'error');
+        } else {
+            alert('İşlem sırasında hata oluştu');
+        }
+    });
+}
+</script>
+{% endblock %}

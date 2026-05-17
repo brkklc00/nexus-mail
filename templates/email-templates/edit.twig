@@ -1,0 +1,159 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Şablonu Düzenle - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <form action="/email-templates/{{ template.id }}/update" method="POST">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Şablon Adı *</label>
+                            <input type="text" class="form-control" id="name" name="name" required value="{{ template.name }}">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="subject" class="form-label">Mail Konusu *</label>
+                            <input type="text" class="form-control" id="subject" name="subject" required value="{{ template.subject }}">
+                            <small class="text-muted">
+                                Değişkenler: <code>{name}</code>, <code>{email}</code>, <code>{date}</code>, <code>{code}</code>
+                            </small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="body" class="form-label">Mail İçeriği *</label>
+                            <textarea class="form-control font-monospace" id="body" name="body" rows="15" required>{{ template.body }}</textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="category" class="form-label">Kategori</label>
+                                    <input type="text" class="form-control" id="category" name="category" value="{{ template.category }}">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="tags" class="form-label">Tags</label>
+                                    <input type="text" class="form-control" id="tags" name="tags" value="{{ template.tags }}">
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if _session.user.role.name == 'admin' %}
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_global" name="is_global" {{ template.isGlobal ? 'checked' : '' }}>
+                                <label class="form-check-label" for="is_global">
+                                    Global Şablon (Tüm kullanıcılar erişebilir)
+                                </label>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="d-flex justify-content-between">
+                            <a href="/email-templates" class="btn btn-secondary">
+                                <i data-feather="arrow-left"></i> Geri
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i data-feather="save"></i> Değişiklikleri Kaydet
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Önizleme -->
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Önizleme</h5>
+                    
+                    <button class="btn btn-info w-100 mb-3" onclick="showPreview()">
+                        <i data-feather="eye"></i> Önizlemeyi Göster
+                    </button>
+
+                    <div id="preview" style="display: none;" class="border rounded p-3">
+                        <div class="mb-2">
+                            <strong>Konu:</strong>
+                            <div id="previewSubject" class="text-muted"></div>
+                        </div>
+                        <div>
+                            <strong>İçerik:</strong>
+                            <div id="previewBody" class="text-muted" style="white-space: pre-wrap;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bilgi -->
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Şablon Bilgisi</h5>
+                    
+                    <ul class="list-unstyled">
+                        <li class="mb-2">
+                            <strong>Oluşturulma:</strong><br>
+                            {{ template.createdAt|date('d.m.Y H:i:s') }}
+                        </li>
+                        {% if template.updatedAt %}
+                        <li class="mb-2">
+                            <strong>Son Güncelleme:</strong><br>
+                            {{ template.updatedAt|date('d.m.Y H:i:s') }}
+                        </li>
+                        {% endif %}
+                        <li class="mb-2">
+                            <strong>Tip:</strong><br>
+                            <span class="badge bg-{{ template.isGlobal ? 'primary' : 'secondary' }}">
+                                {{ template.isGlobal ? 'Global' : 'Kişisel' }}
+                            </span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showPreview() {
+    const subject = document.getElementById('subject').value;
+    const body = document.getElementById('body').value;
+    
+    // Test değişkenleri ile doldur
+    const sampleData = {
+        '{name}': 'John Doe',
+        '{email}': 'john@example.com',
+        '{date}': new Date().toLocaleDateString('tr-TR'),
+        '{code}': '123456',
+        '{company}': 'Nexus Panel'
+    };
+    
+    let previewSubject = subject;
+    let previewBody = body;
+    
+    Object.keys(sampleData).forEach(key => {
+        previewSubject = previewSubject.replace(new RegExp(key, 'g'), sampleData[key]);
+        previewBody = previewBody.replace(new RegExp(key, 'g'), sampleData[key]);
+    });
+    
+    document.getElementById('previewSubject').textContent = previewSubject;
+    document.getElementById('previewBody').textContent = previewBody;
+    document.getElementById('preview').style.display = 'block';
+    
+    iziToast.info({
+        title: 'Önizleme',
+        message: 'Test verileri ile dolduruldu'
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+});
+</script>
+{% endblock %}
+

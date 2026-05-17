@@ -1,0 +1,40 @@
+{# Nexus dashboard KPI — icon, label, value (plain text), hint, optional trend, optional extra_class, optional compact_stat (yatay kompakt istatistik) #}
+{% set compact_stat = compact_stat|default(false) %}
+<div class="nx-dash-kpi{% if compact_stat %} h-auto nx-dash-kpi--compact-stat{% else %} h-100{% endif %} {{ extra_class|default('') }}">
+    <div class="nx-dash-kpi-accent" aria-hidden="true"></div>
+    {% if compact_stat %}
+    <div class="nx-dash-kpi-body nx-dash-kpi-body--compact-stat">
+        <div class="nx-dash-kpi-compact-stat-inner">
+            <div class="nx-dash-kpi-chip" aria-hidden="true">
+                <i data-feather="{{ icon }}" class="nx-dash-kpi-icon" aria-hidden="true"></i>
+            </div>
+            <div class="nx-dash-kpi-compact-stat-main">
+                <span class="nx-dash-kpi-label">{{ label }}</span>
+                <div class="nx-dash-kpi-value">{{ value }}</div>
+                {% if hint is defined and hint %}
+                <p class="nx-dash-kpi-hint">{{ hint }}</p>
+                {% endif %}
+                {% if trend is defined and trend %}
+                <p class="nx-dash-kpi-trend">{{ trend }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="nx-dash-kpi-body">
+        <div class="nx-dash-kpi-top">
+            <div class="nx-dash-kpi-chip">
+                <i data-feather="{{ icon }}" class="nx-dash-kpi-icon" aria-hidden="true"></i>
+            </div>
+            <span class="nx-dash-kpi-label">{{ label }}</span>
+        </div>
+        <div class="nx-dash-kpi-value">{{ value }}</div>
+        {% if hint is defined and hint %}
+        <p class="nx-dash-kpi-hint">{{ hint }}</p>
+        {% endif %}
+        {% if trend is defined and trend %}
+        <p class="nx-dash-kpi-trend">{{ trend }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>

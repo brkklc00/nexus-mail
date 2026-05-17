@@ -1,0 +1,476 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Rol Düzenle - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item"><a href="/roles">Roller & Yetkiler</a></li>
+<li class="breadcrumb-item active">Düzenle</li>
+{% endblock %}
+
+{% block title_text %}Rol Düzenle: {{ role.name }}{% endblock %}
+
+{% block content %}
+
+<!-- İstatistik Kartları -->
+<div class="row mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0 me-3">
+                        <div class="avatar-sm rounded-circle bg-primary-subtle">
+                            <i data-feather="check-square" class="text-primary" style="width: 24px; height: 24px; margin: 12px;"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-0 fs-13">Seçili Yetki</p>
+                        <h4 class="mb-0" id="selectedPermCount">0</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0 me-3">
+                        <div class="avatar-sm rounded-circle bg-info-subtle">
+                            <i data-feather="eye" class="text-info" style="width: 24px; height: 24px; margin: 12px;"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-0 fs-13">Okuma</p>
+                        <h4 class="mb-0" id="readCount">0</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0 me-3">
+                        <div class="avatar-sm rounded-circle bg-success-subtle">
+                            <i data-feather="edit" class="text-success" style="width: 24px; height: 24px; margin: 12px;"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-0 fs-13">Yazma (C+U)</p>
+                        <h4 class="mb-0" id="writeCount">0</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0 me-3">
+                        <div class="avatar-sm rounded-circle bg-danger-subtle">
+                            <i data-feather="trash-2" class="text-danger" style="width: 24px; height: 24px; margin: 12px;"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1">
+                        <p class="text-muted mb-0 fs-13">Silme</p>
+                        <h4 class="mb-0" id="deleteCount">0</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h4 class="card-title mb-0">Rol Düzenle</h4>
+                        <small class="text-muted">{{ role.name }}</small>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/roles" class="btn btn-sm btn-secondary">
+                            <i data-feather="arrow-left" class="icon-xs me-1"></i>
+                            Geri Dön
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                
+                {% if error %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i data-feather="alert-triangle" class="align-self-center icon-xs me-2"></i>
+                    {{ error }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+                
+                <form method="POST" action="/roles/{{ role.id }}/edit">
+                    
+                    <div class="alert alert-info border-0 mb-3">
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <i data-feather="info" class="icon-xs me-2"></i>
+                                <strong>Bilgi:</strong> Yetkileri düzenledikten sonra değişikliklerin etkili olması için kullanıcıların tekrar giriş yapması gerekir.
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <span class="badge bg-primary-subtle text-primary">{{ role.permissions|length }} yetki tanımlı</span>
+                                <span class="badge bg-success-subtle text-success">{{ role.users|length }} kullanıcı</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Rol Adı <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-lg" id="name" name="name" value="{{ role.name }}" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <h5 class="mb-0">Yetkiler</h5>
+                                    <small class="text-muted">Modül bazlı yetki yönetimi</small>
+                                </div>
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-sm btn-success" onclick="selectAll()">
+                                        <i data-feather="check-square" class="icon-xs me-1"></i> Tümünü Seç
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-secondary" onclick="deselectAll()">
+                                        <i data-feather="square" class="icon-xs me-1"></i> Tümünü Kaldır
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-info" onclick="expandAll()">
+                                        <i data-feather="maximize-2" class="icon-xs me-1"></i> Tümünü Aç
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        {% if groupedPermissions|length > 0 %}
+                            <div class="col-12">
+                                <div class="accordion" id="permissionsAccordion">
+                                    {% for module, perms in groupedPermissions %}
+                                    <div class="accordion-item border mb-2">
+                                        <h2 class="accordion-header" id="heading{{ loop.index }}">
+                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}" aria-expanded="false">
+                                                <strong>{{ module }}</strong>
+                                                <span class="badge bg-primary ms-2">{{ perms|length }} yetki</span>
+                                            </button>
+                                        </h2>
+                                        <div id="collapse{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="heading{{ loop.index }}" data-bs-parent="#permissionsAccordion">
+                                            <div class="accordion-body p-0">
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-hover mb-0">
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th style="width: 35%">Yetki</th>
+                                                                <th class="text-center" style="width: 10%">
+                                                                    <input type="checkbox" class="form-check-input" onclick="toggleColumn(this, 'read', {{ loop.index }})" title="Tüm Okuma">
+                                                                </th>
+                                                                <th class="text-center" style="width: 10%">
+                                                                    <input type="checkbox" class="form-check-input" onclick="toggleColumn(this, 'create', {{ loop.index }})" title="Tüm Oluşturma">
+                                                                </th>
+                                                                <th class="text-center" style="width: 10%">
+                                                                    <input type="checkbox" class="form-check-input" onclick="toggleColumn(this, 'update', {{ loop.index }})" title="Tüm Güncelleme">
+                                                                </th>
+                                                                <th class="text-center" style="width: 10%">
+                                                                    <input type="checkbox" class="form-check-input" onclick="toggleColumn(this, 'delete', {{ loop.index }})" title="Tüm Silme">
+                                                                </th>
+                                                                <th class="text-center" style="width: 25%">Hızlı Seç</th>
+                                                            </tr>
+                                                            <tr>
+                                                                <th></th>
+                                                                <th class="text-center"><small class="text-muted">Okuma</small></th>
+                                                                <th class="text-center"><small class="text-muted">Oluşturma</small></th>
+                                                                <th class="text-center"><small class="text-muted">Güncelleme</small></th>
+                                                                <th class="text-center"><small class="text-muted">Silme</small></th>
+                                                                <th class="text-center"><small class="text-muted">Presetler</small></th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for permission in perms %}
+                                                            {% set hasRead = false %}
+                                                            {% set hasCreate = false %}
+                                                            {% set hasUpdate = false %}
+                                                            {% set hasDelete = false %}
+                                                            
+                                                            {% for rp in role.permissions %}
+                                                                {% if rp.permission.id == permission.id %}
+                                                                    {% set hasRead = rp.canRead %}
+                                                                    {% set hasCreate = rp.canCreate %}
+                                                                    {% set hasUpdate = rp.canUpdate %}
+                                                                    {% set hasDelete = rp.canDelete %}
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                            
+                                                            <tr class="permission-row-{{ loop.parent.loop.index }}">
+                                                                <td>
+                                                                    <strong>{{ permission.name }}</strong>
+                                                                    <br><small class="text-muted font-monospace">{{ permission.key }}</small>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <input class="form-check-input perm-read-{{ loop.parent.loop.index }}" type="checkbox" name="permissions[{{ permission.id }}][read]" value="1" {% if hasRead %}checked{% endif %}>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <input class="form-check-input perm-create-{{ loop.parent.loop.index }}" type="checkbox" name="permissions[{{ permission.id }}][create]" value="1" {% if hasCreate %}checked{% endif %}>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <input class="form-check-input perm-update-{{ loop.parent.loop.index }}" type="checkbox" name="permissions[{{ permission.id }}][update]" value="1" {% if hasUpdate %}checked{% endif %}>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <input class="form-check-input perm-delete-{{ loop.parent.loop.index }}" type="checkbox" name="permissions[{{ permission.id }}][delete]" value="1" {% if hasDelete %}checked{% endif %}>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <div class="btn-group btn-group-sm" role="group">
+                                                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="setRowPermissions({{ loop.parent.loop.index }}, {{ loop.index0 }}, 'all')" title="Tüm Yetkiler">Tümü</button>
+                                                                        <button type="button" class="btn btn-outline-info btn-sm" onclick="setRowPermissions({{ loop.parent.loop.index }}, {{ loop.index0 }}, 'read')" title="Sadece Okuma">Okuma</button>
+                                                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setRowPermissions({{ loop.parent.loop.index }}, {{ loop.index0 }}, 'none')" title="Yetki Yok">Yok</button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% else %}
+                            <div class="col-12">
+                                <div class="alert alert-warning">
+                                    <i data-feather="alert-triangle" class="icon-xs me-2"></i>
+                                    Henüz yetki bulunmuyor
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <button type="submit" class="btn btn-primary btn-lg">
+                                        <i data-feather="save" class="icon-xs me-2"></i>
+                                        Değişiklikleri Kaydet
+                                    </button>
+                                    <a href="/roles" class="btn btn-secondary ms-2">
+                                        <i data-feather="x" class="icon-xs me-2"></i>
+                                        İptal
+                                    </a>
+                                </div>
+                                <div>
+                                    <button type="button" class="btn btn-outline-danger" onclick="resetForm()">
+                                        <i data-feather="rotate-ccw" class="icon-xs me-1"></i>
+                                        Değişiklikleri Geri Al
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </form>
+                
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Feather icons - güvenli yükleme
+function initIcons() {
+    if (typeof feather !== 'undefined') {
+        try {
+            const icons = document.querySelectorAll('[data-feather]');
+            icons.forEach(iconEl => {
+                const name = iconEl.getAttribute('data-feather');
+                if (name && feather.icons && feather.icons[name]) {
+                    try {
+                        const svg = feather.icons[name].toSvg({class: iconEl.className});
+                        const temp = document.createElement('div');
+                        temp.innerHTML = svg;
+                        if (temp.firstChild && iconEl.parentNode) {
+                            iconEl.parentNode.replaceChild(temp.firstChild, iconEl);
+                        }
+                    } catch(e) {}
+                }
+            });
+        } catch(e) {}
+    }
+}
+
+// Sayfa yüklendiğinde
+document.addEventListener('DOMContentLoaded', function() {
+    initIcons();
+    updateStats();
+    
+    // Checkbox değişikliklerini dinle
+    document.querySelectorAll('input[type="checkbox"][name^="permissions"]').forEach(cb => {
+        cb.addEventListener('change', updateStats);
+    });
+});
+initIcons();
+setTimeout(initIcons, 100);
+setTimeout(initIcons, 500);
+
+// Orijinal form değerlerini sakla
+let originalFormData = null;
+window.addEventListener('load', function() {
+    const form = document.querySelector('form');
+    if (form) {
+        originalFormData = new FormData(form);
+    }
+});
+
+// İstatistikleri güncelle
+function updateStats() {
+    const allCheckboxes = document.querySelectorAll('input[type="checkbox"][name^="permissions"]');
+    const readCheckboxes = document.querySelectorAll('input[type="checkbox"][name*="[read]"]:checked');
+    const createCheckboxes = document.querySelectorAll('input[type="checkbox"][name*="[create]"]:checked');
+    const updateCheckboxes = document.querySelectorAll('input[type="checkbox"][name*="[update]"]:checked');
+    const deleteCheckboxes = document.querySelectorAll('input[type="checkbox"][name*="[delete]"]:checked');
+    
+    // Her permission için en az bir checkbox seçiliyse say
+    const permissionIds = new Set();
+    document.querySelectorAll('input[type="checkbox"][name^="permissions"]:checked').forEach(cb => {
+        const match = cb.name.match(/permissions\[(\d+)\]/);
+        if (match) permissionIds.add(match[1]);
+    });
+    
+    document.getElementById('selectedPermCount').textContent = permissionIds.size;
+    document.getElementById('readCount').textContent = readCheckboxes.length;
+    document.getElementById('writeCount').textContent = Math.max(createCheckboxes.length, updateCheckboxes.length);
+    document.getElementById('deleteCount').textContent = deleteCheckboxes.length;
+}
+
+// Tümünü seç
+function selectAll() {
+    document.querySelectorAll('input[type="checkbox"][name^="permissions"]').forEach(cb => {
+        cb.checked = true;
+    });
+    updateStats();
+    iziToast.success({
+        title: 'Tümü Seçildi',
+        message: 'Tüm yetkiler aktif edildi',
+        position: 'topRight',
+        timeout: 2000
+    });
+}
+
+// Tümünü kaldır
+function deselectAll() {
+    document.querySelectorAll('input[type="checkbox"][name^="permissions"]').forEach(cb => {
+        cb.checked = false;
+    });
+    updateStats();
+    iziToast.info({
+        title: 'Tümü Kaldırıldı',
+        message: 'Tüm yetkiler pasif edildi',
+        position: 'topRight',
+        timeout: 2000
+    });
+}
+
+// Tüm accordion'ları aç
+function expandAll() {
+    document.querySelectorAll('.accordion-collapse').forEach(collapse => {
+        const bsCollapse = new bootstrap.Collapse(collapse, { toggle: false });
+        bsCollapse.show();
+    });
+}
+
+// Sütun toggle (Okuma, Oluşturma, vs için)
+function toggleColumn(checkbox, action, moduleIndex) {
+    const checkboxes = document.querySelectorAll(`.perm-${action}-${moduleIndex}`);
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateStats();
+}
+
+// Satır yetkileri ayarla (Preset butonları)
+function setRowPermissions(moduleIndex, rowIndex, preset) {
+    const row = document.querySelectorAll(`.permission-row-${moduleIndex}`)[rowIndex];
+    if (!row) return;
+    
+    const checkboxes = row.querySelectorAll('input[type="checkbox"]');
+    
+    switch(preset) {
+        case 'all':
+            checkboxes.forEach(cb => cb.checked = true);
+            break;
+        case 'read':
+            checkboxes.forEach((cb, idx) => {
+                cb.checked = (idx === 0);
+            });
+            break;
+        case 'none':
+            checkboxes.forEach(cb => cb.checked = false);
+            break;
+    }
+    updateStats();
+}
+
+// Formu sıfırla
+function resetForm() {
+    iziToast.question({
+        timeout: false,
+        close: false,
+        overlay: true,
+        displayMode: 'once',
+        id: 'resetForm',
+        zindex: 999,
+        title: 'Emin misiniz?',
+        message: 'Tüm değişiklikler geri alınacak. Devam edilsin mi?',
+        position: 'center',
+        buttons: [
+            ['<button><b>Evet, Geri Al</b></button>', function (instance, toast) {
+                instance.hide({ transitionOut: 'fadeOut' }, toast, 'button');
+                location.reload();
+            }, true],
+            ['<button>İptal</button>', function (instance, toast) {
+                instance.hide({ transitionOut: 'fadeOut' }, toast, 'button');
+            }],
+        ]
+    });
+}
+
+// Form submit uyarısı
+document.querySelector('form')?.addEventListener('submit', function(e) {
+    const checkedCount = document.querySelectorAll('input[type="checkbox"][name^="permissions"]:checked').length;
+    
+    if (checkedCount === 0) {
+        e.preventDefault();
+        iziToast.warning({
+            title: 'Uyarı',
+            message: 'En az bir yetki seçmelisiniz!',
+            position: 'topRight'
+        });
+        return false;
+    }
+    
+    // Loading göster
+    const overlay = document.createElement('div');
+    overlay.id = 'submitOverlay';
+    overlay.style.cssText = 'display:flex; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;';
+    overlay.innerHTML = '<div class="text-center"><div class="spinner-border text-light" style="width: 3rem; height: 3rem;"></div><p class="text-white mt-3">Kaydediliyor...</p></div>';
+    document.body.appendChild(overlay);
+});
+</script>
+{% endblock %}

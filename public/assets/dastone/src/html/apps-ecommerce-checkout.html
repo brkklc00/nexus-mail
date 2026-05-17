@@ -1,0 +1,340 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        @@include("./partials/title-meta.html", {"title": "Dastone"})
+
+        @@include('./partials/head-css.html')
+    </head>
+
+    <body>
+        <!-- leftbar-tab-menu -->
+        @@include('./partials/left-sidebar.html')
+        <!-- end leftbar-tab-menu-->
+        
+
+        <div class="page-wrapper">
+        <!-- Top Bar Start -->
+        @@include('./partials/topbar.html')
+        <!-- Top Bar End -->
+
+            <!-- Page Content-->
+            <div class="page-content">
+                <div class="container-fluid">
+                    <!-- Page-Title -->
+                    <div class="row">
+                        <div class="col-sm-12">
+                            <div class="page-title-box">
+                                <div class="row">
+                                    <div class="col">
+                                        <h4 class="page-title">Checkout</h4>
+                                        <ol class="breadcrumb">
+                                            <li class="breadcrumb-item"><a href="javascript:void(0);">Dastone</a></li>
+                                            <li class="breadcrumb-item"><a href="javascript:void(0);">Ecommerce</a></li>
+                                            <li class="breadcrumb-item active">Checkout</li>
+                                        </ol>
+                                    </div><!--end col-->
+                                    <div class="col-auto align-self-center">
+                                        <a href="#" class="btn btn-sm btn-outline-primary" id="Dash_Date">
+                                            <span class="day-name" id="Day_Name">Today:</span>&nbsp;
+                                            <span class="" id="Select_date">Jan 11</span>
+                                            <i data-feather="calendar" class="align-self-center icon-xs ms-1"></i>
+                                        </a>
+                                        <a href="#" class="btn btn-sm btn-outline-primary">
+                                            <i data-feather="download" class="align-self-center icon-xs"></i>
+                                        </a>
+                                    </div><!--end col-->  
+                                </div><!--end row-->                                                              
+                            </div><!--end page-title-box-->
+                        </div><!--end col-->
+                    </div><!--end row-->
+                    <!-- end page title end breadcrumb -->
+                    <div class="row">
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title">Order Summary</h4>
+                                </div><!--end card-header-->
+                                <div class="card-body">
+                                    <div class="table-responsive shopping-cart">
+                                        <table class="table mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th class="border-top-0">Product</th>
+                                                    <th class="border-top-0">Quantity</th>                                                        
+                                                    <th class="border-top-0">Total</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>
+                                                        <img src="assets/images/products/img-5.png" alt="" height="36">
+                                                        <p class="d-inline-block align-middle mb-0 product-name">Reebok Bag</p> 
+                                                    </td>
+                                                    <td>
+                                                        2
+                                                    </td>
+                                                    <td>$198</td>                                                        
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <img src="assets/images/products/01.png" alt="" height="36">
+                                                        <p class="d-inline-block align-middle mb-0 product-name">White Morden Camera</p> 
+                                                    </td>
+                                                    <td>
+                                                        2
+                                                    </td>
+                                                    <td>$150</td>                                                       
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <img src="assets/images/products/img-4.png" alt="" height="36">
+                                                        <p class="d-inline-block align-middle mb-0 product-name">Lava Purse</p> 
+                                                    </td>
+                                                    <td>
+                                                        1
+                                                    </td>
+                                                    <td>$49</td>                                                       
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <img src="assets/images/products/02.png" alt="" height="36">
+                                                        <p class="d-inline-block align-middle mb-0 product-name">Important Shoes</p>
+                                                    </td>
+                                                    <td>
+                                                        1
+                                                    </td>
+                                                    <td>$99</td>
+                                                </tr>  
+                                                <tr>
+                                                    <td>
+                                                        <h6>Total :</h6>
+                                                    </td>
+                                                    <td></td>
+                                                    <td class="text-dark"><strong>$496</strong></td>
+                                                </tr>                                                    
+                                            </tbody>
+                                        </table>
+                                    </div><!--end re-table-->
+                                    <div class="total-payment">
+                                        <table class="table mb-0">
+                                            <tbody>
+                                                <tr>
+                                                    <td class="payment-title">Subtotal</td>
+                                                    <td>$496.00</td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="payment-title">Shipping</td>
+                                                    <td>
+                                                        Shipping Charge : $5.00
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="payment-title">Promo Code</td>
+                                                    <td>-$10.00</td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="payment-title">Total</td>
+                                                    <td class="text-dark"><strong>$491.00</strong></td>
+                                                </tr>
+                                            </tbody>
+                                        </table><!--end table-->
+                                    </div><!--end total-payment-->
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div><!--end col-->
+
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title">Delivery Address</h4>
+                                </div><!--end card-header-->
+                                <div class="card-body">
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">First Name</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <input class="form-control form-control-sm" type="text" id="firstname">
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">Last Name</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <input class="form-control form-control-sm" type="text" id="lastname">
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">Delivery Address</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <textarea class="form-control form-control-sm" rows="3"></textarea>
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">City</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <input class="form-control form-control-sm" type="text" id="city">
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">State</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <select class="form-control form-control-sm">
+                                                <option>Select</option>
+                                                <option>Gujarat</option>
+                                                <option>New york</option>
+                                                <option>California</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">Country</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <select class="form-control form-control-sm">
+                                                <option>Select</option>
+                                                <option>India</option>
+                                                <option>USA</option>
+                                                <option>New Zealand</option>                                                            
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">Zip Code</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <input class="form-control form-control-sm" type="text">
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">Email Address</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <input class="form-control form-control-sm" type="text">
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <label class="col-xl-3 col-lg-3 text-end align-self-center mb-lg-0 form-label">Mobile No</label>
+                                        <div class="col-lg-9 col-xl-8">
+                                            <input class="form-control form-control-sm" type="text">
+                                        </div>
+                                    </div>
+                                    <div class="form-group row">
+                                        <div class="col-lg-9 col-xl-8 offset-lg-3 offset-xl-3">
+                                            <div class="custom-control custom-checkbox">
+                                                <input type="checkbox" class="custom-control-input" id="horizontalCheckbox" data-parsley-multiple="groups" data-parsley-mincheck="2">
+                                                <label class="custom-control-label" for="horizontalCheckbox">Confirm Shipping Address</label>
+                                            </div>
+                                        </div>
+                                    </div>                                   
+                                </div><!--end card-body-->
+                            </div><!--end card-->                            
+                        </div><!--end col-->
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h4 class="card-title">Billing Details</h4>
+                                </div><!--end card-header-->
+                                <div class="card-body">
+                                    <div class="accordion accordion-flush checkout-accordion" id="accordionFlushExample">
+                                        <div class="accordion-item">
+                                          <h2 class="accordion-header mt-0" id="flush-headingOne">
+                                            <button class="accordion-button d-flex justify-content-between" type="button" data-bs-toggle="collapse" data-bs-target="#flush-collapseOne" aria-expanded="true" aria-controls="flush-collapseOne">                                               
+                                                <img src="assets/images/cards/card-2.png" alt="" height="30">
+                                                <span class="align-self-center ms-2 fw-semibold">Credit Card</span>
+                                            </button>
+                                          </h2>
+                                          <div id="flush-collapseOne" class="accordion-collapse collapse show" aria-labelledby="flush-headingOne" data-bs-parent="#accordionFlushExample">
+                                            <div class="accordion-body">
+                                                <div class="row">  
+                                                    <div class="col-md-12">
+                                                        <div class="form-group">
+                                                            <label class="form-label" for="Card_No">Card No :</label>
+                                                            <input type="text" class="form-control form-control-sm" id="Card_No" required="" placeholder="1234-5678-9123-4567">
+                                                        </div>
+                                                    </div>  <!--end col-->                               
+                                                    <div class="col-md-4">
+                                                        <div class="form-group">
+                                                            <label for="select_month" class="my-2 form-label">Expiry Month</label>
+                                                            <select class="form-select form-select-sm" id="select_month">
+                                                                <option selected="">-- Select --</option>
+                                                                <option value="1">1</option>
+                                                                <option value="2">2</option>
+                                                                <option value="3">3</option>
+                                                                <option value="4">4</option>
+                                                                <option value="5">5</option>
+                                                                <option value="6">6</option>
+                                                                <option value="7">7</option>
+                                                                <option value="8">8</option>
+                                                                <option value="9">9</option>
+                                                                <option value="10">10</option>
+                                                                <option value="11">11</option>
+                                                                <option value="12">12</option>
+                                                            </select>
+                                                        </div>                                    
+                                                    </div><!--end col-->  
+                                                    <div class="col-md-4">
+                                                        <div class="form-group">
+                                                            <label for="select_year" class="my-2 form-label">Expiry Year</label>
+                                                            <select class="form-select form-select-sm" id="select_year">
+                                                                <option selected="">-- Select --</option>
+                                                                <option value="1">2020</option>
+                                                                <option value="2">2021</option>
+                                                                <option value="3">2022</option>
+                                                                <option value="4">2023</option>
+                                                                <option value="5">2024</option>
+                                                                <option value="6">2025</option>
+                                                            </select>
+                                                        </div>
+                                                    </div> <!--end col--> 
+                                                    <div class="col-md-4">
+                                                        <div class="form-group">
+                                                            <label class="form-label my-2" for="CVV_Code">Security Code</label>
+                                                            <input type="password" class="form-control form-control-sm" id="CVV_Code" required="" placeholder="Enter CVV">
+                                                        </div>
+                                                    </div><!--end col-->
+                                                </div><!--end row-->
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div class="accordion-item">
+                                          <h2 class="accordion-header mt-0" id="flush-headingTwo">
+                                            <button class="accordion-button collapsed d-flex justify-content-between" type="button" data-bs-toggle="collapse" data-bs-target="#flush-collapseTwo" aria-expanded="false" aria-controls="flush-collapseTwo">                                                
+                                                <img src="assets/images/cards/card-5.png" alt="" height="30">
+                                                <span class="align-self-center ms-2 fw-semibold">Paypal</span>
+                                            </button>
+                                          </h2>
+                                          <div id="flush-collapseTwo" class="accordion-collapse collapse" aria-labelledby="flush-headingTwo" data-bs-parent="#accordionFlushExample">
+                                            <div class="accordion-body">
+                                                <p class="mb-0 text-muted">
+                                                    Add Paypal form page
+                                                </p> 
+                                            </div>
+                                          </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn w-100 btn-soft-primary">Place Your Order</button>                      
+                                </div><!--end card-body-->
+                            </div><!--end card-->
+                        </div><!--end col-->
+                    </div><!--end row-->
+
+                </div><!-- container -->
+
+                <!--Start Footer-->
+                @@include('./partials/footer.html')                
+                <!--end footer-->
+            </div>
+            <!-- end page content -->
+        </div>
+        <!-- end page-wrapper -->
+
+        
+
+
+        <!-- jQuery  -->
+        <script src="assets/js/vendor.js"></script>
+        <script src="assets/plugins/daterangepicker/daterangepicker.js"></script>
+
+        <!-- App js -->
+        <script src="assets/js/app.js"></script>
+        
+    </body>
+
+</html>

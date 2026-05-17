@@ -1,0 +1,299 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}2FA Kurulumu - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        
+        <!-- Kurulum Adımları -->
+        <div class="row">
+            <!-- Adım 1 -->
+            <div class="col-lg-4 mb-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <div class="avatar-lg mx-auto mb-3" style="width: 70px; height: 70px;">
+                                <span class="avatar-title rounded-circle bg-primary-subtle">
+                                    <h2 class="mb-0 text-primary">1</h2>
+                                </span>
+                            </div>
+                            <h5 class="mb-3">Uygulama İndir</h5>
+                        </div>
+                        
+                        <p class="text-muted text-center mb-4">Telefonunuza authenticator uygulaması indirin:</p>
+                        
+                        <div class="d-grid gap-2">
+                            <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" class="btn btn-outline-primary btn-sm">
+                                <i data-feather="smartphone" class="icon-xs me-1"></i>
+                                Google Authenticator
+                            </a>
+                            <a href="https://www.microsoft.com/tr-tr/security/mobile-authenticator-app" target="_blank" class="btn btn-outline-success btn-sm">
+                                <i data-feather="smartphone" class="icon-xs me-1"></i>
+                                Microsoft Authenticator
+                            </a>
+                            <a href="https://authy.com/download/" target="_blank" class="btn btn-outline-info btn-sm">
+                                <i data-feather="smartphone" class="icon-xs me-1"></i>
+                                Authy
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Adım 2 -->
+            <div class="col-lg-4 mb-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <div class="avatar-lg mx-auto mb-3" style="width: 70px; height: 70px;">
+                                <span class="avatar-title rounded-circle bg-success-subtle">
+                                    <h2 class="mb-0 text-success">2</h2>
+                                </span>
+                            </div>
+                            <h5 class="mb-3">QR Kod Tara</h5>
+                        </div>
+                        
+                        <p class="text-muted text-center mb-4">Uygulamanızla bu QR kodu tarayın:</p>
+                        
+                        <div class="text-center mb-3">
+                            <div class="p-3 bg-white rounded border d-inline-block">
+                                <img src="{{ qrCode }}" alt="QR Code" style="width: 200px; height: 200px;">
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-light border">
+                            <div class="text-center">
+                                <small class="text-muted d-block mb-1">Manuel Kod</small>
+                                <code class="fs-6">{{ secret }}</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Adım 3 -->
+            <div class="col-lg-4 mb-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <div class="avatar-lg mx-auto mb-3" style="width: 70px; height: 70px;">
+                                <span class="avatar-title rounded-circle bg-warning-subtle">
+                                    <h2 class="mb-0 text-warning">3</h2>
+                                </span>
+                            </div>
+                            <h5 class="mb-3">Kodu Girin</h5>
+                        </div>
+                        
+                        <p class="text-muted text-center mb-4">Uygulamada görünen 6 haneli kodu yazın:</p>
+                        
+                        <form method="POST" action="/settings/security/2fa/confirm">
+                            <div class="mb-3">
+                                <input type="text" 
+                                       class="form-control form-control-lg text-center fw-bold" 
+                                       id="code" 
+                                       name="code" 
+                                       required 
+                                       maxlength="6" 
+                                       pattern="[0-9]{6}"
+                                       placeholder="● ● ● ● ● ●"
+                                       style="font-size: 24px; letter-spacing: 10px;"
+                                       autofocus>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i data-feather="check-circle" class="icon-xs me-1"></i>
+                                    Etkinleştir
+                                </button>
+                                <a href="/dashboard" class="btn btn-outline-secondary btn-sm">
+                                    <i data-feather="arrow-left" class="icon-xs me-1"></i>
+                                    İptal
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Kurtarma Kodları -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-warning-subtle">
+                <h5 class="card-title mb-0">
+                    <i data-feather="alert-triangle" class="icon-sm me-2 text-warning"></i>
+                    Kurtarma Kodları - Mutlaka Saklayın!
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning border-warning mb-4">
+                    <div class="d-flex align-items-start">
+                        <i data-feather="info" class="icon-lg me-3 text-warning"></i>
+                        <div>
+                            <h6 class="alert-heading mb-2">ÖNEMLİ!</h6>
+                            <p class="mb-0">Telefonunuzu kaybederseniz veya authenticator uygulamasına erişemezseniz, bu kodlardan herhangi birini kullanarak giriş yapabilirsiniz. Her kod sadece bir kez kullanılabilir.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row g-3 mb-4">
+                    {% for code in recoveryCodes %}
+                    <div class="col-md-3 col-sm-6">
+                        <div class="card bg-light border">
+                            <div class="card-body text-center py-3">
+                                <span class="badge bg-secondary mb-2">{{ loop.index }}</span>
+                                <h6 class="mb-0 font-monospace">{{ code }}</h6>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="d-flex gap-2 justify-content-end">
+                    <button type="button" class="btn btn-outline-primary" onclick="copyRecoveryCodes()">
+                        <i data-feather="copy" class="icon-xs me-1"></i>
+                        Tümünü Kopyala
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="printRecoveryCodes()">
+                        <i data-feather="printer" class="icon-xs me-1"></i>
+                        Yazdır
+                    </button>
+                    <button type="button" class="btn btn-outline-success" onclick="downloadRecoveryCodes()">
+                        <i data-feather="download" class="icon-xs me-1"></i>
+                        İndir (.txt)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+feather.replace();
+
+// Recovery codes'u kopyala
+function copyRecoveryCodes() {
+    const codes = {{ recoveryCodes|json_encode|raw }};
+    const text = 'NEXUS 2FA KURTARMA KODLARI\n' +
+                 '══════════════════════════\n' +
+                 'Kullanıcı: {{ user.username }}\n' +
+                 'Tarih: {{ "now"|date("d.m.Y H:i") }}\n\n' +
+                 codes.map((code, i) => `${i+1}. ${code}`).join('\n') +
+                 '\n\n⚠️ Bu kodları güvenli bir yerde saklayın!\n' +
+                 '⚠️ Her kod sadece 1 kez kullanılabilir.';
+    
+    navigator.clipboard.writeText(text).then(() => {
+        if (typeof iziToast !== 'undefined') {
+            iziToast.success({
+                title: 'Kopyalandı',
+                message: 'Kurtarma kodları panoya kopyalandı',
+                position: 'topRight'
+            });
+        } else {
+            alert('Kurtarma kodları kopyalandı');
+        }
+    }).catch(() => {
+        if (typeof iziToast !== 'undefined') {
+            iziToast.error({
+                title: 'Hata',
+                message: 'Kopyalanamadı',
+                position: 'topRight'
+            });
+        }
+    });
+}
+
+// Recovery codes'u yazdır
+function printRecoveryCodes() {
+    window.print();
+}
+
+// Recovery codes'u indir
+function downloadRecoveryCodes() {
+    const codes = {{ recoveryCodes|json_encode|raw }};
+    const text = 'NEXUS 2FA KURTARMA KODLARI\n' +
+                 '══════════════════════════\n' +
+                 'Kullanıcı: {{ user.username }}\n' +
+                 'Tarih: {{ "now"|date("d.m.Y H:i") }}\n\n' +
+                 codes.map((code, i) => `${i+1}. ${code}`).join('\n') +
+                 '\n\n⚠️ Bu kodları güvenli bir yerde saklayın!\n' +
+                 '⚠️ Her kod sadece 1 kez kullanılabilir.\n' +
+                 '⚠️ Bu dosyayı güvenli bir yerde (şifreli disk) saklayın.';
+    
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nexus-2fa-recovery-codes-{{ user.username }}-{{ "now"|date("Y-m-d") }}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    if (typeof iziToast !== 'undefined') {
+        iziToast.success({
+            title: 'İndirildi',
+            message: 'Kurtarma kodları dosyası indirildi',
+            position: 'topRight'
+        });
+    }
+}
+
+// Sadece rakam girişi
+document.getElementById('code').addEventListener('input', function(e) {
+    this.value = this.value.replace(/[^0-9]/g, '');
+    
+    // 6 haneli olduysa vurgula
+    if (this.value.length === 6) {
+        this.classList.add('border-primary', 'border-2');
+    } else {
+        this.classList.remove('border-primary', 'border-2');
+    }
+});
+
+// Form submit animasyonu
+document.querySelector('form').addEventListener('submit', function(e) {
+    const submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Doğrulanıyor...';
+});
+</script>
+
+<style>
+/* Print stili */
+@media print {
+    .card-header,
+    .btn,
+    .breadcrumb,
+    .topbar,
+    .leftbar,
+    .page-wrapper > *:not(.page-content) {
+        display: none !important;
+    }
+    
+    .card {
+        border: 1px solid #000 !important;
+        page-break-inside: avoid;
+    }
+}
+
+/* QR kod animasyonu */
+.card img[alt="QR Code"] {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Kod input animasyonu */
+#code:focus {
+    box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.25);
+    border-color: #667eea;
+}
+</style>
+{% endblock %}

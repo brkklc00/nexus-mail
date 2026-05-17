@@ -1,0 +1,113 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Email - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item active">Email</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="pie-chart" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Email{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row g-3 mb-4">
+        <div class="col-md-8">
+            <p class="text-muted mb-0">Mail siparişi, şablonlar, rehber ve diğer email araçlarına buradan geçin.</p>
+        </div>
+        {% if user is defined and user %}
+        <div class="col-md-4 text-md-end">
+            <span class="badge bg-soft-primary text-primary fs-6 px-3 py-2">
+                Mail kredisi: <strong>{{ email_credit|number_format(2, ',', '.') }}</strong>
+            </span>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="row g-3">
+        <div class="col-sm-6 col-lg-4">
+            <a href="/email-orders" class="card border-0 shadow-sm text-decoration-none h-100 text-body">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="avatar-md rounded-circle bg-soft-primary d-inline-flex align-items-center justify-content-center">
+                        <i data-feather="send" class="icon-dual-primary"></i>
+                    </span>
+                    <div>
+                        <h6 class="mb-1">Mail gönder</h6>
+                        <small class="text-muted">Siparişlerim</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <a href="/email-templates" class="card border-0 shadow-sm text-decoration-none h-100 text-body">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="avatar-md rounded-circle bg-soft-info d-inline-flex align-items-center justify-content-center">
+                        <i data-feather="file-text" class="icon-dual-info"></i>
+                    </span>
+                    <div>
+                        <h6 class="mb-1">Şablonlar</h6>
+                        <small class="text-muted">Hazır içerikler</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <a href="/email-phonebooks" class="card border-0 shadow-sm text-decoration-none h-100 text-body">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="avatar-md rounded-circle bg-soft-success d-inline-flex align-items-center justify-content-center">
+                        <i data-feather="users" class="icon-dual-success"></i>
+                    </span>
+                    <div>
+                        <h6 class="mb-1">Rehberler</h6>
+                        <small class="text-muted">Alıcı listeleri</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <a href="/email-blacklist" class="card border-0 shadow-sm text-decoration-none h-100 text-body">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="avatar-md rounded-circle bg-soft-warning d-inline-flex align-items-center justify-content-center">
+                        <i data-feather="slash" class="icon-dual-warning"></i>
+                    </span>
+                    <div>
+                        <h6 class="mb-1">Karaliste</h6>
+                        <small class="text-muted">Engellenen adresler</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <a href="/email-transactions" class="card border-0 shadow-sm text-decoration-none h-100 text-body">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="avatar-md rounded-circle bg-soft-secondary d-inline-flex align-items-center justify-content-center">
+                        <i data-feather="credit-card" class="icon-dual-secondary"></i>
+                    </span>
+                    <div>
+                        <h6 class="mb-1">Hareketler</h6>
+                        <small class="text-muted">Kredi işlemleri</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        {# GEÇİCİ: Bireysel Mail (/transactional-email) kartı kaldırıldı #}
+        <div class="col-sm-6 col-lg-4">
+            <a href="/email-orders" class="card border-0 shadow-sm text-decoration-none h-100 text-body">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="avatar-md rounded-circle bg-soft-danger d-inline-flex align-items-center justify-content-center">
+                        <i data-feather="shield" class="icon-dual-danger"></i>
+                    </span>
+                    <div>
+                        <h6 class="mb-1">Mail OTP</h6>
+                        <small class="text-muted">Doğrulama kodları</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+</div>
+<script>
+if (typeof feather !== 'undefined') { feather.replace(); }
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+#!/bin/bash
+
+###############################################################################
+# Local Schema Update (MAMP)
+# Yerel geliştirme için MAMP PHP kullanır
+###############################################################################
+
+# MAMP PHP yolu
+PHP_PATH="/Applications/MAMP/bin/php/php8.2.0/bin/php"
+
+# Eğer farklı versiyon varsa otomatik bul
+if [ ! -f "$PHP_PATH" ]; then
+    echo "PHP 8.2.0 bulunamadı, başka versiyon aranıyor..."
+    PHP_PATH=$(find /Applications/MAMP/bin/php -name "php" | grep -E "php8\.[0-9]+\.[0-9]+/bin/php" | head -1)
+    
+    if [ -z "$PHP_PATH" ]; then
+        echo "❌ MAMP PHP bulunamadı!"
+        exit 1
+    fi
+    
+    echo "✓ PHP bulundu: $PHP_PATH"
+fi
+
+# Schema update çalıştır
+echo "🔄 Schema update çalıştırılıyor (MAMP PHP)..."
+$PHP_PATH "$(dirname "$0")/update-schema"
+

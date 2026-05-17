@@ -1,0 +1,971 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Email Şablonları - Admin - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item">Email</li>
+<li class="breadcrumb-item active">Şablonlar</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="file-text" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Email Şablonları{% endblock %}
+
+{% block styles %}
+<link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
+<style>
+.mail-content-display { max-width: 100%; word-wrap: break-word; overflow-wrap: break-word; }
+.note-editable { word-wrap: break-word !important; overflow-wrap: break-word !important; }
+.nx-et-toolbar .form-control,
+.nx-et-toolbar .form-select { min-height: 40px; border-radius: 10px; }
+.nx-et-toolbar .btn { min-height: 40px; border-radius: 10px; }
+.nx-et-user-line { line-height: 1.2; }
+.nx-et-user-line small { font-size: 11px; color: #64748b; display: block; margin-top: 2px; }
+.nx-et-subject { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; }
+.nx-et-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.nx-et-table td { vertical-align: middle; padding-top: .58rem; padding-bottom: .58rem; }
+.nx-et-loading { display: none; align-items: center; gap: 8px; font-size: 12px; color: #64748b; }
+.nx-et-loading.show { display: inline-flex; }
+@media (max-width: 991.98px) {
+  .nx-et-toolbar .col-lg-auto { width: 100%; }
+  .nx-et-toolbar .btn { width: 100%; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i data-feather="{{ flash_icon|default('check-circle') }}" class="align-self-center icon-xs me-2"></i>
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="{{ flash_icon|default('alert-circle') }}" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+    </div>
+    {% endif %}
+
+    <div id="pageAlertsContainer"></div>
+
+    <!-- İstatistikler -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="bg-primary-subtle rounded p-3">
+                                <i data-feather="file-text" class="align-self-center icon-md text-primary"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <p class="text-muted mb-0 fw-semibold">Toplam Şablon</p>
+                            <h3 class="m-0 text-dark" id="nxEtStatTotal" data-raw="{{ stats.total|default(0) }}">{{ stats.total|number_format }}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="bg-warning-subtle rounded p-3">
+                                <i data-feather="clock" class="align-self-center icon-md text-warning"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <p class="text-muted mb-0 fw-semibold">Onay Bekleyen</p>
+                            <h3 class="m-0 text-dark" id="nxEtStatPending" data-raw="{{ stats.pending|default(0) }}">{{ stats.pending|number_format }}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="bg-success-subtle rounded p-3">
+                                <i data-feather="check-circle" class="align-self-center icon-md text-success"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <p class="text-muted mb-0 fw-semibold">Onaylı</p>
+                            <h3 class="m-0 text-dark" id="nxEtStatApproved" data-raw="{{ stats.approved|default(0) }}">{{ stats.approved|number_format }}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Şablon Listesi -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h4 class="card-title mb-0">
+                                <i data-feather="file-text" class="align-self-center icon-xs me-2"></i>
+                                Tüm Email Şablonları
+                            </h4>
+                            <small class="text-muted">Toplam {{ total }} şablon (kullanıcı şablonları)</small>
+                        </div>
+                        <div class="col-auto d-flex flex-wrap gap-2 justify-content-end">
+                            <button type="button" class="btn btn-soft-primary" id="nxEtRefreshBtn">
+                                <i data-feather="refresh-cw" class="icon-xs me-1"></i>
+                                Yenile
+                            </button>
+                            <a href="/email-orders" class="btn btn-soft-info">
+                                <i data-feather="mail" class="icon-xs me-1"></i>
+                                Mail Gönder
+                            </a>
+                            <a href="/admin/email-templates/create" class="btn btn-primary">
+                                <i data-feather="plus" class="icon-xs me-1"></i>
+                                Yeni Global Şablon Oluştur
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form class="mb-3 nx-et-toolbar" id="nxEtFilterForm">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-lg-3 col-md-6">
+                                <input type="text" class="form-control" id="nxEtSearch" placeholder="Şablon adı, konu, kullanıcı veya ID ara..." value="{{ search }}">
+                            </div>
+                            <div class="col-lg-2 col-md-6">
+                                <select class="form-select" id="nxEtStatus">
+                                    <option value="" {{ status == '' ? 'selected' : '' }}>Tüm Durumlar</option>
+                                    <option value="approved" {{ status == 'approved' ? 'selected' : '' }}>Onaylı</option>
+                                    <option value="pending" {{ status == 'pending' ? 'selected' : '' }}>Onay Bekleyen</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-3 col-md-6">
+                                <input list="nxEtUsersList" class="form-control" id="nxEtUserInput" placeholder="Kullanıcıya göre filtrele">
+                                <datalist id="nxEtUsersList"></datalist>
+                                <input type="hidden" id="nxEtUserId" value="{{ selected_user|default('') }}">
+                            </div>
+                            <div class="col-lg-2 col-md-6">
+                                <select class="form-select" id="nxEtDateRange">
+                                    <option value="all" {{ date_range|default('all') == 'all' ? 'selected' : '' }}>Tümü</option>
+                                    <option value="today" {{ date_range|default('all') == 'today' ? 'selected' : '' }}>Bugün</option>
+                                    <option value="7d" {{ date_range|default('all') == '7d' ? 'selected' : '' }}>Son 7 gün</option>
+                                    <option value="30d" {{ date_range|default('all') == '30d' ? 'selected' : '' }}>Son 30 gün</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-2 col-md-6">
+                                <select class="form-select" id="nxEtPerPage">
+                                    <option value="25" {{ per_page|default(25) == 25 ? 'selected' : '' }}>25 / sayfa</option>
+                                    <option value="50" {{ per_page|default(25) == 50 ? 'selected' : '' }}>50 / sayfa</option>
+                                    <option value="100" {{ per_page|default(25) == 100 ? 'selected' : '' }}>100 / sayfa</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-auto col-md-4">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i data-feather="search" class="icon-xs me-1"></i>
+                                    Filtrele
+                                </button>
+                            </div>
+                            <div class="col-lg-auto col-md-4">
+                                <button type="button" class="btn btn-light w-100" id="nxEtClearBtn">
+                                    <i data-feather="x-circle" class="icon-xs me-1"></i>
+                                    Temizle
+                                </button>
+                            </div>
+                            <div class="col-lg-auto col-md-4">
+                                <span class="nx-et-loading" id="nxEtLoading">
+                                    <span class="spinner-border spinner-border-sm text-primary"></span>
+                                    Yükleniyor...
+                                </span>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 nx-et-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:80px;">ID</th>
+                                    <th style="width:220px;">Şablon adı</th>
+                                    <th>Konu</th>
+                                    <th style="width:220px;">Kullanıcı</th>
+                                    <th style="width:130px;">Durum</th>
+                                    <th style="width:130px;">Tarih</th>
+                                    <th class="text-end" style="width:320px;">İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody id="nxEtTableBody">
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted py-4">Veri yükleniyor...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <nav class="mt-3" id="nxEtPaginationWrap"></nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Önizleme Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Şablon Önizleme</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="previewContent"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Düzenle Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Şablon Düzenle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editForm">
+                <div class="modal-body" id="editContent"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Test Mail Modal -->
+<div class="modal fade" id="testMailModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="send" class="icon-xs me-1"></i>
+                    Test Mail Gönder
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="testMailForm">
+                <div class="modal-body">
+                    <input type="hidden" id="testTemplateId">
+                    <div class="mb-2">
+                        <label class="form-label mb-1">Şablon</label>
+                        <div class="small text-muted" id="testTemplateName">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label mb-1">Konu</label>
+                        <div class="small text-muted" id="testTemplateSubject">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="testEmailTo" class="form-label">Alıcı email</label>
+                        <input type="email" class="form-control" id="testEmailTo" placeholder="test@example.com" required>
+                    </div>
+                    <div>
+                        <label for="testVariables" class="form-label">Test değişkenleri (opsiyonel)</label>
+                        <textarea class="form-control" id="testVariables" rows="6" placeholder='JSON formatında test verisi girin. Boş bırakırsanız varsayılan değerler kullanılır.
+{
+  "name": "Test Kullanıcı",
+  "unsubscribe_url": "https://example.com/unsubscribe",
+  "tracking_url": "https://example.com/open"
+}'></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary" id="testSendBtn">
+                        <i data-feather="send" class="icon-xs me-1"></i>
+                        Test Gönder
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Onay Modal -->
+<div class="modal fade" id="approveModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i data-feather="check-circle" class="align-self-center icon-sm me-2"></i>
+                    Şablonu Onayla
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0"><strong id="approveTemplateName"></strong> şablonunu onaylamak istiyor musunuz?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-success" id="confirmApproveBtn">
+                    <i data-feather="check" class="icon-xs me-1"></i>
+                    Onayla
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reddet Onay Modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Şablonu Reddet</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong id="rejectTemplateName"></strong> şablonu reddedilecek ve silinecektir. Devam etmek istiyor musunuz?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-danger" id="confirmRejectBtn">
+                    <i data-feather="x" class="icon-xs me-1"></i>
+                    Reddet ve Sil
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Sayfa içi uyarı (iziToast yerine)
+function showPageAlert(message, type) {
+    const container = document.getElementById('pageAlertsContainer');
+    if (!container) return;
+    const typeMap = { success: 'success', error: 'danger', warning: 'warning' };
+    const iconMap = { success: 'check-circle', danger: 'alert-circle', warning: 'alert-triangle' };
+    const alertType = typeMap[type] || 'info';
+    const icon = iconMap[alertType] || 'info';
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const alertHtml = `
+        <div class="alert alert-${alertType} alert-dismissible fade show" role="alert">
+            <i data-feather="${icon}" class="align-self-center icon-xs me-2"></i>
+            ${esc(message)}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', alertHtml);
+    feather.replace();
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+const nxEtState = {
+    page: {{ page|default(1) }},
+    perPage: {{ per_page|default(25) }},
+    search: {{ search|default('')|json_encode|raw }},
+    status: {{ status|default('')|json_encode|raw }},
+    userId: {{ selected_user|default('')|json_encode|raw }},
+    dateRange: {{ date_range|default('all')|json_encode|raw }},
+};
+let nxEtUsers = [];
+let nxEtDebounceTimer = null;
+
+function nxEtEscapeHtml(input) {
+    return String(input ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function nxEtSetLoading(show) {
+    const loading = document.getElementById('nxEtLoading');
+    if (!loading) return;
+    loading.classList.toggle('show', !!show);
+}
+
+function nxEtNormalizeStatus(status, isApprovedFallback) {
+    const raw = String(status ?? '').trim().toLowerCase();
+    const pendingSet = new Set(['pending', 'waiting', 'pending_approval', 'onay_bekleyen']);
+    const approvedSet = new Set(['approved', 'active', 'onayli']);
+    if (approvedSet.has(raw)) return 'approved';
+    if (pendingSet.has(raw)) return 'pending';
+    return isApprovedFallback ? 'approved' : 'pending';
+}
+
+function nxEtStatusBadge(status) {
+    if (nxEtNormalizeStatus(status, false) === 'approved') return '<span class="badge bg-success">Onaylı</span>';
+    return '<span class="badge bg-warning text-dark">Onay Bekleyen</span>';
+}
+
+function nxEtFormatNumber(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n.toLocaleString('tr-TR') : '0';
+}
+
+function nxEtUpdateStatsCards(stats) {
+    if (!stats || typeof stats !== 'object') return;
+    const map = [
+        ['nxEtStatTotal', stats.total],
+        ['nxEtStatPending', stats.pending],
+        ['nxEtStatApproved', stats.approved],
+    ];
+    map.forEach(([id, value]) => {
+        if (!Number.isFinite(Number(value))) return;
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.dataset.raw = String(Number(value));
+        el.textContent = nxEtFormatNumber(value);
+    });
+}
+
+async function nxEtRequestJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const text = await response.text();
+    let payload = null;
+
+    if (text && contentType.includes('application/json')) {
+        try {
+            payload = JSON.parse(text);
+        } catch (err) {
+            throw new Error('Sunucu geçersiz JSON döndürdü.');
+        }
+    } else if (text) {
+        try {
+            payload = JSON.parse(text);
+        } catch (err) {
+            payload = null;
+        }
+    }
+
+    if (!response.ok) {
+        const message = payload?.message || `İstek başarısız (HTTP ${response.status})`;
+        throw new Error(message);
+    }
+
+    if (!payload || typeof payload !== 'object') {
+        throw new Error('Sunucudan beklenmeyen bir yanıt alındı.');
+    }
+
+    return payload;
+}
+
+function nxEtBindModerationButtons() {
+    document.querySelectorAll('[data-template-approve-button]').forEach((button) => {
+        if (button.dataset.bound === '1') return;
+        button.dataset.bound = '1';
+
+        button.addEventListener('click', async () => {
+            const id = button.dataset.templateId;
+            if (!id) {
+                alert('Template ID bulunamadı');
+                return;
+            }
+
+            if (!window.confirm(`#${id} şablonunu onaylamak istiyor musunuz?`)) return;
+
+            const prevHtml = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+            try {
+                const response = await fetch(`/admin/email-templates/${id}/approve`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || data.success === false) {
+                    throw new Error(data.message || 'Onaylama işlemi başarısız');
+                }
+                showPageAlert(data.message || 'Şablon onaylandı.', 'success');
+                nxEtFetchList();
+            } catch (error) {
+                console.error('Template approve error:', error);
+                alert(error?.message || 'Onaylama işlemi başarısız');
+                showPageAlert(error?.message || 'Onaylama işlemi başarısız', 'error');
+                button.disabled = false;
+                button.innerHTML = prevHtml;
+                feather.replace();
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-template-reject-button]').forEach((button) => {
+        if (button.dataset.bound === '1') return;
+        button.dataset.bound = '1';
+
+        button.addEventListener('click', async () => {
+            const id = button.dataset.templateId;
+            const name = button.dataset.templateName || '';
+            if (!id) {
+                alert('Template ID bulunamadı');
+                return;
+            }
+
+            if (!window.confirm(`#${id} şablonunu reddetmek istiyor musunuz?`)) return;
+
+            const prevHtml = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+            try {
+                const response = await fetch(`/admin/email-templates/${id}/reject`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || data.success === false) {
+                    throw new Error(data.message || 'Reddetme işlemi başarısız');
+                }
+                showPageAlert(data.message || 'Şablon reddedildi.', 'success');
+                nxEtFetchList();
+            } catch (error) {
+                console.error('Template reject error:', error);
+                const msg = error?.message || `"${name || 'Şablon'}" reddedilemedi`;
+                alert(msg);
+                showPageAlert(msg, 'error');
+                button.disabled = false;
+                button.innerHTML = prevHtml;
+                feather.replace();
+            }
+        });
+    });
+}
+
+function nxEtRenderRows(items) {
+    const body = document.getElementById('nxEtTableBody');
+    if (!body) return;
+    if (!Array.isArray(items) || items.length === 0) {
+        body.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Filtreye uygun şablon bulunamadı.</td></tr>';
+        feather.replace();
+        return;
+    }
+
+    body.innerHTML = items.map((item) => {
+        const safeName = nxEtEscapeHtml(item.name || '');
+        const safeSubject = nxEtEscapeHtml(item.subject || '');
+        const userName = nxEtEscapeHtml(item.user?.name || '-');
+        const userEmail = nxEtEscapeHtml(item.user?.email || '-');
+        const createdAt = nxEtEscapeHtml(item.createdAt || '-');
+        const nameJson = JSON.stringify(item.name || '');
+        const subjectJson = JSON.stringify(item.subject || '');
+        const normalizedStatus = nxEtNormalizeStatus(item.status, !!item.isApproved);
+        const isApproved = normalizedStatus === 'approved';
+        const safeNameAttr = nxEtEscapeHtml(item.name || '');
+        const actionButtons = isApproved
+            ? `<div class="nx-et-actions">
+                <button onclick="previewTemplate(${item.id})" class="btn btn-sm btn-soft-primary" title="Görüntüle" aria-label="Görüntüle"><i data-feather="eye" class="icon-xs"></i></button>
+                <button onclick="editTemplate(${item.id})" class="btn btn-sm btn-soft-info" title="Düzenle" aria-label="Düzenle"><i data-feather="edit-2" class="icon-xs"></i></button>
+                <button onclick="openTestMailModal(${item.id}, ${nameJson}, ${subjectJson})" class="btn btn-sm btn-soft-warning" title="Test Gönder" aria-label="Test Gönder"><i data-feather="send" class="icon-xs"></i></button>
+              </div>`
+            : `<div class="nx-et-actions">
+                <button onclick="previewTemplate(${item.id})" class="btn btn-sm btn-soft-primary" title="Görüntüle" aria-label="Görüntüle"><i data-feather="eye" class="icon-xs"></i></button>
+                <button onclick="editTemplate(${item.id})" class="btn btn-sm btn-soft-info" title="Düzenle" aria-label="Düzenle"><i data-feather="edit-2" class="icon-xs"></i></button>
+                <button onclick="openTestMailModal(${item.id}, ${nameJson}, ${subjectJson})" class="btn btn-sm btn-soft-warning" title="Test Gönder" aria-label="Test Gönder"><i data-feather="send" class="icon-xs"></i></button>
+                <button type="button" class="btn btn-sm btn-soft-success template-approve-btn" data-template-approve-button data-template-id="${item.id}" data-template-name="${safeNameAttr}" title="Onayla" aria-label="Şablonu onayla"><i data-feather="check" class="icon-xs"></i></button>
+                <button type="button" class="btn btn-sm btn-soft-danger template-reject-btn" data-template-reject-button data-template-id="${item.id}" data-template-name="${safeNameAttr}" title="Reddet" aria-label="Şablonu reddet"><i data-feather="x" class="icon-xs"></i></button>
+              </div>`;
+
+        return `<tr data-template-id="${item.id}" data-template-status="${normalizedStatus}">
+            <td>${item.id}</td>
+            <td>${safeName}</td>
+            <td><span class="nx-et-subject" title="${safeSubject}">${safeSubject}</span></td>
+            <td><div class="nx-et-user-line">${userName}<small>${userEmail}</small></div></td>
+            <td>${nxEtStatusBadge(normalizedStatus)}</td>
+            <td><small class="text-muted">${createdAt}</small></td>
+            <td class="text-end">${actionButtons}</td>
+        </tr>`;
+    }).join('');
+
+    nxEtBindModerationButtons();
+    feather.replace();
+}
+
+function nxEtRenderPagination(pagination) {
+    const wrap = document.getElementById('nxEtPaginationWrap');
+    if (!wrap) return;
+    const totalPages = pagination?.total_pages || 1;
+    const current = pagination?.page || 1;
+    if (totalPages <= 1) {
+        wrap.innerHTML = '';
+        return;
+    }
+
+    const pages = [];
+    for (let p = 1; p <= totalPages; p += 1) {
+        if (p === current) {
+            pages.push(`<li class="page-item active"><span class="page-link">${p}</span></li>`);
+        } else {
+            pages.push(`<li class="page-item"><button type="button" class="page-link" onclick="nxEtGoPage(${p})">${p}</button></li>`);
+        }
+    }
+    wrap.innerHTML = `<ul class="pagination justify-content-center mb-0">${pages.join('')}</ul>`;
+}
+
+function nxEtBuildQuery() {
+    const qs = new URLSearchParams();
+    if (nxEtState.search) qs.set('search', nxEtState.search);
+    if (nxEtState.status) qs.set('status', nxEtState.status);
+    if (nxEtState.userId) qs.set('user_id', nxEtState.userId);
+    if (nxEtState.dateRange && nxEtState.dateRange !== 'all') qs.set('date_range', nxEtState.dateRange);
+    qs.set('page', String(nxEtState.page || 1));
+    qs.set('per_page', String(nxEtState.perPage || 25));
+    return qs;
+}
+
+function nxEtPushUrl() {
+    const qs = nxEtBuildQuery();
+    const url = qs.toString() ? `/admin/email-templates?${qs.toString()}` : '/admin/email-templates';
+    history.replaceState({}, '', url);
+}
+
+function nxEtFetchList() {
+    nxEtSetLoading(true);
+    const qs = nxEtBuildQuery();
+    nxEtRequestJson(`/api/email-templates?${qs.toString()}`)
+        .then((data) => {
+            if (!data?.success) throw new Error(data?.message || 'Liste alınamadı');
+            nxEtRenderRows(data.items || []);
+            nxEtRenderPagination(data.pagination || {});
+            nxEtUpdateStatsCards(data.stats || {});
+            nxEtPushUrl();
+        })
+        .catch((err) => {
+            showPageAlert(err.message || 'Şablon listesi yüklenemedi.', 'error');
+        })
+        .finally(() => nxEtSetLoading(false));
+}
+
+function nxEtGoPage(page) {
+    nxEtState.page = page;
+    nxEtFetchList();
+}
+
+function nxEtFetchUsers() {
+    fetch('/api/email-templates/users')
+        .then((res) => res.json())
+        .then((data) => {
+            if (!data?.success) return;
+            nxEtUsers = Array.isArray(data.items) ? data.items : [];
+            const list = document.getElementById('nxEtUsersList');
+            if (list) {
+                list.innerHTML = nxEtUsers.map((user) => {
+                    const label = `${user.name || '-'} — ${user.email || '-'}`;
+                    return `<option value="${nxEtEscapeHtml(label)}" data-user-id="${user.id}"></option>`;
+                }).join('');
+            }
+
+            if (nxEtState.userId) {
+                const selectedUser = nxEtUsers.find((u) => String(u.id) === String(nxEtState.userId));
+                if (selectedUser) {
+                    const input = document.getElementById('nxEtUserInput');
+                    if (input) input.value = `${selectedUser.name || '-'} — ${selectedUser.email || '-'}`;
+                }
+            }
+        })
+        .catch(() => {});
+}
+
+function nxEtBindFilters() {
+    const form = document.getElementById('nxEtFilterForm');
+    const search = document.getElementById('nxEtSearch');
+    const status = document.getElementById('nxEtStatus');
+    const userInput = document.getElementById('nxEtUserInput');
+    const userIdInput = document.getElementById('nxEtUserId');
+    const dateRange = document.getElementById('nxEtDateRange');
+    const perPage = document.getElementById('nxEtPerPage');
+    const clearBtn = document.getElementById('nxEtClearBtn');
+    const refreshBtn = document.getElementById('nxEtRefreshBtn');
+
+    if (form) {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            nxEtState.search = (search?.value || '').trim();
+            nxEtState.status = status?.value || '';
+            nxEtState.userId = userIdInput?.value || '';
+            nxEtState.dateRange = dateRange?.value || 'all';
+            nxEtState.perPage = Number(perPage?.value || 25);
+            nxEtState.page = 1;
+            nxEtFetchList();
+        });
+    }
+
+    if (search) {
+        search.addEventListener('input', function () {
+            clearTimeout(nxEtDebounceTimer);
+            nxEtDebounceTimer = setTimeout(() => {
+                nxEtState.search = (search.value || '').trim();
+                nxEtState.page = 1;
+                nxEtFetchList();
+            }, 400);
+        });
+    }
+
+    if (status) {
+        status.addEventListener('change', function () {
+            nxEtState.status = status.value || '';
+            nxEtState.page = 1;
+            nxEtFetchList();
+        });
+    }
+
+    if (dateRange) {
+        dateRange.addEventListener('change', function () {
+            nxEtState.dateRange = dateRange.value || 'all';
+            nxEtState.page = 1;
+            nxEtFetchList();
+        });
+    }
+
+    if (perPage) {
+        perPage.addEventListener('change', function () {
+            nxEtState.perPage = Number(perPage.value || 25);
+            nxEtState.page = 1;
+            nxEtFetchList();
+        });
+    }
+
+    if (userInput && userIdInput) {
+        userInput.addEventListener('input', function () {
+            const value = (userInput.value || '').trim().toLowerCase();
+            const match = nxEtUsers.find((u) => `${u.name || '-'} — ${u.email || '-'}`.toLowerCase() === value);
+            userIdInput.value = match ? String(match.id) : '';
+        });
+        userInput.addEventListener('change', function () {
+            nxEtState.userId = userIdInput.value || '';
+            nxEtState.page = 1;
+            nxEtFetchList();
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+            if (search) search.value = '';
+            if (status) status.value = '';
+            if (dateRange) dateRange.value = 'all';
+            if (userInput) userInput.value = '';
+            if (userIdInput) userIdInput.value = '';
+            if (perPage) perPage.value = '25';
+            nxEtState.search = '';
+            nxEtState.status = '';
+            nxEtState.userId = '';
+            nxEtState.dateRange = 'all';
+            nxEtState.perPage = 25;
+            nxEtState.page = 1;
+            nxEtFetchList();
+        });
+    }
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function () {
+            nxEtFetchList();
+        });
+    }
+}
+
+function previewTemplate(id) {
+    const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+    modal.show();
+    document.getElementById('previewContent').innerHTML = `
+        <div class="placeholder-glow">
+            <span class="placeholder col-6 mb-2"></span>
+            <span class="placeholder col-8 mb-3"></span>
+            <span class="placeholder col-12" style="height:220px;"></span>
+        </div>
+    `;
+
+    fetch('/api/email-templates/' + id)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success || !data.item) {
+                throw new Error(data.message || 'Detay alınamadı');
+            }
+            const item = data.item;
+            document.getElementById('previewContent').innerHTML = `
+                <div class="mb-3">
+                    <h5>${nxEtEscapeHtml(item.name || '')}</h5>
+                    <p class="text-muted mb-1"><strong>Konu:</strong> ${nxEtEscapeHtml(item.subject || '')}</p>
+                    <small class="text-muted">Durum: ${item.status === 'approved' ? 'Onaylı' : 'Onay Bekleyen'}</small>
+                </div>
+                <hr>
+                <div class="border rounded p-3 mail-content-display" style="background: #f8f9fa; max-height: 400px;">${item.body || ''}</div>
+            `;
+        })
+        .catch((err) => {
+            document.getElementById('previewContent').innerHTML = `<div class="alert alert-danger">${nxEtEscapeHtml(err.message || 'Önizleme yüklenemedi.')}</div>`;
+        });
+}
+
+let editingTemplateId = null;
+
+function editTemplate(id) {
+    editingTemplateId = id;
+    const modal = new bootstrap.Modal(document.getElementById('editModal'));
+    modal.show();
+    document.getElementById('editContent').innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+    
+    fetch('/admin/email-templates/' + id + '/edit-data')
+        .then(res => res.json())
+        .then(data => {
+            const name = (data.name || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const subject = (data.subject || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            document.getElementById('editContent').innerHTML = `
+                <div class="mb-3">
+                    <label class="form-label">Şablon Adı <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="name" value="${name}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Mail Konusu <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="subject" value="${subject}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Mail İçeriği <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="edit_body" name="body" required></textarea>
+                </div>
+            `;
+            document.getElementById('edit_body').value = data.body || '';
+            $('#edit_body').summernote({
+                height: 250,
+                toolbar: [
+                    ['style', ['style']],
+                    ['font', ['bold', 'underline', 'clear']],
+                    ['para', ['ul', 'ol', 'paragraph']],
+                    ['table', ['table']],
+                    ['insert', ['link', 'picture']],
+                    ['view', ['codeview']]
+                ]
+            });
+        })
+        .catch(() => {
+            document.getElementById('editContent').innerHTML = '<div class="alert alert-danger">Şablon yüklenemedi.</div>';
+        });
+}
+
+document.getElementById('editForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    if (!editingTemplateId) return;
+    
+    const formData = new FormData(this);
+    const body = $('#edit_body').summernote('code');
+    formData.set('body', body);
+    
+    fetch('/admin/email-templates/' + editingTemplateId + '/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify({
+            name: formData.get('name'),
+            subject: formData.get('subject'),
+            body: body
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+            showPageAlert(data.message || 'Şablon güncellendi.', 'success');
+            setTimeout(() => nxEtFetchList(), 500);
+        } else {
+            showPageAlert(data.message || 'Hata oluştu.', 'error');
+        }
+    })
+    .catch(() => showPageAlert('İstek başarısız.', 'error'));
+});
+
+function openTestMailModal(id, name, subject) {
+    document.getElementById('testTemplateId').value = id;
+    document.getElementById('testTemplateName').textContent = name || '-';
+    document.getElementById('testTemplateSubject').textContent = subject || '-';
+    document.getElementById('testEmailTo').value = '';
+    document.getElementById('testVariables').value = '';
+    new bootstrap.Modal(document.getElementById('testMailModal')).show();
+    feather.replace();
+}
+
+document.getElementById('testMailForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const id = document.getElementById('testTemplateId').value;
+    const to = (document.getElementById('testEmailTo').value || '').trim();
+    const variablesText = (document.getElementById('testVariables').value || '').trim();
+    const sendBtn = document.getElementById('testSendBtn');
+
+    if (!to) {
+        showPageAlert('Alıcı email girin.', 'warning');
+        return;
+    }
+
+    let variables = {};
+    if (variablesText !== '') {
+        try {
+            const parsed = JSON.parse(variablesText);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                variables = parsed;
+            } else {
+                throw new Error('JSON obje olmalıdır.');
+            }
+        } catch (err) {
+            showPageAlert('Test değişkenleri geçerli JSON olmalı: ' + err.message, 'error');
+            return;
+        }
+    }
+
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Gönderiliyor...';
+    fetch('/api/email-templates/' + id + '/send-test', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ to, variables })
+    })
+        .then((res) => res.json())
+        .then((data) => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('testMailModal')).hide();
+                showPageAlert(data.message || 'Test mail gönderildi.', 'success');
+                return;
+            }
+            showPageAlert('Test mail gönderilemedi: ' + (data.message || 'Bilinmeyen hata'), 'error');
+        })
+        .catch(() => {
+            showPageAlert('Test mail gönderilemedi: İstek başarısız.', 'error');
+        })
+        .finally(() => {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<i data-feather="send" class="icon-xs me-1"></i> Test Gönder';
+            feather.replace();
+        });
+});
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    nxEtBindFilters();
+    nxEtBindModerationButtons();
+    nxEtFetchUsers();
+    nxEtFetchList();
+});
+</script>
+{% endblock %}

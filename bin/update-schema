@@ -1,0 +1,49 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require __DIR__ . '/../vendor/autoload.php';
+
+// Load environment
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+$dotenv->load();
+
+// Build DI container
+$containerBuilder = new DI\ContainerBuilder();
+$containerBuilder->addDefinitions(__DIR__ . '/../config/container.php');
+$container = $containerBuilder->build();
+
+// Get EntityManager
+$em = $container->get('Doctrine\ORM\EntityManager');
+
+// Schema Tool
+$tool = new \Doctrine\ORM\Tools\SchemaTool($em);
+$classes = $em->getMetadataFactory()->getAllMetadata();
+
+echo "🔄 Updating database schema...\n";
+
+try {
+    $sqls = $tool->getUpdateSchemaSql($classes, false);
+    
+    if (empty($sqls)) {
+        echo "✅ Database schema is already up to date.\n";
+        exit(0);
+    }
+    
+    echo "📝 Found " . count($sqls) . " schema changes:\n";
+    foreach ($sqls as $sql) {
+        echo "  - " . substr($sql, 0, 60) . "...\n";
+    }
+    
+    echo "\n🚀 Applying schema updates...\n";
+    $tool->updateSchema($classes, false);
+    echo "✅ Database schema updated successfully!\n";
+    
+} catch (\Exception $e) {
+    echo "❌ Error updating schema: " . $e->getMessage() . "\n";
+    exit(1);
+}
+
+exit(0);
+

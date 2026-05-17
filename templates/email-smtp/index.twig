@@ -1,0 +1,2065 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}SMTP Yönetimi - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/email-dashboard">Email Yönetimi</a></li>
+<li class="breadcrumb-item active">SMTP</li>
+{% endblock %}
+
+{% block page_title %}
+<div class="row nx-esmtp-page-head">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head pb-0">
+            <div class="d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div class="min-w-0">
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item"><a href="/email-dashboard">Email Yönetimi</a></li>
+                            <li class="breadcrumb-item active" aria-current="page">SMTP</li>
+                        </ol>
+                    </div>
+                    <h4 class="page-title nx-page-title mb-1">SMTP Yönetimi</h4>
+                    <p class="nx-page-lead text-muted mb-0">SMTP hesaplarınızı yönetin, durumlarını kontrol edin ve gönderim limitlerini takip edin.</p>
+                </div>
+                <div class="d-flex flex-wrap align-items-stretch align-items-lg-center gap-2 nx-esmtp-head-actions">
+                    <button type="button" class="btn btn-sm nx-esmtp-tool-btn" id="nxEsmtpHeadRefresh" title="Yenile">
+                        <i data-feather="refresh-cw" class="nx-esmtp-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yenile</span>
+                    </button>
+                    <button type="button" class="btn btn-sm nx-esmtp-tool-btn" id="nxEsmtpBulkImportOpen" data-bs-toggle="modal" data-bs-target="#bulkImportSmtpModal" title="Toplu içe aktar">
+                        <i data-feather="layers" class="nx-esmtp-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Toplu içe aktar</span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary nx-esmtp-tool-btn nx-esmtp-tool-btn--primary" onclick="showAddModal()">
+                        <i data-feather="plus-circle" class="nx-esmtp-tool-ic"></i>
+                        <span>SMTP Ekle</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_icon %}{% endblock %}
+{% block title_text %}{% endblock %}
+
+{% block styles %}
+<style>
+.modal-header.bg-success {
+    background-color: #198754 !important;
+    color: white !important;
+}
+.modal-header.bg-danger {
+    background-color: #dc3545 !important;
+    color: white !important;
+}
+.modal-header.bg-warning {
+    background-color: #ffc107 !important;
+    color: #000 !important;
+}
+.modal-header.bg-success .btn-close,
+.modal-header.bg-danger .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 1;
+}
+.modal-header.bg-success .modal-title,
+.modal-header.bg-danger .modal-title {
+    color: white !important;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% set inactive_smtp = stats.total_smtp > stats.active_smtp ? (stats.total_smtp - stats.active_smtp) : 0 %}
+{% set warming_count = smtps|filter(s => s.totalSent < 100)|length %}
+{% set healthy_count = smtps|filter(s => s.isActive and s.successRate >= 92 and s.totalFailed < 40)|length %}
+{% set risk_count = smtps|filter(s => s.totalSent >= 15 and s.successRate < 85)|length %}
+{% set planDailyLimit = sending_config.daily_limit %}
+{% set totalDailySent = global_totals.daily_sent|default(0) %}
+{% set global_usage_pct = planDailyLimit > 0 ? (totalDailySent / planDailyLimit * 100) : 0 %}
+<div class="container-fluid nx-esmtp-page">
+
+    <!-- Sayfa içi uyarılar -->
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+    </div>
+    {% endif %}
+    <div id="pageAlertsContainer"></div>
+
+    <div class="alert alert-info border-0 shadow-sm mb-4 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+            <strong>Gönderim hızı ve günlük limit</strong> artık
+            <a href="/admin/email-sending-settings" class="alert-link fw-semibold">E-posta gönderim ayarları</a> sayfasından yönetilir.
+        </div>
+    </div>
+
+    <!-- Kompakt KPI -->
+    <div class="row g-2 mb-3 nx-esmtp-kpi-row">
+        <div class="col-6 col-xl-2 col-md-4">
+            <div class="nx-esmtp-kpi">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="layers"></i></div>
+                <div class="nx-esmtp-kpi-body">
+                    <span class="nx-esmtp-kpi-label">Toplam SMTP</span>
+                    <span class="nx-esmtp-kpi-val">{{ stats.total_smtp }}</span>
+                    <span class="nx-esmtp-kpi-hint">Kayıtlı hesap</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-2 col-md-4">
+            <div class="nx-esmtp-kpi nx-esmtp-kpi--accent">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="check-circle"></i></div>
+                <div class="nx-esmtp-kpi-body">
+                    <span class="nx-esmtp-kpi-label">Aktif</span>
+                    <span class="nx-esmtp-kpi-val">{{ stats.active_smtp }}</span>
+                    <span class="nx-esmtp-kpi-hint">Gönderimde</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-2 col-md-4">
+            <div class="nx-esmtp-kpi">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="pause-circle"></i></div>
+                <div class="nx-esmtp-kpi-body">
+                    <span class="nx-esmtp-kpi-label">Pasif</span>
+                    <span class="nx-esmtp-kpi-val">{{ inactive_smtp }}</span>
+                    <span class="nx-esmtp-kpi-hint">Devre dışı</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-2 col-md-4">
+            <div class="nx-esmtp-kpi nx-esmtp-kpi--ok">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="activity"></i></div>
+                <div class="nx-esmtp-kpi-body">
+                    <span class="nx-esmtp-kpi-label">Sağlıklı</span>
+                    <span class="nx-esmtp-kpi-val">{{ healthy_count }}</span>
+                    <span class="nx-esmtp-kpi-hint">Heuristik</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-2 col-md-4">
+            <div class="nx-esmtp-kpi nx-esmtp-kpi--warn">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="thermometer"></i></div>
+                <div class="nx-esmtp-kpi-body">
+                    <span class="nx-esmtp-kpi-label">Warmup</span>
+                    <span class="nx-esmtp-kpi-val">{{ warming_count }}</span>
+                    <span class="nx-esmtp-kpi-hint">&lt; 100 gönderim</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-2 col-md-4">
+            <div class="nx-esmtp-kpi nx-esmtp-kpi--danger">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="alert-triangle"></i></div>
+                <div class="nx-esmtp-kpi-body">
+                    <span class="nx-esmtp-kpi-label">Risk / düşük başarı</span>
+                    <span class="nx-esmtp-kpi-val">{{ risk_count }}</span>
+                    <span class="nx-esmtp-kpi-hint">İzleme önerilir</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-2 col-md-4">
+            <div class="nx-esmtp-kpi">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="send"></i></div>
+                <div class="nx-esmtp-kpi-body">
+                    <span class="nx-esmtp-kpi-label">Bugün</span>
+                    <span class="nx-esmtp-kpi-val">{{ stats.today_sent|number_format }}</span>
+                    <span class="nx-esmtp-kpi-hint">Gönderilen</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-2 col-md-4">
+            <div class="nx-esmtp-kpi">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="percent"></i></div>
+                <div class="nx-esmtp-kpi-body">
+                    <span class="nx-esmtp-kpi-label">Ort. başarı</span>
+                    <span class="nx-esmtp-kpi-val">{{ stats.avg_success_rate|number_format(1) }}%</span>
+                    <span class="nx-esmtp-kpi-hint">Tüm hesaplar</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-4 col-md-8">
+            <div class="nx-esmtp-kpi nx-esmtp-kpi--wide">
+                <div class="nx-esmtp-kpi-ic"><i data-feather="bar-chart-2"></i></div>
+                <div class="nx-esmtp-kpi-body flex-grow-1">
+                    <span class="nx-esmtp-kpi-label">Plan günlük limit kullanımı</span>
+                    <div class="d-flex align-items-center gap-2 mt-1">
+                        <div class="progress flex-grow-1 nx-esmtp-kpi-progress">
+                            <div class="progress-bar {{ global_usage_pct >= 90 ? 'bg-danger' : (global_usage_pct >= 70 ? 'bg-warning' : 'bg-success') }}" style="width: {{ min(global_usage_pct, 100) }}%"></div>
+                        </div>
+                        <span class="nx-esmtp-kpi-val mb-0 text-nowrap">{{ totalDailySent|number_format }} / {{ planDailyLimit|number_format }}</span>
+                    </div>
+                    <span class="nx-esmtp-kpi-hint">Tüm SMTP toplamı · {{ global_usage_pct|number_format(1) }}%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SMTP listesi -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card nx-esmtp-list-card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom py-3">
+                    <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2">
+                        <div>
+                            <h5 class="mb-0 d-flex align-items-center gap-2">
+                                <i data-feather="server" class="icon-xs text-primary"></i>
+                                SMTP hesapları
+                            </h5>
+                            <small class="text-muted" id="nxEsmtpListCountLabel">{{ total|default(smtps|length) }} kayıt{% if search %} (sunucu filtresi: “{{ search|e }}”){% endif %}</small>
+                        </div>
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            {% if smtps|length > 0 %}
+                            <button type="button" class="btn btn-outline-success btn-sm nx-esmtp-tool" id="smtpBulkActiveBtn" onclick="bulkSetStatus(true)" disabled>
+                                <i data-feather="check-circle" class="icon-xs me-1"></i>
+                                <span class="d-none d-sm-inline">Seçilenleri aktif yap</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm nx-esmtp-tool" id="smtpBulkPassiveBtn" onclick="bulkSetStatus(false)" disabled>
+                                <i data-feather="pause-circle" class="icon-xs me-1"></i>
+                                <span class="d-none d-sm-inline">Seçilenleri pasif yap</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm nx-esmtp-tool" id="smtpBulkDeleteBtn" onclick="bulkDeleteSmtp()" disabled title="İşaretli hesapları kalıcı siler">
+                                <i data-feather="trash-2" class="icon-xs me-1"></i>
+                                <span class="d-none d-sm-inline">Seçilenleri sil</span>
+                            </button>
+                            {% endif %}
+                            <button type="button" class="btn btn-outline-warning btn-sm nx-esmtp-tool" onclick="resetAllLimits()">
+                                <i data-feather="rotate-ccw" class="icon-xs me-1"></i>
+                                <span class="d-none d-sm-inline">Limitleri sıfırla</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body pt-3">
+                    <div id="nxEsmtpBulkBar" class="alert alert-dark py-2 px-3 mb-3 d-none nx-esmtp-bulk-bar">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <span class="small mb-0" id="nxEsmtpBulkBarText"><strong>0</strong> SMTP seçildi</span>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-light" onclick="bulkSetStatus(true)">Seçilenleri aktif yap</button>
+                                <button type="button" class="btn btn-sm btn-outline-light" onclick="bulkSetStatus(false)">Seçilenleri pasif yap</button>
+                                <button type="button" class="btn btn-sm btn-danger" onclick="bulkDeleteSmtp()">Seçilenleri sil</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="nx-esmtp-toolbar card border mb-3">
+                        <div class="card-body py-2 px-3">
+                            <div class="row g-2 align-items-center">
+                                <div class="col-12 col-lg-4">
+                                    <div class="input-group input-group-sm nx-esmtp-input-h">
+                                        <span class="input-group-text bg-white"><i data-feather="search" class="icon-xs"></i></span>
+                                        <input type="text" class="form-control" id="smtpSearchClient" placeholder="İsim, host, kullanıcı, gönderen…" value="{{ search|e('html_attr') }}" autocomplete="off">
+                                        <button class="btn btn-outline-secondary" type="button" id="smtpServerSearchBtn" title="Sunucuda ara (isim, host, kullanıcı)">Sunucuda ara</button>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-2">
+                                    <select class="form-select form-select-sm nx-esmtp-input-h" id="nxEsmtpStatusFilter" title="Durum">
+                                        <option value="all" {{ status|default('all') == 'all' ? 'selected' : '' }}>Tüm durumlar</option>
+                                        <option value="active" {{ status|default('all') == 'active' ? 'selected' : '' }}>Aktif</option>
+                                        <option value="passive" {{ status|default('all') == 'passive' ? 'selected' : '' }}>Pasif</option>
+                                        <option value="healthy" {{ status|default('all') == 'healthy' ? 'selected' : '' }}>Sağlıklı</option>
+                                        <option value="risk" {{ status|default('all') == 'risk' ? 'selected' : '' }}>Riskli</option>
+                                        <option value="warming" {{ status|default('all') == 'warming' ? 'selected' : '' }}>Warmup</option>
+                                        <option value="throttled" {{ status|default('all') == 'throttled' ? 'selected' : '' }}>Limit yakın</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-2">
+                                    <select class="form-select form-select-sm nx-esmtp-input-h" id="nxEsmtpProviderFilter">
+                                        <option value="all" {{ provider|default('all') == 'all' ? 'selected' : '' }}>Tüm sağlayıcılar</option>
+                                        <option value="alibaba" {{ provider|default('all') == 'alibaba' ? 'selected' : '' }}>Alibaba / Aliyun</option>
+                                        <option value="mailgun" {{ provider|default('all') == 'mailgun' ? 'selected' : '' }}>Mailgun</option>
+                                        <option value="other" {{ provider|default('all') == 'other' ? 'selected' : '' }}>Özel SMTP</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-2">
+                                    <select class="form-select form-select-sm nx-esmtp-input-h" id="nxEsmtpSort">
+                                        <option value="newest" {{ sort|default('newest') == 'newest' ? 'selected' : '' }}>En yeni</option>
+                                        <option value="most_sent" {{ sort|default('newest') == 'most_sent' ? 'selected' : '' }}>En çok gönderim</option>
+                                        <option value="error_rate" {{ sort|default('newest') == 'error_rate' ? 'selected' : '' }}>Yüksek hata</option>
+                                        <option value="last_used" {{ sort|default('newest') == 'last_used' ? 'selected' : '' }}>Son kullanım</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-4 col-lg-2">
+                                    <select class="form-select form-select-sm nx-esmtp-input-h" id="nxEsmtpPerPage">
+                                        <option value="20" {{ per_page|default(20) == 20 ? 'selected' : '' }}>20 / sayfa</option>
+                                        <option value="50" {{ per_page|default(20) == 50 ? 'selected' : '' }}>50 / sayfa</option>
+                                        <option value="100" {{ per_page|default(20) == 100 ? 'selected' : '' }}>100 / sayfa</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 col-lg-12 col-xl-12">
+                                    <div class="d-flex flex-wrap align-items-center gap-2 justify-content-lg-end mt-1 mt-lg-0">
+                                        <div class="btn-group btn-group-sm" role="group" aria-label="Görünüm">
+                                            <button type="button" class="btn btn-outline-primary active" id="nxEsmtpViewTable"><i data-feather="list" class="icon-xs me-1"></i>Tablo</button>
+                                            <button type="button" class="btn btn-outline-primary" id="nxEsmtpViewCards"><i data-feather="grid" class="icon-xs me-1"></i>Kart</button>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary nx-esmtp-input-h" id="nxEsmtpToolbarRefresh" title="Yenile"><i data-feather="refresh-cw" class="icon-xs"></i></button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary nx-esmtp-input-h" id="nxEsmtpClearFilters">Filtreleri temizle</button>
+                                        {% if smtps|length > 0 %}
+                                        <div class="form-check mb-0 ms-1 d-flex align-items-center">
+                                            <input class="form-check-input" type="checkbox" id="smtpSelectAll" title="Görünür satırların tümü">
+                                            <label class="form-check-label small text-muted ms-1 mb-0" for="smtpSelectAll">Tümünü seç</label>
+                                        </div>
+                                        <div class="form-check mb-0 ms-1 d-flex align-items-center d-md-none">
+                                            <input class="form-check-input" type="checkbox" id="smtpSelectAllMobile" title="Görünür satırların tümü">
+                                            <label class="form-check-label small text-muted ms-1 mb-0" for="smtpSelectAllMobile">Tümü</label>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if smtps|length > 0 %}
+                    <div id="nxEsmtpTableWrap" class="nx-esmtp-table-shell">
+                        <div class="table-responsive nx-esmtp-table-responsive">
+                            <table class="table table-hover align-middle mb-0 nx-esmtp-table">
+                                <thead class="nx-esmtp-thead">
+                                    <tr>
+                                        <th style="width:36px;" class="text-center"></th>
+                                        <th>SMTP</th>
+                                        <th>Sağlayıcı</th>
+                                        <th>Durum</th>
+                                        <th class="text-end">Limit / gönderim</th>
+                                        <th class="text-end">Başarı / hata</th>
+                                        <th>Son kullanım</th>
+                                        <th>Güncelleme</th>
+                                        <th class="text-end" style="min-width:120px;">İşlemler</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="smtpTableBody">
+                                    {% for smtp in smtps %}
+                                    {% set host_l = smtp.host|lower %}
+                                    {% if 'aliyuncs' in host_l or 'alibaba' in host_l or 'aliyun' in host_l %}
+                                        {% set provider_key = 'alibaba' %}
+                                        {% set provider_label = 'Alibaba DM' %}
+                                    {% elseif 'mailgun' in host_l %}
+                                        {% set provider_key = 'mailgun' %}
+                                        {% set provider_label = 'Mailgun' %}
+                                    {% else %}
+                                        {% set provider_key = 'other' %}
+                                        {% set provider_label = 'Özel' %}
+                                    {% endif %}
+                                    {% set warm = smtp.totalSent < 100 %}
+                                    {% set healthy = smtp.isActive and smtp.successRate >= 92 and smtp.totalFailed < 40 %}
+                                    {% set risk = smtp.totalSent >= 15 and smtp.successRate < 85 %}
+                                    {% set acct_limit = smtp.dailyLimit > 0 ? smtp.dailyLimit : planDailyLimit %}
+                                    {% set acct_pct = acct_limit > 0 ? (smtp.dailySent / acct_limit * 100) : 0 %}
+                                    {% set throttled_row = global_usage_pct >= 88 or acct_pct >= 90 %}
+                                    {% set search_h = (smtp.name ~ ' ' ~ smtp.host ~ ' ' ~ smtp.username ~ ' ' ~ smtp.fromEmail)|lower %}
+                                    <tr class="nx-esmtp-sync nx-esmtp-type-tr" data-smtp-id="{{ smtp.id }}"
+                                        data-search="{{ search_h|e('html_attr') }}"
+                                        data-active="{{ smtp.isActive ? '1' : '0' }}"
+                                        data-provider="{{ provider_key }}"
+                                        data-warm="{{ warm ? '1' : '0' }}"
+                                        data-healthy="{{ healthy ? '1' : '0' }}"
+                                        data-risk="{{ risk ? '1' : '0' }}"
+                                        data-throttled="{{ throttled_row ? '1' : '0' }}"
+                                        data-created="{{ smtp.createdAt|date('U') }}"
+                                        data-last-used="{{ smtp.lastUsedAt ? smtp.lastUsedAt|date('U') : 0 }}"
+                                        data-last-used-h="{{ (smtp.lastUsedAt ? smtp.lastUsedAt|date('d.m.Y H:i') : '—')|e('html_attr') }}"
+                                        data-total-sent="{{ smtp.totalSent }}"
+                                        data-total-failed="{{ smtp.totalFailed }}"
+                                        data-success-rate="{{ smtp.successRate }}"
+                                        data-created-h="{{ smtp.createdAt|date('d.m.Y H:i')|e('html_attr') }}"
+                                        data-updated-h="{{ smtp.updatedAt|date('d.m.Y H:i')|e('html_attr') }}">
+                                        <td class="text-center">
+                                            <input class="form-check-input smtp-bulk-cb" type="checkbox" value="{{ smtp.id }}" id="smtpCb{{ smtp.id }}" aria-label="Seç: {{ smtp.name|e('html_attr') }}">
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold text-truncate" style="max-width:260px;">{{ smtp.fromEmail }}</div>
+                                            <div class="small text-muted text-truncate" style="max-width:220px;">{{ smtp.name }}</div>
+                                            <div class="small text-muted font-monospace text-truncate" style="max-width:300px;">{{ smtp.host }}:{{ smtp.port }} · {{ smtp.encryption ?: 'Yok' }}</div>
+                                        </td>
+                                        <td><span class="badge nx-esmtp-badge-soft">{{ provider_label }}</span></td>
+                                        <td>
+                                            <div class="d-flex flex-wrap gap-1 align-items-center">
+                                                {% if smtp.isActive %}
+                                                    <span class="badge bg-primary-subtle text-primary border nx-state-badge-active">Aktif</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary-subtle text-secondary border nx-state-badge-active">Pasif</span>
+                                                {% endif %}
+                                                {% if healthy %}
+                                                    <span class="badge bg-success-subtle text-success border">OK</span>
+                                                {% endif %}
+                                                {% if risk %}
+                                                    <span class="badge bg-danger-subtle text-danger border">Risk</span>
+                                                {% endif %}
+                                                {% if warm %}
+                                                    <span class="badge bg-warning-subtle text-warning border">Warmup</span>
+                                                {% endif %}
+                                                {% if throttled_row %}
+                                                    <span class="badge bg-warning text-dark border">Limit</span>
+                                                {% endif %}
+                                            </div>
+                                        </td>
+                                        <td class="text-end small">
+                                            <div>{{ smtp.minuteLimit }}/dk</div>
+                                            <div class="text-muted">{{ smtp.dailySent|number_format }} / {{ acct_limit|number_format }} günlük</div>
+                                        </td>
+                                        <td class="text-end small">
+                                            <div><span class="text-success">{{ smtp.totalSent|number_format }}</span> / <span class="text-danger">{{ smtp.totalFailed|number_format }}</span></div>
+                                            <div class="text-muted">{{ smtp.successRate|number_format(1) }}% başarı</div>
+                                        </td>
+                                        <td class="small text-muted">{{ smtp.lastUsedAt ? smtp.lastUsedAt|date('d.m.Y H:i') : '—' }}</td>
+                                        <td class="small text-muted">{{ smtp.updatedAt|date('d.m.Y H:i') }}</td>
+                                        <td class="text-end">
+                                            <div class="d-flex justify-content-end align-items-center gap-1">
+                                                <button type="button" class="btn btn-sm btn-outline-primary" title="Detay" onclick="showSmtpDetail({{ smtp.id }})">Detay</button>
+                                                <button type="button" class="btn btn-sm btn-outline-info" title="Test Et" onclick="testSmtp({{ smtp.id }})">Test Et</button>
+                                                <div class="dropdown">
+                                                    <button class="btn btn-sm btn-light border nx-esmtp-icon-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Diğer"><i data-feather="more-horizontal" class="icon-xs"></i></button>
+                                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                                        <li><button class="dropdown-item" type="button" onclick="showSmtpDetail({{ smtp.id }})"><i data-feather="eye" class="icon-xs me-2"></i>Detay</button></li>
+                                                        <li><button class="dropdown-item" type="button" onclick="testSmtp({{ smtp.id }})"><i data-feather="zap" class="icon-xs me-2"></i>Test et</button></li>
+                                                        <li><button class="dropdown-item" type="button" onclick="checkDomain({{ smtp.id }})"><i data-feather="globe" class="icon-xs me-2"></i>Domain</button></li>
+                                                        <li><button class="dropdown-item" type="button" onclick="editSmtp({{ smtp.id }})"><i data-feather="edit" class="icon-xs me-2"></i>Düzenle</button></li>
+                                                        <li><button class="dropdown-item" type="button" onclick="archiveSmtp({{ smtp.id }})"><i data-feather="archive" class="icon-xs me-2"></i>Arşivle (pasif yap)</button></li>
+                                                        <li><button class="dropdown-item" type="button" onclick="resetSingleLimit({{ smtp.id }})"><i data-feather="rotate-ccw" class="icon-xs me-2"></i>Limit / throttle sıfırla</button></li>
+                                                        <li><hr class="dropdown-divider"></li>
+                                                        <li><button class="dropdown-item text-danger" type="button" onclick="deleteSmtp({{ smtp.id }})"><i data-feather="trash-2" class="icon-xs me-2"></i>Sil</button></li>
+                                                    </ul>
+                                                </div>
+                                                <div class="form-check form-switch ms-1 mb-0 nx-esmtp-switch">
+                                                    <input class="form-check-input" type="checkbox" id="toggle{{ smtp.id }}" {{ smtp.isActive ? 'checked' : '' }} onchange="toggleSmtp({{ smtp.id }}, this)" title="Aktif / pasif">
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="nxEsmtpCardWrap" class="row g-3 nx-esmtp-card-grid d-none">
+                        {% for smtp in smtps %}
+                        {% set host_l = smtp.host|lower %}
+                        {% if 'aliyuncs' in host_l or 'alibaba' in host_l or 'aliyun' in host_l %}
+                            {% set provider_key = 'alibaba' %}
+                            {% set provider_label = 'Alibaba DM' %}
+                        {% elseif 'mailgun' in host_l %}
+                            {% set provider_key = 'mailgun' %}
+                            {% set provider_label = 'Mailgun' %}
+                        {% else %}
+                            {% set provider_key = 'other' %}
+                            {% set provider_label = 'Özel' %}
+                        {% endif %}
+                        {% set warm = smtp.totalSent < 100 %}
+                        {% set healthy = smtp.isActive and smtp.successRate >= 92 and smtp.totalFailed < 40 %}
+                        {% set risk = smtp.totalSent >= 15 and smtp.successRate < 85 %}
+                        {% set acct_limit = smtp.dailyLimit > 0 ? smtp.dailyLimit : planDailyLimit %}
+                        {% set acct_pct = acct_limit > 0 ? (smtp.dailySent / acct_limit * 100) : 0 %}
+                        {% set throttled_row = global_usage_pct >= 88 or acct_pct >= 90 %}
+                        {% set search_h = (smtp.name ~ ' ' ~ smtp.host ~ ' ' ~ smtp.username ~ ' ' ~ smtp.fromEmail)|lower %}
+                        <div class="col-12 col-md-6 col-xl-4 nx-esmtp-sync" data-smtp-id="{{ smtp.id }}"
+                            data-search="{{ search_h|e('html_attr') }}"
+                            data-active="{{ smtp.isActive ? '1' : '0' }}"
+                            data-provider="{{ provider_key }}"
+                            data-warm="{{ warm ? '1' : '0' }}"
+                            data-healthy="{{ healthy ? '1' : '0' }}"
+                            data-risk="{{ risk ? '1' : '0' }}"
+                            data-throttled="{{ throttled_row ? '1' : '0' }}"
+                            data-created="{{ smtp.createdAt|date('U') }}"
+                            data-last-used="{{ smtp.lastUsedAt ? smtp.lastUsedAt|date('U') : 0 }}"
+                            data-last-used-h="{{ (smtp.lastUsedAt ? smtp.lastUsedAt|date('d.m.Y H:i') : '—')|e('html_attr') }}"
+                            data-total-sent="{{ smtp.totalSent }}"
+                            data-total-failed="{{ smtp.totalFailed }}"
+                            data-success-rate="{{ smtp.successRate }}"
+                            data-created-h="{{ smtp.createdAt|date('d.m.Y H:i')|e('html_attr') }}"
+                            data-updated-h="{{ smtp.updatedAt|date('d.m.Y H:i')|e('html_attr') }}">
+                            <div class="card nx-esmtp-compact-card h-100 border shadow-sm">
+                                <div class="card-body p-3 d-flex flex-column">
+                                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                        <div class="d-flex align-items-start gap-2 min-w-0">
+                                            <input class="form-check-input smtp-bulk-cb mt-1" type="checkbox" value="{{ smtp.id }}" id="smtpCbCard{{ smtp.id }}" aria-label="Seç">
+                                            <div class="min-w-0">
+                                                <div class="fw-semibold text-truncate">{{ smtp.fromEmail }}</div>
+                                                <div class="small text-muted text-truncate">{{ smtp.name }}</div>
+                                            </div>
+                                        </div>
+                                        <div class="form-check form-switch flex-shrink-0 mb-0">
+                                            <input class="form-check-input" type="checkbox" id="toggleCard{{ smtp.id }}" {{ smtp.isActive ? 'checked' : '' }} onchange="toggleSmtp({{ smtp.id }}, this)">
+                                        </div>
+                                    </div>
+                                    <div class="small text-muted mb-2">{{ smtp.host }}:{{ smtp.port }} · {{ smtp.encryption ?: 'Yok' }}</div>
+                                    <div class="d-flex flex-wrap gap-1 mb-2">
+                                        <span class="badge nx-esmtp-badge-soft">{{ provider_label }}</span>
+                                        {% if smtp.isActive %}
+                                            <span class="badge bg-success-subtle text-success border nx-state-badge-active">Aktif</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary-subtle text-secondary border nx-state-badge-active">Pasif</span>
+                                        {% endif %}
+                                        {% if healthy %}<span class="badge bg-success-subtle text-success border">OK</span>{% endif %}
+                                        {% if risk %}<span class="badge bg-danger-subtle text-danger border">Risk</span>{% endif %}
+                                        {% if warm %}<span class="badge bg-warning-subtle text-warning border">Warmup</span>{% endif %}
+                                    </div>
+                                    <div class="row g-2 small mt-1">
+                                        <div class="col-6"><div class="rounded bg-light py-1 px-2"><div class="fw-semibold">{{ smtp.dailySent|number_format }}</div><div class="text-muted" style="font-size:0.72rem;">Günlük gönderim</div></div></div>
+                                        <div class="col-6"><div class="rounded bg-light py-1 px-2"><div class="fw-semibold">{{ acct_limit|number_format }}</div><div class="text-muted" style="font-size:0.72rem;">Günlük limit</div></div></div>
+                                        <div class="col-6"><div class="rounded bg-light py-1 px-2"><div class="fw-semibold">{{ smtp.totalSent|number_format }}</div><div class="text-muted" style="font-size:0.72rem;">Toplam başarı</div></div></div>
+                                        <div class="col-6"><div class="rounded bg-light py-1 px-2"><div class="fw-semibold text-danger">{{ smtp.totalFailed|number_format }}</div><div class="text-muted" style="font-size:0.72rem;">Toplam hata</div></div></div>
+                                    </div>
+                                    <div class="small text-muted mt-2">Son kullanım: {{ smtp.lastUsedAt ? smtp.lastUsedAt|date('d.m.Y H:i') : '—' }}</div>
+                                    <div class="small text-muted">Güncelleme: {{ smtp.updatedAt|date('d.m.Y H:i') }}</div>
+                                    <div class="d-flex flex-wrap gap-1 mt-3 pt-2 border-top">
+                                        <button type="button" class="btn btn-sm btn-outline-primary flex-grow-1" onclick="showSmtpDetail({{ smtp.id }})">Detay</button>
+                                        <button type="button" class="btn btn-sm btn-outline-info" onclick="testSmtp({{ smtp.id }})">Test Et</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editSmtp({{ smtp.id }})">Düzenle</button>
+                                        <button type="button" class="btn btn-sm btn-outline-dark" onclick="archiveSmtp({{ smtp.id }})">Arşivle</button>
+                                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="resetSingleLimit({{ smtp.id }})">Limit sıfırla</button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteSmtp({{ smtp.id }})">Sil</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <p class="small text-muted mb-2">Kart ve tablo görünümü arasında üstteki görünüm anahtarlarıyla geçiş yapabilirsiniz.</p>
+
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2" id="nxEsmtpPagerWrap">
+                        <div class="small text-muted" id="nxEsmtpPagerInfo">
+                            {% if total|default(0) > 0 %}
+                                {{ ((page - 1) * per_page) + 1 }}–{{ (page * per_page) > total ? total : (page * per_page) }} / {{ total }} kayıt
+                            {% else %}
+                                Kayıt yok
+                            {% endif %}
+                        </div>
+                        {% if total_pages|default(1) > 1 %}
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0" id="nxEsmtpPagerUl">
+                                <li class="page-item {{ page <= 1 ? 'disabled' : '' }}">
+                                    <a class="page-link" href="{{ page <= 1 ? '#' : ('/admin/email-smtp?page=' ~ (page - 1) ~ '&per_page=' ~ per_page ~ '&search=' ~ (search|default('')|e('url')) ~ '&status=' ~ (status|default('')|e('url')) ~ '&provider=' ~ (provider|default('')|e('url')) ~ '&sort=' ~ (sort|default('')|e('url'))) }}">«</a>
+                                </li>
+                                {% for p in (page - 2)..(page + 2) %}
+                                    {% if p >= 1 and p <= total_pages %}
+                                    <li class="page-item {{ p == page ? 'active' : '' }}">
+                                        <a class="page-link" href="/admin/email-smtp?page={{ p }}&per_page={{ per_page }}&search={{ search|default('')|e('url') }}&status={{ status|default('')|e('url') }}&provider={{ provider|default('')|e('url') }}&sort={{ sort|default('')|e('url') }}">{{ p }}</a>
+                                    </li>
+                                    {% endif %}
+                                {% endfor %}
+                                <li class="page-item {{ page >= total_pages ? 'disabled' : '' }}">
+                                    <a class="page-link" href="{{ page >= total_pages ? '#' : ('/admin/email-smtp?page=' ~ (page + 1) ~ '&per_page=' ~ per_page ~ '&search=' ~ (search|default('')|e('url')) ~ '&status=' ~ (status|default('')|e('url')) ~ '&provider=' ~ (provider|default('')|e('url')) ~ '&sort=' ~ (sort|default('')|e('url'))) }}">»</a>
+                                </li>
+                            </ul>
+                        </nav>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 nx-esmtp-empty">
+                        <div class="mb-3 opacity-50"><i data-feather="inbox" style="width:64px;height:64px;"></i></div>
+                        <h5 class="text-muted mb-2">Henüz SMTP hesabı eklenmedi</h5>
+                        <p class="text-muted small mb-4">Gönderim için bir hesap ekleyin veya toplu içe aktarma kullanın.</p>
+                        <button type="button" class="btn btn-primary" onclick="showAddModal()"><i data-feather="plus-circle" class="icon-xs me-1"></i>SMTP Ekle</button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alibaba DirectMail Delivery Reports (liste altında) -->
+    <div class="card border-0 shadow-sm mb-4 mt-3">
+        <div class="card-header bg-transparent border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0">
+                    <i data-feather="bar-chart-2" class="icon-xs me-1"></i>
+                    Delivery Reports (Alibaba DirectMail)
+                </h5>
+                <small class="text-muted">Gunluk özet (Alibaba konsolu ile aynı takvim günü: UTC+8 / Asia/Singapore)</small>
+            </div>
+            <form action="/admin/email-smtp/delivery-reports/sync" method="POST" class="d-flex align-items-center gap-2">
+                <select name="days" class="form-select form-select-sm nx-esmtp-input-h">
+                    <option value="1">Bugün (UTC+8)</option>
+                    <option value="7">Son 7 gun</option>
+                    <option value="14" selected>Son 14 gun</option>
+                    <option value="30">Son 30 gun</option>
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-primary nx-esmtp-input-h">
+                    <i data-feather="refresh-cw" class="icon-xs me-1"></i>
+                    Senkronla
+                </button>
+            </form>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info py-2 mb-3">
+                <small>
+                    <i data-feather="info" class="icon-xs me-1"></i>
+                    <code>.env</code>:
+                    <code>ALIBABA_DM_ACCESS_KEY_ID</code>,
+                    <code>ALIBABA_DM_ACCESS_KEY_SECRET</code>,
+                    <code>ALIBABA_DM_REGION=ap-southeast-1</code>.
+                    İsteğe bağlı: <code>ALIBABA_DM_REPORT_TIMEZONE=Asia/Singapore</code>
+                    (takvim günü). Anahtarları asla koda yapıştırmayın.
+                </small>
+            </div>
+
+            {% if delivery_reports is not empty %}
+            <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Tarih</th>
+                            <th class="text-end">Toplam</th>
+                            <th class="text-end">Basarili</th>
+                            <th class="text-end">Basarisiz</th>
+                            <th class="text-end">Invalid Address</th>
+                            <th class="text-end">Success Rate</th>
+                            <th class="text-end">Invalid Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in delivery_reports %}
+                        <tr>
+                            <td>{{ row.report_date }}</td>
+                            <td class="text-end">{{ row.total|number_format }}</td>
+                            <td class="text-end text-success">{{ row.successful|number_format }}</td>
+                            <td class="text-end text-danger">{{ row.failed|number_format }}</td>
+                            <td class="text-end text-warning">{{ row.invalid_address|number_format }}</td>
+                            <td class="text-end">{{ row.success_rate|number_format(2) }}%</td>
+                            <td class="text-end">{{ row.invalid_rate|number_format(2) }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-muted">
+                Henüz delivery report verisi yok. "Senkronla" butonunu kullanarak Alibaba'dan cekebilirsiniz.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+<!-- SMTP Detay Modal -->
+<div class="modal fade" id="smtpDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header nx-esmtp-detail-head text-white border-0">
+                <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="info" class="icon-sm"></i>
+                    <span id="detail_smtp_name">SMTP Detayı</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body bg-white">
+                <input type="hidden" id="detail_current_id" value="">
+                <div id="detail_test_hint" class="alert alert-secondary py-2 small mb-3 d-none">Son test sonucu bu panelde gösterilir; bağlantı testi için listeden <strong>Test</strong> kullanın.</div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="nx-esmtp-detail-label">SMTP kimliği</div>
+                        <div class="fw-semibold" id="detail_id">—</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="nx-esmtp-detail-label">Sağlayıcı</div>
+                        <div id="detail_provider">—</div>
+                    </div>
+                </div>
+                <div class="card border mb-3">
+                    <div class="card-body">
+                        <h6 class="mb-3 text-muted text-uppercase small">Bağlantı ve gönderen</h6>
+                        <table class="table table-sm mb-0 nx-esmtp-detail-table">
+                            <tr>
+                                <th>Host / port / şifreleme</th>
+                                <td id="detail_host_block">—</td>
+                            </tr>
+                            <tr>
+                                <th>Kullanıcı</th>
+                                <td><strong id="detail_username"></strong></td>
+                            </tr>
+                            <tr>
+                                <th>Gönderen</th>
+                                <td><span id="detail_from_line">—</span></td>
+                            </tr>
+                            <tr>
+                                <th>Öncelik</th>
+                                <td><span id="detail_priority_badge"></span></td>
+                            </tr>
+                            <tr>
+                                <th>Durum</th>
+                                <td id="detail_status_badge"></td>
+                            </tr>
+                            <tr>
+                                <th>Özet sağlık</th>
+                                <td id="detail_health_badge">—</td>
+                            </tr>
+                            <tr>
+                                <th>Son kullanım</th>
+                                <td id="detail_last_used">—</td>
+                            </tr>
+                            <tr>
+                                <th>Oluşturma / güncelleme</th>
+                                <td id="detail_dates" class="small text-muted">—</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card border">
+                    <div class="card-body">
+                        <h6 class="mb-3 text-muted text-uppercase small">Gönderim istatistikleri</h6>
+                        <div class="row text-center mb-3 g-2">
+                            <div class="col-6 col-md-3">
+                                <div class="p-2 bg-light rounded-3 border">
+                                    <h4 class="mb-0" id="detail_daily_sent">0</h4>
+                                    <small class="text-muted">Bugün</small>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="p-2 bg-light rounded-3 border">
+                                    <h4 class="mb-0" id="detail_daily_limit">0</h4>
+                                    <small class="text-muted">Günlük limit</small>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="p-2 bg-light rounded-3 border">
+                                    <h4 class="mb-0" id="detail_total_sent">0</h4>
+                                    <small class="text-muted">Toplam gönderim</small>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="p-2 bg-light rounded-3 border">
+                                    <h4 class="mb-0" id="detail_success_rate">0%</h4>
+                                    <small class="text-muted">Başarı oranı</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row text-center g-2">
+                            <div class="col-4">
+                                <div class="p-2 bg-light rounded-3 border">
+                                    <h5 class="mb-0" id="detail_hourly_sent">0</h5>
+                                    <small class="text-muted">Saatlik / <span id="detail_hourly_limit">0</span></small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="p-2 bg-light rounded-3 border">
+                                    <h5 class="mb-0" id="detail_minute_sent">0</h5>
+                                    <small class="text-muted">Dakika / <span id="detail_minute_limit">0</span></small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="p-2 bg-light rounded-3 border">
+                                    <h5 class="mb-0" id="detail_total_failed">0</h5>
+                                    <small class="text-muted">Başarısız</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-top d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="icon-xs me-1"></i>
+                    Kapat
+                </button>
+                <button type="button" class="btn btn-info" id="detail_btn_test" onclick="nxEsmtpDetailTest()">
+                    <i data-feather="zap" class="icon-xs me-1"></i>
+                    Test et
+                </button>
+                <button type="button" class="btn btn-warning" id="detail_btn_edit" onclick="nxEsmtpDetailEdit()">
+                    <i data-feather="edit" class="icon-xs me-1"></i>
+                    Düzenle
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Yeni SMTP Ekle Modal -->
+<div class="modal fade" id="addSmtpModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title">
+                    <i data-feather="plus-circle" class="icon-sm me-2 text-primary"></i>
+                    Yeni SMTP Hesabı Ekle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/admin/email-smtp" method="POST" id="smtpForm" onsubmit="submitAddForm(event)">
+                <div class="modal-body">
+                        <div class="row">
+                            <!-- Sol Kolon -->
+                            <div class="col-12">
+                                <h6 class="text-muted mb-3">Genel Bilgiler</h6>
+                                
+                                <div class="mb-3">
+                                    <label for="name" class="form-label">SMTP Adı *</label>
+                                    <input type="text" class="form-control" id="name" name="name" required placeholder="Gmail SMTP">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="host" class="form-label">SMTP Host *</label>
+                                    <input type="text" class="form-control" id="host" name="host" required placeholder="smtp.gmail.com">
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="mb-3">
+                                            <label for="port" class="form-label">Port *</label>
+                                            <input type="number" class="form-control" id="port" name="port" required value="587">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="mb-3">
+                                            <label for="encryption" class="form-label">Şifreleme</label>
+                                            <select class="form-select" id="encryption" name="encryption">
+                                                <option value="tls" selected>TLS</option>
+                                                <option value="ssl">SSL</option>
+                                                <option value="">Yok</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="username" class="form-label">Kullanıcı Adı *</label>
+                                    <input type="text" class="form-control" id="username" name="username" required placeholder="smtp@example.com">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="password" class="form-label">Şifre *</label>
+                                    <input type="password" class="form-control" id="password" name="password" required>
+                                    <small class="text-muted">Şifrelenmiş olarak saklanır</small>
+                                </div>
+                            </div>
+
+                            <!-- Gönderen & Ayarlar -->
+                            <div class="col-12">
+                                <h6 class="text-muted mb-3 mt-3">Gönderen & Ayarlar</h6>
+                                
+                                <div class="mb-3">
+                                    <label for="from_email" class="form-label">Gönderen Email *</label>
+                                    <input type="email" class="form-control" id="from_email" name="from_email" required placeholder="noreply@example.com">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="from_name" class="form-label">Gönderen İsim</label>
+                                    <input type="text" class="form-control" id="from_name" name="from_name" placeholder="Nexus Panel">
+                                </div>
+
+                                <div class="alert alert-info py-2 mb-3">
+                                    <small><i data-feather="info" class="icon-xs me-1"></i> Limit <strong>tüm SMTP'lerin toplamına</strong> uygulanır (örn: 59K = tüm hesapların günlük toplamı)</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="priority" class="form-label">Öncelik *</label>
+                                    <input type="number" class="form-control" id="priority" name="priority" required value="1" min="1" max="10">
+                                    <small class="text-muted">1 = En yüksek, 10 = En düşük</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="is_active" name="is_active" checked>
+                                        <label class="form-check-label" for="is_active">Aktif</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <div class="modal-footer bg-light border-top">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i data-feather="x" class="icon-xs me-1"></i>
+                        İptal
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="save" class="icon-xs me-1"></i>
+                        SMTP Ekle
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Toplu SMTP içe aktarma -->
+<div class="modal fade" id="bulkImportSmtpModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-bottom bg-primary-subtle">
+                <h5 class="modal-title mb-0">
+                    <i data-feather="layers" class="icon-sm me-2 text-primary"></i>
+                    Toplu SMTP içe aktarma
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Her satır <code>posta@alan.com:şifre</code> formatında olsun. Boş satırlar ve <code>#</code> ile başlayan satırlar yok sayılır.
+                    Tüm hesaplar aynı <strong>SMTP sunucusu</strong> (ör. Alibaba DirectMail) ile kaydedilir; gönderen adres = kullanıcı adı.
+                </p>
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <label for="bulk_smtp_lines" class="form-label">Hesap listesi</label>
+                        <textarea class="form-control font-monospace" id="bulk_smtp_lines" rows="16" spellcheck="false"
+                            placeholder="postmaster@ornek.com:Sifre123&#10;marketing@ornek.com:Baska456"></textarea>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="mb-3">
+                            <label for="bulk_smtp_host" class="form-label">SMTP host</label>
+                            <input type="text" class="form-control" id="bulk_smtp_host" value="smtpdm-ap-southeast-1.aliyuncs.com" autocomplete="off">
+                        </div>
+                        <div class="row">
+                            <div class="col-6">
+                                <label for="bulk_smtp_port" class="form-label">Port</label>
+                                <input type="number" class="form-control" id="bulk_smtp_port" value="465" min="1" max="65535">
+                            </div>
+                            <div class="col-6">
+                                <label for="bulk_smtp_encryption" class="form-label">Şifreleme</label>
+                                <select class="form-select" id="bulk_smtp_encryption">
+                                    <option value="ssl" selected>SSL (465 önerilir)</option>
+                                    <option value="tls">TLS</option>
+                                    <option value="">Yok</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="bulk_smtp_priority" class="form-label">Öncelik (tümü)</label>
+                            <input type="number" class="form-control" id="bulk_smtp_priority" value="5" min="1" max="100">
+                        </div>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="bulk_smtp_active" checked>
+                            <label class="form-check-label" for="bulk_smtp_active">Hesapları aktif oluştur</label>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="bulk_smtp_test_each">
+                            <label class="form-check-label" for="bulk_smtp_test_each">Kayıttan sonra her hesap için bağlantı testi (AUTH)</label>
+                        </div>
+                        <div class="alert alert-warning py-2 small mb-0">
+                            Çok sayıda hesapta “bağlantı testi” uzun sürer ve sunucu zaman aşımına düşebilir. Gerekirse önce test etmeden içe aktarın, listeden tek tek test edin.
+                        </div>
+                    </div>
+                </div>
+                <div id="bulk_import_result" class="mt-3 d-none"></div>
+            </div>
+            <div class="modal-footer bg-light border-top">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkImportPreviewCount()">
+                    Satır sayısını say
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+                <button type="button" class="btn btn-primary" id="bulk_import_submit_btn" onclick="submitBulkImport()">
+                    <i data-feather="upload" class="icon-xs me-1"></i>
+                    İçe aktar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Domain Check Modal -->
+<div class="modal fade" id="domainCheckModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title">
+                    <i data-feather="globe" class="icon-sm me-2 text-secondary"></i>
+                    Domain Sağlık Kontrolü
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="domainCheckResult">
+                    <div class="alert alert-info mb-0">
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                        Domain kayıtları kontrol ediliyor...
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-top">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="icon-xs me-1"></i>
+                    Kapat
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Test Modal -->
+<div class="modal fade" id="testModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title">
+                    <i data-feather="zap" class="icon-sm me-2 text-info"></i>
+                    SMTP Test
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Test Mail Adresi <span class="text-danger">*</span></label>
+                    <input type="email" class="form-control" id="testEmail" placeholder="test@example.com" required>
+                    <small class="text-muted">Bu adrese gerçek test maili gönderilecektir</small>
+                </div>
+                <div id="testResult"></div>
+            </div>
+            <div class="modal-footer bg-light border-top">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="icon-xs me-1"></i>
+                    Kapat
+                </button>
+                <button type="button" class="btn btn-info" onclick="runTest(this)">
+                    <i data-feather="zap" class="icon-xs me-1"></i>
+                    Test Et
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title">
+                    <i data-feather="edit" class="icon-sm me-2 text-warning"></i>
+                    SMTP Düzenle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editSmtpForm" onsubmit="updateSmtp(event)">
+                <div class="modal-body">
+                    <input type="hidden" id="edit_smtp_id">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-3">
+                                <i data-feather="settings" class="icon-xs me-1"></i>
+                                Genel Bilgiler
+                            </h6>
+                            
+                            <div class="mb-3">
+                                <label for="edit_name" class="form-label">SMTP Adı *</label>
+                                <input type="text" class="form-control" id="edit_name" name="name" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="edit_host" class="form-label">SMTP Host *</label>
+                                <input type="text" class="form-control" id="edit_host" name="host" required>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-6">
+                                    <div class="mb-3">
+                                        <label for="edit_port" class="form-label">Port *</label>
+                                        <input type="number" class="form-control" id="edit_port" name="port" required>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="mb-3">
+                                        <label for="edit_encryption" class="form-label">Şifreleme</label>
+                                        <select class="form-select" id="edit_encryption" name="encryption">
+                                            <option value="tls">TLS</option>
+                                            <option value="ssl">SSL</option>
+                                            <option value="">Yok</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="edit_username" class="form-label">Kullanıcı Adı *</label>
+                                <input type="text" class="form-control" id="edit_username" name="username" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="edit_password" class="form-label">Şifre</label>
+                                <input type="password" class="form-control" id="edit_password" name="password" placeholder="Değiştirmek için yeni şifre girin">
+                                <small class="text-muted">Boş bırakırsanız mevcut şifre korunur</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-3">
+                                <i data-feather="send" class="icon-xs me-1"></i>
+                                Gönderen & Ayarlar
+                            </h6>
+                            
+                            <div class="mb-3">
+                                <label for="edit_from_email" class="form-label">Gönderen Email *</label>
+                                <input type="email" class="form-control" id="edit_from_email" name="from_email" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="edit_from_name" class="form-label">Gönderen İsim</label>
+                                <input type="text" class="form-control" id="edit_from_name" name="from_name">
+                            </div>
+
+                            <div class="alert alert-info py-2 mb-3">
+                                <small><i data-feather="info" class="icon-xs me-1"></i> Limit <strong>tüm SMTP'lerin toplamına</strong> uygulanır</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="edit_priority" class="form-label">Öncelik *</label>
+                                <input type="number" class="form-control" id="edit_priority" name="priority" required min="1" max="10">
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="edit_is_active" name="is_active">
+                                    <label class="form-check-label" for="edit_is_active">Aktif</label>
+                                </div>
+                            </div>
+
+                            <!-- İstatistikler -->
+                            <div class="card border mt-3">
+                                <div class="card-header bg-light">
+                                    <h6 class="mb-0">
+                                        <i data-feather="bar-chart-2" class="icon-xs me-1"></i>
+                                        SMTP İstatistikleri
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="p-2">
+                                                <i data-feather="send" class="icon-md text-primary mb-2"></i>
+                                                <h5 id="edit_total_sent" class="mb-1 text-primary">-</h5>
+                                                <small class="text-muted">Toplam</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="p-2">
+                                                <i data-feather="trending-up" class="icon-md text-success mb-2"></i>
+                                                <h5 id="edit_success_rate" class="mb-1 text-success">-</h5>
+                                                <small class="text-muted">Başarı</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="p-2">
+                                                <i data-feather="calendar" class="icon-md text-info mb-2"></i>
+                                                <h5 id="edit_daily_usage" class="mb-1 text-info">-</h5>
+                                                <small class="text-muted">Bugün</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-top">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i data-feather="x" class="icon-xs me-1"></i>
+                        İptal
+                    </button>
+                    <button type="submit" class="btn btn-warning">
+                        <i data-feather="save" class="icon-xs me-1"></i>
+                        Güncelle
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentTestSmtpId = null;
+
+// Sayfa içi uyarı göster (iziToast yerine)
+function showPageAlert(message, type = 'success', title = '') {
+    const container = document.getElementById('pageAlertsContainer');
+    if (!container) return;
+    const typeMap = { success: 'success', error: 'danger', warning: 'warning', info: 'info' };
+    const iconMap = { success: 'check-circle', danger: 'alert-circle', warning: 'alert-triangle', info: 'info' };
+    const alertType = typeMap[type] || 'info';
+    const icon = iconMap[alertType] || 'info';
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const displayMsg = title ? `<strong>${esc(title)}</strong> ${esc(message)}` : esc(message);
+    const alertHtml = `
+        <div class="alert alert-${alertType} alert-dismissible fade show" role="alert">
+            <i data-feather="${icon}" class="align-self-center icon-xs me-2"></i>
+            ${displayMsg}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', alertHtml);
+    feather.replace();
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Detay modal — yalnızca id; veri /edit JSON + satır dataset
+function nxEsmtpProviderLabel(host) {
+    const h = (host || '').toLowerCase();
+    if (h.includes('aliyuncs') || h.includes('alibaba') || h.includes('aliyun')) return 'Alibaba DirectMail';
+    if (h.includes('mailgun')) return 'Mailgun';
+    return 'Özel SMTP';
+}
+function nxEsmtpRowDataset(id) {
+    const el = document.querySelector('.nx-esmtp-type-tr[data-smtp-id="' + id + '"]') || document.querySelector('.nx-esmtp-sync[data-smtp-id="' + id + '"]');
+    return el ? el.dataset : {};
+}
+function nxEsmtpEsc(s) {
+    if (typeof nxEscapeHtml === 'function') return nxEscapeHtml(s);
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function showSmtpDetail(id) {
+    const idNum = parseInt(id, 10);
+    if (!idNum) return;
+    const hid = document.getElementById('detail_current_id');
+    if (hid) hid.value = String(idNum);
+    const ds = nxEsmtpRowDataset(idNum);
+    fetch('/admin/email-smtp/' + idNum + '/edit')
+        .then((response) => response.json())
+        .then((data) => {
+            if (!data || data.success === false || typeof data.id === 'undefined') throw new Error('SMTP hesabı bulunamadı');
+            const host = data.host || '';
+            const port = data.port != null ? String(data.port) : '';
+            const enc = data.encryption === '' || data.encryption == null ? 'Yok' : String(data.encryption);
+            document.getElementById('detail_smtp_name').textContent = data.name || 'SMTP';
+            document.getElementById('detail_id').textContent = '#' + data.id;
+            document.getElementById('detail_provider').innerHTML = '<span class="badge nx-esmtp-badge-soft">' + nxEsmtpEsc(nxEsmtpProviderLabel(host)) + '</span>';
+            document.getElementById('detail_host_block').innerHTML = '<code class="small">' + nxEsmtpEsc(host) + ':' + nxEsmtpEsc(port) + '</code> <span class="text-muted">· ' + nxEsmtpEsc(enc) + '</span>';
+            document.getElementById('detail_username').textContent = data.username || '—';
+            const fn = (data.from_name || '').trim();
+            const fe = data.from_email || '';
+            document.getElementById('detail_from_line').innerHTML = nxEsmtpEsc(fe) + (fn ? ' <span class="text-muted">(' + nxEsmtpEsc(fn) + ')</span>' : '');
+            const pr = data.priority != null ? data.priority : 1;
+            document.getElementById('detail_priority_badge').innerHTML = pr === 1
+                ? '<span class="badge bg-primary">Öncelik ' + pr + '</span>'
+                : '<span class="badge bg-secondary">Öncelik ' + pr + '</span>';
+            const active = !!data.is_active;
+            document.getElementById('detail_status_badge').innerHTML = active
+                ? '<span class="badge bg-primary-subtle text-primary border">Aktif</span>'
+                : '<span class="badge bg-secondary-subtle text-secondary border">Pasif</span>';
+            const hb = [];
+            if (ds.healthy === '1') hb.push('<span class="badge bg-success-subtle text-success border">Sağlıklı</span>');
+            if (ds.risk === '1') hb.push('<span class="badge bg-danger-subtle text-danger border">Riskli başarı</span>');
+            if (ds.warm === '1') hb.push('<span class="badge bg-warning-subtle text-warning border">Warmup</span>');
+            if (ds.throttled === '1') hb.push('<span class="badge bg-warning text-dark border">Limit yakın</span>');
+            if (!hb.length) hb.push('<span class="badge bg-light text-muted border">—</span>');
+            document.getElementById('detail_health_badge').innerHTML = hb.join(' ');
+            document.getElementById('detail_last_used').textContent = ds.lastUsedH || '—';
+            document.getElementById('detail_dates').textContent = (ds.createdH || '—') + ' · ' + (ds.updatedH || '—');
+            document.getElementById('detail_daily_sent').textContent = (data.daily_sent != null ? data.daily_sent : 0).toLocaleString('tr-TR');
+            document.getElementById('detail_daily_limit').textContent = (data.daily_limit != null ? data.daily_limit : 0).toLocaleString('tr-TR');
+            document.getElementById('detail_total_sent').textContent = (data.total_sent != null ? data.total_sent : 0).toLocaleString('tr-TR');
+            document.getElementById('detail_success_rate').textContent = (Number(data.success_rate) || 0).toFixed(1) + '%';
+            document.getElementById('detail_total_failed').textContent = (data.total_failed != null ? data.total_failed : 0).toLocaleString('tr-TR');
+            document.getElementById('detail_hourly_sent').textContent = (data.hourly_sent || 0).toLocaleString('tr-TR');
+            document.getElementById('detail_hourly_limit').textContent = (data.hourly_limit || 0).toLocaleString('tr-TR');
+            document.getElementById('detail_minute_sent').textContent = (data.minute_sent || 0).toLocaleString('tr-TR');
+            document.getElementById('detail_minute_limit').textContent = (data.minute_limit || 0).toLocaleString('tr-TR');
+            const hint = document.getElementById('detail_test_hint');
+            if (hint) hint.classList.remove('d-none');
+            const modalEl = document.getElementById('smtpDetailModal');
+            let m = bootstrap.Modal.getInstance(modalEl);
+            if (!m) m = new bootstrap.Modal(modalEl);
+            m.show();
+            setTimeout(() => feather.replace(), 80);
+        })
+        .catch(() => {
+            showPageAlert('SMTP detayı yüklenemedi.', 'error', 'Hata');
+        });
+}
+function nxEsmtpDetailTest() {
+    const id = parseInt(document.getElementById('detail_current_id').value, 10);
+    if (!id) return;
+    const m = bootstrap.Modal.getInstance(document.getElementById('smtpDetailModal'));
+    if (m) m.hide();
+    testSmtp(id);
+}
+function nxEsmtpDetailEdit() {
+    const id = parseInt(document.getElementById('detail_current_id').value, 10);
+    if (!id) return;
+    const m = bootstrap.Modal.getInstance(document.getElementById('smtpDetailModal'));
+    if (m) m.hide();
+    editSmtp(id);
+}
+
+// Add modal göster
+function showAddModal() {
+    document.getElementById('smtpForm').reset();
+    const modalEl = document.getElementById('addSmtpModal');
+    if (!modalEl) return;
+    let m = bootstrap.Modal.getInstance(modalEl);
+    if (!m) m = new bootstrap.Modal(modalEl);
+    m.show();
+    setTimeout(() => feather.replace(), 100);
+}
+
+function bulkImportPreviewCount() {
+    const raw = document.getElementById('bulk_smtp_lines').value || '';
+    const n = raw.split(/\r\n|\n|\r/).filter((l) => {
+        const t = l.trim();
+        return t.length > 0 && !t.startsWith('#');
+    }).length;
+    showPageAlert(`${n} veri satırı (yorum ve boşlar hariç).`, 'info', 'Önizleme');
+}
+
+function submitBulkImport() {
+    const btn = document.getElementById('bulk_import_submit_btn');
+    const out = document.getElementById('bulk_import_result');
+    const bulkLines = document.getElementById('bulk_smtp_lines').value || '';
+    const payload = {
+        bulk_lines: bulkLines,
+        host: document.getElementById('bulk_smtp_host').value.trim(),
+        port: parseInt(document.getElementById('bulk_smtp_port').value, 10) || 465,
+        encryption: document.getElementById('bulk_smtp_encryption').value,
+        priority: parseInt(document.getElementById('bulk_smtp_priority').value, 10) || 5,
+        is_active: document.getElementById('bulk_smtp_active').checked,
+        test_after_each: document.getElementById('bulk_smtp_test_each').checked,
+    };
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>İşleniyor...';
+
+    fetch('/admin/email-smtp/bulk-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    })
+        .then((res) => res.json().then((data) => ({ ok: res.ok, status: res.status, data })))
+        .then(({ ok, status, data }) => {
+            if (!ok || data.success === false) {
+                const msg = data.message || `HTTP ${status}`;
+                throw new Error(msg);
+            }
+            const esc = (s) =>
+                String(s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            let html = `<div class="alert alert-success"><strong>Tamamlandı.</strong> ${esc(data.message || '')}</div>`;
+            if (Array.isArray(data.failed) && data.failed.length) {
+                html += '<div class="alert alert-danger small mb-2"><strong>Hatalı satırlar</strong><ul class="mb-0">';
+                data.failed.slice(0, 40).forEach((f) => {
+                    html += `<li><code>${esc(f.line || '')}</code> — ${esc(f.error || '')}</li>`;
+                });
+                if (data.failed.length > 40) html += `<li>… ve ${data.failed.length - 40} satır daha</li>`;
+                html += '</ul></div>';
+            }
+            if (Array.isArray(data.skipped) && data.skipped.length) {
+                html += `<div class="alert alert-warning small mb-2">Zaten kayıtlı (atlandı): ${data.skipped.length} adet</div>`;
+            }
+            if (Array.isArray(data.tests) && data.tests.length) {
+                html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-0"><thead><tr><th>Email</th><th>Test</th><th>Mesaj</th></tr></thead><tbody>';
+                data.tests.forEach((t) => {
+                    const okT = t.success === true || t.ok === true;
+                    html += `<tr><td>${esc(t.email || '')}</td><td>${okT ? 'OK' : 'Hata'}</td><td class="small">${esc(t.message || '')}</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+            }
+            out.innerHTML = html;
+            out.classList.remove('d-none');
+            showPageAlert(data.message || 'Toplu içe aktarma bitti', 'success', 'Başarılı');
+            setTimeout(() => window.location.reload(), 2200);
+        })
+        .catch((err) => {
+            showPageAlert(err.message || 'İstek başarısız', 'error', 'Hata');
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-feather="upload" class="icon-xs me-1"></i>İçe aktar';
+            feather.replace();
+        });
+}
+
+// Form submit (AJAX)
+function submitAddForm(event) {
+    event.preventDefault();
+    
+    const form = document.getElementById('smtpForm');
+    const formData = new FormData(form);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    
+    // Button'u disable et
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Ekleniyor...';
+    
+    fetch('/admin/email-smtp', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => {
+        if (!res.ok) {
+            throw new Error('SMTP eklenemedi');
+        }
+        return res.text();
+    })
+    .then(() => {
+        // Modal'ı kapat
+        bootstrap.Modal.getInstance(document.getElementById('addSmtpModal')).hide();
+        
+        // Success göster ve sayfayı yenile
+        showPageAlert('SMTP hesabı başarıyla eklendi', 'success', 'Başarılı');
+        setTimeout(() => window.location.reload(), 1500);
+    })
+    .catch(error => {
+        showPageAlert(error.message, 'error', 'Hata');
+        
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i data-feather="save" class="icon-xs me-1"></i>SMTP Ekle';
+        feather.replace();
+    });
+    
+    return false;
+}
+
+
+// Arama — sunucu (isim, host, kullanıcı)
+function handleServerSearch() {
+    nxEsmtpApplyServerFilters(true);
+}
+
+// SMTP aktif/pasif toggle (tablo + kart switch senkron)
+function toggleSmtp(id, sourceEl) {
+    const t1 = document.getElementById('toggle' + id);
+    const t2 = document.getElementById('toggleCard' + id);
+    const v = sourceEl ? !!sourceEl.checked : (t1 ? t1.checked : !!(t2 && t2.checked));
+    if (t1) t1.checked = v;
+    if (t2) t2.checked = v;
+    fetch(`/admin/email-smtp/${id}/toggle`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ is_active: v })
+    })
+    .then(res => {
+        if (!res.ok) {
+            throw new Error('Sunucu hatası');
+        }
+        return res.json();
+    })
+    .then(data => {
+        if (data.success) {
+            updateSmtpStatusUi(id, !!data.is_active);
+            showPageAlert(data.message, 'success', 'Başarılı');
+        } else {
+            throw new Error(data.message);
+        }
+    })
+    .catch(error => {
+        showPageAlert(error.message, 'error', 'Hata');
+        const vBad = !v;
+        if (t1) t1.checked = vBad;
+        if (t2) t2.checked = vBad;
+    });
+}
+
+function updateSmtpStatusUi(id, isActive) {
+    document.querySelectorAll('.nx-esmtp-sync[data-smtp-id="' + id + '"]').forEach(function (el) {
+        el.setAttribute('data-active', isActive ? '1' : '0');
+        var tbodyRow = el.classList.contains('nx-esmtp-type-tr') ? el : null;
+        if (tbodyRow) {
+            var badges = tbodyRow.querySelector('td:nth-child(4) .d-flex');
+            if (badges) {
+                var activeBadge = badges.querySelector('.nx-state-badge-active');
+                if (activeBadge) {
+                    activeBadge.className = isActive
+                        ? 'badge bg-primary-subtle text-primary border nx-state-badge-active'
+                        : 'badge bg-secondary-subtle text-secondary border nx-state-badge-active';
+                    activeBadge.textContent = isActive ? 'Aktif' : 'Pasif';
+                }
+            }
+        } else {
+            var cardBadges = el.querySelectorAll('.badge');
+            cardBadges.forEach(function (badge) {
+                if (badge.classList.contains('nx-state-badge-active')) {
+                    badge.className = isActive
+                        ? 'badge bg-success-subtle text-success border nx-state-badge-active'
+                        : 'badge bg-secondary-subtle text-secondary border nx-state-badge-active';
+                    badge.textContent = isActive ? 'Aktif' : 'Pasif';
+                }
+            });
+        }
+    });
+}
+
+// SMTP test modal aç
+function testSmtp(id) {
+    currentTestSmtpId = id;
+    const emailInput = document.getElementById('testEmail');
+    const resultDiv = document.getElementById('testResult');
+    const modal = document.getElementById('testModal');
+    
+    if (emailInput) emailInput.value = '';
+    if (resultDiv) resultDiv.innerHTML = '';
+    
+    if (modal) {
+        const modalInstance = new bootstrap.Modal(modal);
+        modalInstance.show();
+        
+        // Modal açıldıktan sonra icons'u yenile
+        modal.addEventListener('shown.bs.modal', function () {
+            feather.replace();
+        }, { once: true });
+    }
+}
+
+// Domain DNS/kimlik kontrolü
+function checkDomain(id) {
+    const modalEl = document.getElementById('domainCheckModal');
+    const resultDiv = document.getElementById('domainCheckResult');
+    const modal = new bootstrap.Modal(modalEl);
+    resultDiv.innerHTML = `
+        <div class="alert alert-info mb-0">
+            <div class="spinner-border spinner-border-sm me-2"></div>
+            Domain kayıtları kontrol ediliyor...
+        </div>
+    `;
+    modal.show();
+    feather.replace();
+
+    fetch(`/admin/email-smtp/${id}/domain-check`)
+        .then(res => {
+            if (!res.ok) {
+                throw new Error('Domain kontrolü alınamadı');
+            }
+            return res.json();
+        })
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || 'Domain kontrolü başarısız');
+            }
+
+            const scoreClass = data.score >= 80 ? 'success' : (data.score >= 50 ? 'warning' : 'danger');
+            const yesNo = (ok) => ok
+                ? '<span class="badge bg-success-subtle text-success">OK</span>'
+                : '<span class="badge bg-danger-subtle text-danger">Eksik</span>';
+            const recommendations = (data.recommendations || []).map(item => `<li>${item}</li>`).join('');
+
+            resultDiv.innerHTML = `
+                <div class="mb-3">
+                    <h6 class="mb-1">${data.smtp_name}</h6>
+                    <small class="text-muted">${data.from_email} · ${data.domain}</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label mb-1">Domain Sağlık Skoru</label>
+                    <div class="progress" style="height: 12px;">
+                        <div class="progress-bar bg-${scoreClass}" style="width: ${Math.min(data.score, 100)}%"></div>
+                    </div>
+                    <small class="text-muted">${data.score}/100</small>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Kontrol</th>
+                                <th>Durum</th>
+                                <th>Detay</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>SPF</td>
+                                <td>${yesNo(data.checks.spf.ok)}</td>
+                                <td><small class="text-muted">${(data.checks.spf.records || []).slice(0, 1).join(' | ') || '-'}</small></td>
+                            </tr>
+                            <tr>
+                                <td>DKIM</td>
+                                <td>${yesNo(data.checks.dkim.ok)}</td>
+                                <td><small class="text-muted">${data.checks.dkim.selector ? 'Selector: ' + data.checks.dkim.selector : '-'}</small></td>
+                            </tr>
+                            <tr>
+                                <td>DMARC</td>
+                                <td>${yesNo(data.checks.dmarc.ok)}</td>
+                                <td><small class="text-muted">${(data.checks.dmarc.records || []).slice(0, 1).join(' | ') || '-'}</small></td>
+                            </tr>
+                            <tr>
+                                <td>MX</td>
+                                <td>${yesNo(data.checks.mx.ok)}</td>
+                                <td><small class="text-muted">${data.checks.mx.count || 0} kayıt</small></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3">
+                    <h6 class="mb-2">Öneriler</h6>
+                    <ul class="mb-0">${recommendations}</ul>
+                </div>
+            `;
+            feather.replace();
+        })
+        .catch(error => {
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i data-feather="alert-triangle" class="me-2"></i>
+                    ${error.message}
+                </div>
+            `;
+            feather.replace();
+        });
+}
+
+// SMTP düzenleme modal aç
+function editSmtp(id) {
+    // SMTP bilgilerini al
+    fetch(`/admin/email-smtp/${id}/edit`, {
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(res => {
+        if (!res.ok) {
+            throw new Error('SMTP bulunamadı');
+        }
+        return res.json();
+    })
+    .then(data => {
+        // Form alanlarını doldur
+        document.getElementById('edit_smtp_id').value = data.id;
+        document.getElementById('edit_name').value = data.name;
+        document.getElementById('edit_host').value = data.host;
+        document.getElementById('edit_port').value = data.port;
+        document.getElementById('edit_encryption').value = data.encryption || '';
+        document.getElementById('edit_username').value = data.username;
+        document.getElementById('edit_password').value = ''; // Şifre boş
+        document.getElementById('edit_from_email').value = data.from_email;
+        document.getElementById('edit_from_name').value = data.from_name || '';
+            // Limit alanları plan'dan - formda yok
+        document.getElementById('edit_priority').value = data.priority;
+        document.getElementById('edit_is_active').checked = data.is_active;
+        
+        // İstatistikleri göster
+        document.getElementById('edit_total_sent').textContent = data.total_sent.toLocaleString('tr-TR');
+        document.getElementById('edit_success_rate').textContent = data.success_rate.toFixed(1) + '%';
+        document.getElementById('edit_daily_usage').textContent = `${data.daily_sent.toLocaleString('tr-TR')} / ${(data.daily_limit || 20000).toLocaleString('tr-TR')}`;
+        
+        // Modal'ı aç
+        const editModal = new bootstrap.Modal(document.getElementById('editModal'));
+        editModal.show();
+        
+        // Modal açıldıktan sonra feather icons yenile
+        document.getElementById('editModal').addEventListener('shown.bs.modal', function () {
+            feather.replace();
+        }, { once: true });
+    })
+    .catch(error => {
+        showPageAlert(error.message, 'error', 'Hata');
+    });
+}
+
+// SMTP güncelle
+function updateSmtp(event) {
+    event.preventDefault();
+    
+    const form = document.getElementById('editSmtpForm');
+    const formData = new FormData(form);
+    const smtpId = document.getElementById('edit_smtp_id').value;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    
+    // Button'u disable et
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Güncelleniyor...';
+    
+    fetch(`/admin/email-smtp/${smtpId}/update`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => {
+        if (!res.ok) {
+            throw new Error('Güncelleme başarısız');
+        }
+        return res.text();
+    })
+    .then(() => {
+        // Modal'ı kapat
+        bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+        
+        // Success göster ve sayfayı yenile
+        showPageAlert('SMTP hesabı başarıyla güncellendi', 'success', 'Başarılı');
+        setTimeout(() => window.location.reload(), 1500);
+    })
+    .catch(error => {
+        showPageAlert(error.message, 'error', 'Hata');
+        
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i data-feather="save" class="icon-xs me-1"></i>Güncelle';
+        feather.replace();
+    });
+}
+
+// Test çalıştır
+function runTest(buttonEl) {
+    const testEmail = document.getElementById('testEmail').value;
+    const resultDiv = document.getElementById('testResult');
+    const testButton = buttonEl;
+    
+    // Email kontrolü
+    if (!testEmail || !testEmail.includes('@')) {
+        resultDiv.innerHTML = '<div class="alert alert-warning mb-0"><i data-feather="alert-triangle" class="me-2"></i>Lütfen geçerli bir email adresi girin</div>';
+        feather.replace();
+        return;
+    }
+    
+    resultDiv.innerHTML = '<div class="alert alert-info"><div class="spinner-border spinner-border-sm me-2"></div>Test maili gönderiliyor...</div>';
+    testButton.disabled = true;
+    testButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Gönderiliyor...';
+    
+    fetch(`/admin/email-smtp/${currentTestSmtpId}/test`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ test_email: testEmail })
+    })
+    .then(res => {
+        if (!res.ok) {
+            throw new Error('Sunucu hatası: ' + res.status);
+        }
+        return res.json();
+    })
+    .then(data => {
+        if (data.success) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success mb-0">
+                    <i data-feather="check-circle" class="me-2"></i>
+                    <strong>Test Başarılı!</strong><br>
+                    ${data.message}
+                </div>`;
+            feather.replace();
+        } else {
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i data-feather="x-circle" class="me-2"></i>
+                    <strong>Test Başarısız!</strong><br>
+                    ${data.message}
+                </div>`;
+            feather.replace();
+        }
+    })
+    .catch(error => {
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <i data-feather="alert-triangle" class="me-2"></i>
+                <strong>Bağlantı Hatası!</strong><br>
+                ${error.message}
+            </div>`;
+        feather.replace();
+    })
+    .finally(() => {
+        testButton.disabled = false;
+        testButton.innerHTML = 'Test Et';
+    });
+}
+
+// SMTP sil
+function deleteSmtp(id) {
+    if (!confirm('Bu SMTP hesabını silmek istediğinize emin misiniz?')) return;
+    
+    fetch(`/admin/email-smtp/${id}/delete`, {
+        method: 'POST'
+    })
+    .then(() => {
+        showPageAlert('SMTP hesabı başarıyla silindi', 'success', 'Başarılı');
+        setTimeout(() => window.location.reload(), 1500);
+    })
+    .catch(error => {
+        showPageAlert('SMTP silinirken hata oluştu: ' + error.message, 'error', 'Hata');
+    });
+}
+
+function nxEsmtpVisibleBulkCbs() {
+    return Array.from(document.querySelectorAll('.smtp-bulk-cb')).filter(function (cb) {
+        const row = cb.closest('.nx-esmtp-sync');
+        return row && !row.classList.contains('nx-esmtp-hide') && row.offsetParent !== null;
+    });
+}
+function getSelectedSmtpIds() {
+    const ids = Array.from(document.querySelectorAll('.smtp-bulk-cb:checked')).map(function (cb) {
+        return parseInt(cb.value, 10);
+    }).filter(function (id) { return id > 0; });
+    return Array.from(new Set(ids));
+}
+
+function updateSmtpBulkDeleteUi() {
+    var ids = getSelectedSmtpIds();
+    var n = ids.length;
+    var btn = document.getElementById('smtpBulkDeleteBtn');
+    var btnActive = document.getElementById('smtpBulkActiveBtn');
+    var btnPassive = document.getElementById('smtpBulkPassiveBtn');
+    if (btnActive) btnActive.disabled = n === 0;
+    if (btnPassive) btnPassive.disabled = n === 0;
+    if (btn) {
+        btn.disabled = n === 0;
+        btn.innerHTML = n > 0
+            ? '<i data-feather="trash-2" class="icon-xs me-1"></i> Seçilenleri sil (' + n + ')'
+            : '<i data-feather="trash-2" class="icon-xs me-1"></i> Seçilenleri sil';
+    }
+    var total = nxEsmtpVisibleBulkCbs().length;
+    var checkedOnPage = nxEsmtpVisibleBulkCbs().filter(function (cb) { return cb.checked; }).length;
+    ['smtpSelectAll', 'smtpSelectAllMobile'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.indeterminate = checkedOnPage > 0 && checkedOnPage < total;
+        el.checked = total > 0 && checkedOnPage === total;
+    });
+    var bar = document.getElementById('nxEsmtpBulkBar');
+    var barText = document.getElementById('nxEsmtpBulkBarText');
+    if (bar && barText) {
+        if (n > 0) {
+            bar.classList.remove('d-none');
+            barText.innerHTML = '<strong>' + n + '</strong> SMTP seçildi';
+        } else {
+            bar.classList.add('d-none');
+        }
+    }
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+function bulkDeleteSmtp() {
+    var ids = getSelectedSmtpIds();
+    if (ids.length === 0) return;
+    if (!confirm(ids.length + ' SMTP hesabını kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.')) return;
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/admin/email-smtp/bulk-delete';
+    ids.forEach(function (id) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'ids[]';
+        inp.value = String(id);
+        form.appendChild(inp);
+    });
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function bulkSetStatus(isActive) {
+    var ids = getSelectedSmtpIds();
+    if (ids.length === 0) {
+        showPageAlert('Önce en az bir SMTP seçin.', 'warning', 'Uyarı');
+        return;
+    }
+    var actionText = isActive ? 'aktif' : 'pasif';
+    if (!confirm(ids.length + ' SMTP hesabını ' + actionText + ' yapmak istiyor musunuz?')) return;
+    fetch('/admin/email-smtp/bulk-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        body: ids.map(function (id) { return 'ids[]=' + encodeURIComponent(String(id)); }).join('&') + '&is_active=' + encodeURIComponent(isActive ? '1' : '0')
+    })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            if (!data.success) throw new Error(data.message || 'Toplu durum güncellenemedi');
+            ids.forEach(function (id) { updateSmtpStatusUi(id, isActive); });
+            document.querySelectorAll('.smtp-bulk-cb:checked').forEach(function (cb) { cb.checked = false; });
+            updateSmtpBulkDeleteUi();
+            showPageAlert(data.message || 'Durum güncellendi', 'success', 'Başarılı');
+        })
+        .catch(function (err) {
+            showPageAlert(err.message || 'Toplu işlem başarısız', 'error', 'Hata');
+        });
+}
+
+function archiveSmtp(id) {
+    if (!confirm('Bu SMTP hesabını arşivleyip pasif yapmak istiyor musunuz?')) return;
+    fetch('/admin/email-smtp/' + id + '/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: false })
+    })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            if (!data.success) throw new Error(data.message || 'Arşivleme başarısız');
+            updateSmtpStatusUi(id, false);
+            showPageAlert('SMTP hesabı arşivlendi (pasif).', 'success', 'Başarılı');
+        })
+        .catch(function (err) {
+            showPageAlert(err.message || 'Arşivleme başarısız', 'error', 'Hata');
+        });
+}
+
+function resetSingleLimit(id) {
+    if (!confirm('Bu SMTP için limit/throttle sayaçlarını sıfırlamak istiyor musunuz?')) return;
+    fetch('/admin/email-smtp/' + id + '/reset-limit', { method: 'POST' })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            if (!data.success) throw new Error(data.message || 'Sıfırlama başarısız');
+            showPageAlert(data.message || 'Sayaçlar sıfırlandı', 'success', 'Başarılı');
+        })
+        .catch(function (err) {
+            showPageAlert(err.message || 'Sıfırlama başarısız', 'error', 'Hata');
+        });
+}
+
+// Tüm limitleri sıfırla
+function resetAllLimits() {
+    if (!confirm('Tüm SMTP günlük limitlerini sıfırlamak istediğinize emin misiniz?')) return;
+    
+    fetch('/admin/email-smtp/reset-limits', {
+        method: 'POST'
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showPageAlert(data.message, 'success', 'Başarılı');
+            setTimeout(() => window.location.reload(), 1500);
+        } else {
+            showPageAlert(data.message, 'error', 'Hata');
+        }
+    })
+    .catch(error => {
+        showPageAlert('Limitler sıfırlanırken hata oluştu: ' + error.message, 'error', 'Hata');
+    });
+}
+
+var nxEsmtpState = { view: 'table' };
+
+function nxEsmtpApplyView() {
+    var tw = document.getElementById('nxEsmtpTableWrap');
+    var cw = document.getElementById('nxEsmtpCardWrap');
+    if (!tw || !cw) return;
+    var mobile = window.matchMedia('(max-width: 991.98px)').matches;
+    if (mobile) {
+        tw.classList.add('d-none');
+        cw.classList.remove('d-none');
+        return;
+    }
+    if (nxEsmtpState.view === 'cards') {
+        tw.classList.add('d-none');
+        cw.classList.remove('d-none');
+    } else {
+        tw.classList.remove('d-none');
+        cw.classList.add('d-none');
+    }
+}
+
+function nxEsmtpCurrentFilters() {
+    return {
+        search: (document.getElementById('smtpSearchClient') && document.getElementById('smtpSearchClient').value || '').trim(),
+        status: (document.getElementById('nxEsmtpStatusFilter') && document.getElementById('nxEsmtpStatusFilter').value) || 'all',
+        provider: (document.getElementById('nxEsmtpProviderFilter') && document.getElementById('nxEsmtpProviderFilter').value) || 'all',
+        sort: (document.getElementById('nxEsmtpSort') && document.getElementById('nxEsmtpSort').value) || 'newest',
+        per_page: (document.getElementById('nxEsmtpPerPage') && document.getElementById('nxEsmtpPerPage').value) || '20'
+    };
+}
+
+function nxEsmtpApplyServerFilters(resetPage) {
+    var f = nxEsmtpCurrentFilters();
+    var params = new URLSearchParams(window.location.search || '');
+    if (f.search) params.set('search', f.search); else params.delete('search');
+    if (f.status && f.status !== 'all') params.set('status', f.status); else params.delete('status');
+    if (f.provider && f.provider !== 'all') params.set('provider', f.provider); else params.delete('provider');
+    if (f.sort && f.sort !== 'newest') params.set('sort', f.sort); else params.delete('sort');
+    if (f.per_page && f.per_page !== '20') params.set('per_page', f.per_page); else params.delete('per_page');
+    if (resetPage) params.delete('page');
+    window.location.href = '/admin/email-smtp' + (params.toString() ? ('?' + params.toString()) : '');
+}
+
+function nxEsmtpInit() {
+    try {
+        var v = localStorage.getItem('nx-esmtp-view');
+        if (v === 'cards' || v === 'table') nxEsmtpState.view = v;
+    } catch (e) {}
+    var btnT = document.getElementById('nxEsmtpViewTable');
+    var btnC = document.getElementById('nxEsmtpViewCards');
+    function setActiveView() {
+        if (btnT && btnC) {
+            btnT.classList.toggle('active', nxEsmtpState.view === 'table');
+            btnC.classList.toggle('active', nxEsmtpState.view === 'cards');
+        }
+        try { localStorage.setItem('nx-esmtp-view', nxEsmtpState.view); } catch (e) {}
+        nxEsmtpApplyView();
+    }
+    if (btnT) btnT.addEventListener('click', function () {
+        nxEsmtpState.view = 'table';
+        setActiveView();
+    });
+    if (btnC) btnC.addEventListener('click', function () {
+        nxEsmtpState.view = 'cards';
+        setActiveView();
+    });
+    setActiveView();
+
+    var sc = document.getElementById('smtpSearchClient');
+    var searchDebounce;
+    if (sc) {
+        sc.addEventListener('input', function () {
+            clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(function () {
+                nxEsmtpApplyServerFilters(true);
+            }, 400);
+        });
+        sc.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                nxEsmtpApplyServerFilters(true);
+            }
+        });
+    }
+    ['nxEsmtpStatusFilter', 'nxEsmtpProviderFilter', 'nxEsmtpSort', 'nxEsmtpPerPage'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('change', function () {
+            nxEsmtpApplyServerFilters(true);
+        });
+    });
+    var clr = document.getElementById('nxEsmtpClearFilters');
+    if (clr) clr.addEventListener('click', function () {
+        if (sc) sc.value = '';
+        var sf = document.getElementById('nxEsmtpStatusFilter');
+        var pf = document.getElementById('nxEsmtpProviderFilter');
+        var so = document.getElementById('nxEsmtpSort');
+        var pp = document.getElementById('nxEsmtpPerPage');
+        if (sf) sf.value = 'all';
+        if (pf) pf.value = 'all';
+        if (so) so.value = 'newest';
+        if (pp) pp.value = '20';
+        window.location.href = '/admin/email-smtp';
+    });
+    var ssb = document.getElementById('smtpServerSearchBtn');
+    if (ssb) ssb.addEventListener('click', function () { nxEsmtpApplyServerFilters(true); });
+    var tr = document.getElementById('nxEsmtpToolbarRefresh');
+    if (tr) tr.addEventListener('click', function () { window.location.reload(); });
+    var hr = document.getElementById('nxEsmtpHeadRefresh');
+    if (hr) hr.addEventListener('click', function () { window.location.reload(); });
+    var resizeT;
+    window.addEventListener('resize', function () {
+        clearTimeout(resizeT);
+        resizeT = setTimeout(function () { nxEsmtpApplyView(); }, 150);
+    });
+
+    nxEsmtpApplyView();
+    updateSmtpBulkDeleteUi();
+}
+
+// Feather icons
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    nxEsmtpInit();
+
+    var bulkModalEl = document.getElementById('bulkImportSmtpModal');
+    if (bulkModalEl) {
+        bulkModalEl.addEventListener('show.bs.modal', function () {
+            var r = document.getElementById('bulk_import_result');
+            if (r) {
+                r.classList.add('d-none');
+                r.innerHTML = '';
+            }
+            setTimeout(function () { feather.replace(); }, 50);
+        });
+    }
+
+    function bindSelectAll(el) {
+        if (!el) return;
+        el.addEventListener('change', function () {
+            var on = this.checked;
+            nxEsmtpVisibleBulkCbs().forEach(function (cb) { cb.checked = on; });
+            updateSmtpBulkDeleteUi();
+        });
+    }
+    bindSelectAll(document.getElementById('smtpSelectAll'));
+    bindSelectAll(document.getElementById('smtpSelectAllMobile'));
+
+    document.querySelectorAll('.smtp-bulk-cb').forEach(function (cb) {
+        cb.addEventListener('change', updateSmtpBulkDeleteUi);
+    });
+    updateSmtpBulkDeleteUi();
+});
+</script>
+{% endblock %}
+

@@ -1,0 +1,135 @@
+{# Admin Ticket Detay Modal İçeriği #}
+<div class="ticket-detail">
+    <!-- Ticket Başlık ve Bilgi -->
+    <div class="bg-light p-4 border-bottom">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="mb-3">
+                    <strong class="text-primary">#{{ ticket.id }}</strong>
+                    <h4 class="mb-0 mt-2">{{ ticket.subject }}</h4>
+                </div>
+                
+                <!-- Müşteri Bilgisi -->
+                {% if ticket.user %}
+                <div>
+                    <h6 class="text-muted mb-2">Müşteri Bilgileri</h6>
+                    <div class="mb-1"><strong>İsim:</strong> {{ ticket.user.name }}</div>
+                    <div class="mb-1"><strong>Email:</strong> {{ ticket.user.email }}</div>
+                    {% if ticket.user.phone %}
+                    <div><strong>Telefon:</strong> {{ ticket.user.phone }}</div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="alert alert-warning mb-0">
+                    <i data-feather="alert-triangle" class="icon-xs me-2"></i>
+                    Kullanıcı bilgisi bulunamadı
+                </div>
+                {% endif %}
+            </div>
+            
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <strong class="d-block mb-2">Durum:</strong>
+                    <span class="badge {{ ticket.status.getBadgeClass() }}">
+                        {{ ticket.status.getLabel() }}
+                    </span>
+                </div>
+                <div class="small text-muted">
+                    <div class="mb-1">
+                        <i data-feather="calendar" class="icon-xs"></i>
+                        Oluşturulma: {{ ticket.createdAt|date('d.m.Y H:i') }}
+                    </div>
+                    <div>
+                        <i data-feather="activity" class="icon-xs"></i>
+                        Son Aktivite: {{ ticket.lastActivityAt|date('d.m.Y H:i') }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mesajlar -->
+    <div class="p-4" style="max-height: 500px; overflow-y: auto;">
+        <h5 class="mb-3">
+            <i data-feather="message-circle" class="icon-xs me-2"></i>
+            Mesaj Geçmişi ({{ ticket.messages|length }})
+        </h5>
+        
+        {% for message in ticket.messages %}
+        <div class="card mb-3 {% if message.userId != ticket.userId %}border-primary{% endif %}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <strong>
+                            {% if message.userId == ticket.userId %}
+                                <i data-feather="user" class="icon-xs"></i>
+                                {% if message.user %}{{ message.user.name }}{% else %}Müşteri{% endif %}
+                            {% else %}
+                                <i data-feather="shield" class="icon-xs text-primary"></i>
+                                {% if message.user %}{{ message.user.name }}{% else %}Destek Ekibi{% endif %}
+                                <span class="badge bg-primary ms-2">Admin</span>
+                            {% endif %}
+                        </strong>
+                    </div>
+                    <small class="text-muted">
+                        {{ message.createdAt|date('d.m.Y H:i') }}
+                    </small>
+                </div>
+                <div class="message-body" style="white-space: pre-wrap;">
+                    {{ message.body }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Cevap Formu -->
+    <div class="border-top p-4">
+        {% if ticket.status != constant('App\\Domain\\Enum\\TicketStatus::CLOSED') %}
+        <h5 class="mb-3">
+            <i data-feather="send" class="icon-xs me-2"></i>
+            Cevap Gönder
+        </h5>
+        <form id="replyForm" onsubmit="submitReply({{ ticket.id }}); return false;">
+            <div class="mb-3">
+                <label for="reply_message" class="form-label">Mesajınız <span class="text-danger">*</span></label>
+                <textarea class="form-control" 
+                          id="reply_message" 
+                          name="message" 
+                          rows="5" 
+                          required 
+                          placeholder="Müşteriye cevabınızı yazın..."></textarea>
+                <small class="text-muted">
+                    <i data-feather="info" class="icon-xs"></i>
+                    Cevap gönderdiğinizde talep durumu "Bekleyen" olarak güncellenecektir.
+                </small>
+            </div>
+            <div class="d-flex justify-content-between">
+                <button type="button" 
+                        class="btn btn-outline-danger" 
+                        onclick="closeTicket({{ ticket.id }})">
+                    <i data-feather="x-circle" class="icon-xs me-1"></i>
+                    Talebi Kapat
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i data-feather="send" class="icon-xs me-1"></i>
+                    Cevap Gönder
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <div class="alert alert-secondary text-center mb-0">
+            <i data-feather="check-circle" class="icon-xs me-2"></i>
+            Bu talep kapatılmıştır.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Modal açıldığında feather iconları yenile
+setTimeout(() => {
+    feather.replace();
+}, 100);
+</script>
+

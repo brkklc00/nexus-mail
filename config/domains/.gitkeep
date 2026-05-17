@@ -1,0 +1,4 @@
+# Bu klasör domain bazlı config dosyalarını içerir
+# Her domain için bir PHP dosyası oluşturun: {domain}.php
+# Örnek: example.com.php, mydomain.com.php
+

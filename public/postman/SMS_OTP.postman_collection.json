@@ -1,0 +1,119 @@
+{
+    "info": {
+        "name": "Nexusaaa Panel - SMS OTP API",
+        "description": "SMS OTP gönderme ve doğrulama API koleksiyonu",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "OTP Gönder",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "X-API-Key",
+                        "value": "{{api_key}}",
+                        "type": "text"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"phone\": \"+905551234567\",\n    \"message\": \"Do\\u011frulama kodunuz: {code}\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost/api/otp/send",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "path": [
+                        "api",
+                        "otp",
+                        "send"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "OTP Doğrula",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "X-API-Key",
+                        "value": "{{api_key}}",
+                        "type": "text"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json",
+                        "type": "text"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"phone\": \"+905551234567\",\n    \"code\": \"123456\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost/api/otp/verify",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "path": [
+                        "api",
+                        "otp",
+                        "verify"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "OTP Geçmişi",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "X-API-Key",
+                        "value": "{{api_key}}",
+                        "type": "text"
+                    }
+                ],
+                "url": {
+                    "raw": "http://localhost/api/otp/history?page=1&limit=20",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "path": [
+                        "api",
+                        "otp",
+                        "history"
+                    ],
+                    "query": [
+                        {
+                            "key": "page",
+                            "value": "1"
+                        },
+                        {
+                            "key": "limit",
+                            "value": "20"
+                        }
+                    ]
+                }
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "api_key",
+            "value": "66982e9f6c55495514916826516b277fc8244cb4ae9432a445cbbefa8b5d1c57",
+            "type": "string"
+        }
+    ]
+}

@@ -1,0 +1,130 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require __DIR__ . '/../vendor/autoload.php';
+
+// Load environment
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+$dotenv->load();
+
+// Build DI container
+$containerBuilder = new DI\ContainerBuilder();
+$containerBuilder->addDefinitions(__DIR__ . '/../config/container.php');
+$container = $containerBuilder->build();
+
+// Get EntityManager
+$em = $container->get('Doctrine\ORM\EntityManager');
+
+echo "🔄 Synchronizing permissions from InstallCommand...\n\n";
+
+// InstallCommand'daki permission listesini al
+$permissionData = [
+    // Email Sistemi
+    'email_phonebook' => 'Email Rehber Yönetimi (Email rehberi ekle/düzenle/sil)',
+    'email_order' => 'Email Sipariş Yönetimi (Email gönderebilme)',
+    'email_blacklist' => 'Email Kara Liste Yönetimi',
+    'email_transactions' => 'Email İşlem Geçmişi (Kendi işlemlerini görebilme)',
+    'email_smtp' => 'Email SMTP Hesap Yönetimi (SMTP hesap ekle/düzenle/sil)',
+    'email_template' => 'Email Şablon Yönetimi (Email şablonları yönetme)',
+    'email_dashboard' => 'Email Dashboard (Email istatistikleri görüntüleme)',
+    'email_data_pool' => 'Email Veri Havuzu Yönetimi (Email veri havuzunu görüntüleme ve yönetme)',
+    'transactional_email' => 'İşlemsel Email (API ve Panel ile email gönderme)',
+    
+    // Genel
+    'support_ticket' => 'Destek Talepleri (Talep oluşturma ve görüntüleme)',
+    'notification' => 'Bildirim Yönetimi (Kullanıcılara bildirim gönderme)',
+    'settings' => 'Sistem Ayarları (Genel ayarları düzenleme)',
+    'system_monitor' => 'Sistem İzleme (Sunucu, PM2, CPU, RAM, Disk istatistikleri)',
+    'url_shortener' => 'URL Kısaltma (Link kısaltma ve yönetme)',
+    
+    // Admin Yetkileri
+    'user' => 'Kullanıcı Yönetimi (Kullanıcı ekle/düzenle/sil)',
+    'role' => 'Rol Yönetimi (Rol ve yetki yönetimi)',
+    'admin_email_orders' => 'Admin: Tüm Email Siparişlerini Görüntüleme',
+    'admin_email_phonebooks' => 'Admin: Tüm Email Rehberlerini Görüntüleme',
+    'admin_email_blacklists' => 'Admin: Tüm Email Kara Listelerini Görüntüleme',
+    'admin_email_transactions' => 'Admin: Tüm Email İşlem Geçmişlerini Görüntüleme',
+    'admin_email_templates' => 'Admin: Email Şablonlarını Görüntüleme ve Onaylama',
+    'admin_email_data_pool' => 'Admin: Email Veri Havuzunu Görüntüleme ve Yönetme',
+];
+
+$added = 0;
+$updated = 0;
+$skipped = 0;
+
+foreach ($permissionData as $key => $name) {
+    $permission = $em->getRepository(App\Domain\Entities\Permission::class)->findOneBy(['key' => $key]);
+    
+    if (!$permission) {
+        // Yeni permission oluştur
+        $permission = new App\Domain\Entities\Permission();
+        $permission->setKey($key);
+        $permission->setName($name);
+        $em->persist($permission);
+        $added++;
+        echo "  + Added: $key\n";
+    } elseif ($permission->getName() !== $name) {
+        // İsim güncelle
+        $permission->setName($name);
+        $em->persist($permission);
+        $updated++;
+        echo "  ✏️ Updated: $key\n";
+    } else {
+        $skipped++;
+    }
+}
+
+$em->flush();
+
+echo "\n";
+echo "✅ Permission synchronization completed!\n";
+echo "  - Added: $added\n";
+echo "  - Updated: $updated\n";
+echo "  - Skipped: $skipped\n";
+echo "  - Total: " . count($permissionData) . "\n";
+
+// Admin role'e tüm yeni permission'ları ekle
+echo "\n🔐 Adding new permissions to admin role...\n";
+
+$adminRole = $em->getRepository(App\Domain\Entities\Role::class)->findOneBy(['name' => 'admin']);
+
+if ($adminRole) {
+    $existingKeys = [];
+    foreach ($adminRole->getPermissions() as $rp) {
+        $existingKeys[] = $rp->getPermission()->getKey();
+    }
+    
+    $addedToRole = 0;
+    foreach ($permissionData as $key => $name) {
+        if (!in_array($key, $existingKeys)) {
+            $permission = $em->getRepository(App\Domain\Entities\Permission::class)->findOneBy(['key' => $key]);
+            if ($permission) {
+                $rp = new App\Domain\Entities\RolePermission();
+                $rp->setRole($adminRole);
+                $rp->setPermission($permission);
+                $rp->setCanRead(true);
+                $rp->setCanCreate(true);
+                $rp->setCanUpdate(true);
+                $rp->setCanDelete(true);
+                $adminRole->addPermission($rp);
+                $em->persist($adminRole);
+                $addedToRole++;
+                echo "  + Added to admin: $key\n";
+            }
+        }
+    }
+    
+    if ($addedToRole > 0) {
+        $em->flush();
+        echo "\n✅ $addedToRole permissions added to admin role!\n";
+    } else {
+        echo "\n✅ Admin role already has all permissions!\n";
+    }
+} else {
+    echo "❌ Admin role not found!\n";
+}
+
+exit(0);
+

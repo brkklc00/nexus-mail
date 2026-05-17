@@ -1,0 +1,867 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Email havuzu - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
+<li class="breadcrumb-item">Email</li>
+<li class="breadcrumb-item active">Email havuzu</li>
+{% endblock %}
+
+{% block page_icon %}<i data-feather="database" class="icon-dual icon-sm me-2"></i>{% endblock %}
+
+{% block title_text %}Email havuzu{% endblock %}
+
+{% block styles %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+    #loadingOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+        background: rgba(26, 32, 44, 0.75);
+        backdrop-filter: blur(6px);
+    }
+    #loadingOverlay.is-visible {
+        display: flex !important;
+    }
+    .pool-list-group .list-group-item.active {
+        background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+        border-color: transparent;
+        color: #fff;
+    }
+    .pool-list-group .list-group-item.active .badge {
+        background: rgba(255, 255, 255, 0.2) !important;
+        color: #fff !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if current_list_id is null %}
+    <div class="alert alert-warning">Havuz listesi bulunamadı. Veritabanı migration’ını çalıştırın (<code>email_data_pool_lists</code>).</div>
+    {% else %}
+    {% set inactive_count = total - active_count %}
+    <div class="row g-3">
+        <div class="col-lg-3">
+            <div class="card h-100">
+                <div class="card-header border-bottom py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="card-title mb-0">Havuz listeleri</h5>
+                            <small class="text-muted">{{ pool_lists|length }} liste · Tümü <strong>{{ total_all_pools_entries|default(0)|number_format }}</strong> kayıt</small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newListModal" title="Yeni liste">
+                            <i data-feather="plus" class="icon-xs"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="list-group list-group-flush pool-list-group">
+                    {% for pl in pool_lists %}
+                    <a href="/admin/email-data-pool?list_id={{ pl.id }}"
+                       class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3 {% if pl.id == current_list_id %}active{% endif %}">
+                        <span class="text-truncate me-2" title="{{ pl.name }}">{{ pl.name }}</span>
+                        <span class="badge {% if pl.id == current_list_id %}bg-white text-primary{% else %}bg-soft-secondary text-secondary{% endif %} rounded-pill">{{ pl.entry_count|number_format }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+                <div class="card-body border-top pt-3">
+                    <button type="button" class="btn btn-sm btn-soft-primary w-100 mb-2" data-bs-toggle="modal" data-bs-target="#editListModal">
+                        <i data-feather="edit-2" class="icon-xs me-1"></i> Listeyi düzenle
+                    </button>
+                    <form method="post" action="/admin/email-data-pool/lists/{{ current_list_id }}/delete" class="mb-0" onsubmit="return confirm('Bu listeyi silmek istediğinize emin misiniz? (Liste boş olmalıdır.)');">
+                        <button type="submit" class="btn btn-sm btn-soft-danger w-100">
+                            <i data-feather="trash-2" class="icon-xs me-1"></i> Listeyi sil
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-9">
+            <div class="card">
+                <div class="card-header border-bottom py-3">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                        <div class="flex-grow-1 min-w-0">
+                            <h5 class="card-title mb-1 text-truncate" title="{{ current_list_name|default('') }}">{{ current_list_name|default('Liste') }}</h5>
+                            <p class="text-muted mb-0 small">Bu listedeki adresler tabloda önizlenmez; dışa aktarma ile tam listeyi alın. <strong>Mail çıkar</strong> ile yalnızca bu listeyi veya <em>tüm listeleri</em> hedefleyebilirsiniz.</p>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 flex-shrink-0">
+                            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+                                <i data-feather="plus" class="icon-xs me-1"></i> Mail ekle
+                            </button>
+                            <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#removeModal">
+                                <i data-feather="minus" class="icon-xs me-1"></i> Mail çıkar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body pt-4">
+                    {% if total < 1 %}
+                    <div class="text-center py-5 px-2">
+                        <div class="avatar-lg mx-auto mb-3">
+                            <span class="avatar-title rounded-circle bg-soft-primary text-primary" style="width: 80px; height: 80px;">
+                                <i data-feather="inbox" style="width: 36px; height: 36px;"></i>
+                            </span>
+                        </div>
+                        <h5 class="text-muted mb-2">Bu listede henüz kayıt yok</h5>
+                        <p class="text-muted small mb-4">Manuel veya dosyadan toplu ekleme yapabilirsiniz.</p>
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+                            <i data-feather="plus" class="icon-xs me-1"></i> Mail ekle
+                        </button>
+                    </div>
+                    {% else %}
+                    <div class="row g-3 mb-4">
+                        <div class="col-sm-4">
+                            <div class="card mb-0 h-100">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="flex-shrink-0 me-3">
+                                            <div class="avatar-sm rounded-circle bg-soft-primary">
+                                                <span class="avatar-title"><i data-feather="database" class="icon-dual-primary icon-xs"></i></span>
+                                            </div>
+                                        </div>
+                                        <div class="flex-grow-1 overflow-hidden">
+                                            <p class="text-muted mb-1 small">Toplam kayıt</p>
+                                            <h4 class="mb-0 text-truncate">{{ total|number_format }}</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="card mb-0 h-100">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="flex-shrink-0 me-3">
+                                            <div class="avatar-sm rounded-circle bg-soft-success">
+                                                <span class="avatar-title"><i data-feather="check-circle" class="icon-dual-success icon-xs"></i></span>
+                                            </div>
+                                        </div>
+                                        <div class="flex-grow-1 overflow-hidden">
+                                            <p class="text-muted mb-1 small">Aktif</p>
+                                            <h4 class="mb-0 text-truncate">{{ active_count|number_format }}</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="card mb-0 h-100">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center">
+                                        <div class="flex-shrink-0 me-3">
+                                            <div class="avatar-sm rounded-circle bg-soft-secondary">
+                                                <span class="avatar-title"><i data-feather="pause-circle" class="icon-dual-secondary icon-xs"></i></span>
+                                            </div>
+                                        </div>
+                                        <div class="flex-grow-1 overflow-hidden">
+                                            <p class="text-muted mb-1 small">Pasif</p>
+                                            <h4 class="mb-0 text-truncate">{{ inactive_count|number_format }}</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top">
+                        <p class="small text-muted mb-0">
+                            Bu listeden çıkarma veya <strong>tüm havuz listelerinden</strong> silme için <strong>Mail çıkar</strong> içinde kapsam seçin. Listenin tamamı için <strong>Tümünü sil</strong>.
+                        </p>
+                        <div class="d-flex flex-wrap gap-2">
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i data-feather="download" class="icon-xs me-1"></i> Dışa aktar
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="/admin/email-data-pool/export-excel?list_id={{ current_list_id }}">
+                                        <i data-feather="file" class="icon-xs me-2"></i> Excel
+                                    </a></li>
+                                    <li><a class="dropdown-item" href="/admin/email-data-pool/export-csv?list_id={{ current_list_id }}">
+                                        <i data-feather="file-text" class="icon-xs me-2"></i> CSV
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><span class="dropdown-item-text small text-muted">Büyük listeler için CSV önerilir.</span></li>
+                                </ul>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-soft-danger" onclick="deleteAll()">
+                                <i data-feather="trash-2" class="icon-xs me-1"></i> Tümünü sil
+                            </button>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Yeni liste -->
+<div class="modal fade" id="newListModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/admin/email-data-pool/lists">
+                <div class="modal-header">
+                    <h5 class="modal-title">Yeni veri listesi</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Liste adı</label>
+                        <input type="text" name="name" class="form-control" required maxlength="255" placeholder="örn. Kampanya A">
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Sıra</label>
+                        <input type="number" name="sort_order" class="form-control" value="0">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Oluştur</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Liste düzenle -->
+{% if current_list_id %}
+<div class="modal fade" id="editListModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/admin/email-data-pool/lists/{{ current_list_id }}/update">
+                <div class="modal-header">
+                    <h5 class="modal-title">Liste düzenle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {% for pl in pool_lists %}
+                    {% if pl.id == current_list_id %}
+                    <div class="mb-3">
+                        <label class="form-label">Liste adı</label>
+                        <input type="text" name="name" class="form-control" required maxlength="255" value="{{ pl.name }}">
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Sıra</label>
+                        <input type="number" name="sort_order" class="form-control" value="{{ pl.sort_order }}">
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="flex-column" aria-hidden="true">
+    <div class="text-center px-3" style="max-width: 420px;">
+        <div class="spinner-border text-white mb-3" role="status" style="width: 3.5rem; height: 3.5rem; border-width: 0.3rem;">
+            <span class="visually-hidden">Yükleniyor...</span>
+        </div>
+        <h5 class="text-white mb-2" id="loadingText">İşlem yapılıyor…</h5>
+        <p class="text-white-50 small mb-3" id="loadingSubtext">Lütfen bekleyin</p>
+        <div class="progress mx-auto rounded-pill" style="width: 100%; max-width: 300px; height: 8px; background: rgba(255,255,255,0.15);">
+            <div class="progress-bar progress-bar-striped progress-bar-animated bg-success rounded-pill" id="loadingProgress" role="progressbar" style="width: 0%"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="plus-circle" class="icon-xs icon-dual-primary"></i> Mail havuzuna ekle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/admin/email-data-pool" method="POST" id="addForm" onsubmit="return showAddLoading()">
+                <input type="hidden" name="pool_list_id" value="{{ current_list_id|default(0) }}">
+                <div class="modal-body">
+                    <ul class="nav nav-tabs nav-tabs-custom mb-3" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active" data-bs-toggle="tab" href="#manualTab" role="tab">
+                                <i data-feather="edit-3" class="icon-xs me-1"></i> Manuel
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-bs-toggle="tab" href="#fileTab" role="tab">
+                                <i data-feather="upload-cloud" class="icon-xs me-1"></i> Dosya
+                            </a>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content">
+                        <!-- Manuel Tab -->
+                        <div class="tab-pane fade show active" id="manualTab">
+                            <div class="mb-3">
+                                <label for="emails" class="form-label d-flex justify-content-between align-items-center">
+                                    <span><strong>Mail Adresleri</strong> <span class="text-danger">*</span></span>
+                                    <span class="badge bg-primary" id="emailCount">0 mail</span>
+                                </label>
+                                <textarea class="form-control font-monospace" id="emails" name="emails" rows="12" required placeholder="Her satıra bir mail adresi yazın:
+
+user@example.com
+info@company.com
+admin@example.com,Ahmet Yılmaz
+
+Format: email@domain.com veya email@domain.com,İsim" oninput="updateEmailCount()" style="font-size: 13px;"></textarea>
+                                <div class="form-text">
+                                    <i data-feather="info" class="icon-xs"></i>
+                                    Duplicate ve geçersiz mailler otomatik atlanır
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dosya Tab -->
+                        <div class="tab-pane fade" id="fileTab">
+            <div class="mb-3">
+                <label for="fileInput" class="form-label"><strong>Dosya Seç</strong></label>
+                <input type="file" class="form-control" id="fileInput" accept=".txt,.csv,.xlsx,.xls" onchange="handleFileSelect(event)">
+                <div class="form-text">
+                    <strong>Desteklenen formatlar:</strong> TXT, CSV, Excel (.xlsx, .xls)
+                </div>
+            </div>
+
+                            <div class="alert alert-light border">
+                                <h6 class="mb-2">Format Örnekleri:</h6>
+                                <ul class="mb-0 small">
+                                    <li><strong>TXT/CSV:</strong> Her satırda bir mail → <code>email@example.com</code> veya <code>email@example.com,İsim</code></li>
+                                    <li><strong>Excel:</strong> İlk sütun email, ikinci sütun isim (opsiyonel)</li>
+                                </ul>
+                            </div>
+
+                            <div id="fileStatus" class="mt-3"></div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer border-top bg-light bg-opacity-50">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+                        <i data-feather="x" class="icon-xs"></i> İptal
+                    </button>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i data-feather="check" class="icon-xs"></i> Havuza ekle
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Remove Modal -->
+<div class="modal fade" id="removeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header border-bottom bg-danger text-white">
+                <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="minus-circle" class="icon-xs"></i> Mail çıkar
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/admin/email-data-pool/remove" method="POST" id="removeForm" onsubmit="return showRemoveLoading()">
+                <input type="hidden" name="pool_list_id" value="{{ current_list_id|default(0) }}">
+                <div class="modal-body">
+                    <div class="card border mb-4">
+                        <div class="card-body py-3">
+                            <p class="small text-muted mb-2 fw-semibold text-uppercase">Kapsam</p>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="remove_scope" id="removeScopeCurrent" value="current_list" checked>
+                                <label class="form-check-label" for="removeScopeCurrent">
+                                    Yalnızca <strong>{{ current_list_name|default('bu liste') }}</strong> — adresler sadece bu listeden silinir.
+                                </label>
+                            </div>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="radio" name="remove_scope" id="removeScopeAll" value="all_lists">
+                                <label class="form-check-label" for="removeScopeAll">
+                                    <strong>Tüm havuz listeleri</strong> — girilen her adres <em>hangi listede olursa olsun</em> veritabanından kaldırılır (aynı mail birden fazla listede ise tüm kopyalar silinir).
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <ul class="nav nav-tabs nav-tabs-custom mb-3" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active" data-bs-toggle="tab" href="#removeManualTab" role="tab">
+                                <i data-feather="edit-3" class="icon-xs me-1"></i> Manuel
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-bs-toggle="tab" href="#removeFileTab" role="tab">
+                                <i data-feather="upload-cloud" class="icon-xs me-1"></i> Dosya
+                            </a>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content">
+                        <!-- Manuel Tab -->
+                        <div class="tab-pane fade show active" id="removeManualTab">
+                            <div class="alert alert-warning">
+                                <i data-feather="alert-triangle" class="icon-xs me-2"></i>
+                                <strong>Uyarı:</strong> Girdiğiniz mail adresleri havuzdan <strong>kalıcı olarak silinecektir</strong>!
+                            </div>
+                            <div class="mb-3">
+                                <label for="removeEmails" class="form-label d-flex justify-content-between align-items-center">
+                                    <span><strong>Çıkarılacak Mail Adresleri</strong> <span class="text-danger">*</span></span>
+                                    <span class="badge bg-danger" id="removeEmailCount">0 mail</span>
+                                </label>
+                                <textarea class="form-control font-monospace" id="removeEmails" name="emails" rows="12" required placeholder="Her satıra bir mail adresi yazın:
+
+user@example.com
+info@company.com
+admin@example.com
+
+Format: email@domain.com" oninput="updateRemoveEmailCount()" style="font-size: 13px;"></textarea>
+                                <div class="form-text text-danger">
+                                    <i data-feather="alert-circle" class="icon-xs"></i>
+                                    Bu mail adresleri havuzdan tamamen silinecek
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dosya Tab -->
+                        <div class="tab-pane fade" id="removeFileTab">
+                            <div class="alert alert-warning">
+                                <i data-feather="alert-triangle" class="icon-xs me-2"></i>
+                                <strong>Uyarı:</strong> Dosyadaki mail adresleri havuzdan <strong>kalıcı olarak silinecektir</strong>!
+                            </div>
+                            <div class="mb-3">
+                                <label for="removeFileInput" class="form-label"><strong>Dosya Seç</strong></label>
+                                <input type="file" class="form-control" id="removeFileInput" accept=".txt,.csv,.xlsx,.xls" onchange="handleRemoveFileSelect(event)">
+                                <div class="form-text">
+                                    <strong>Desteklenen formatlar:</strong> TXT, CSV, Excel (.xlsx, .xls)
+                                </div>
+                            </div>
+
+                            <div class="alert alert-light border">
+                                <h6 class="mb-2">Format Örnekleri:</h6>
+                                <ul class="mb-0 small">
+                                    <li><strong>TXT:</strong> Her satırda bir mail → <code>email@example.com</code></li>
+                                    <li><strong>CSV:</strong> Email kolonlu CSV dosyası (RecipientAddress, email, vb.)</li>
+                                    <li><strong>Excel:</strong> İlk sütun veya "RecipientAddress" / "email" kolonunda mail adresleri</li>
+                                </ul>
+                            </div>
+
+                            <div id="removeFileStatus" class="mt-3"></div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer border-top bg-light bg-opacity-50">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+                        <i data-feather="x" class="icon-xs"></i> İptal
+                    </button>
+                    <button type="submit" class="btn btn-danger btn-sm">
+                        <i data-feather="trash-2" class="icon-xs"></i> Çıkar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+const CURRENT_POOL_LIST_ID = {{ current_list_id|default(0) }};
+function appendPoolListToForm(form) {
+    if (!CURRENT_POOL_LIST_ID) return;
+    const h = document.createElement('input');
+    h.type = 'hidden';
+    h.name = 'pool_list_id';
+    h.value = String(CURRENT_POOL_LIST_ID);
+    form.appendChild(h);
+}
+
+let emailsTextarea = null;
+
+function updateEmailCount() {
+    const textarea = document.getElementById('emails');
+    const lines = textarea.value.split('\n').filter(line => line.trim() !== '');
+    document.getElementById('emailCount').textContent = `${lines.length} mail`;
+}
+
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const statusDiv = document.getElementById('fileStatus');
+    statusDiv.innerHTML = '<div class="alert alert-info">Dosya okunuyor...</div>';
+
+    const fileExt = file.name.split('.').pop().toLowerCase();
+
+    if (fileExt === 'txt' || fileExt === 'csv') {
+        readTextFile(file, fileExt);
+    } else if (fileExt === 'xlsx' || fileExt === 'xls') {
+        readExcelFile(file);
+    } else {
+        statusDiv.innerHTML = '<div class="alert alert-danger">Desteklenmeyen dosya formatı</div>';
+    }
+}
+
+function readTextFile(file, type) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        const lines = text.split('\n');
+        
+        let emails = [];
+        lines.forEach(line => {
+            line = line.trim();
+            if (line && line.includes('@')) {
+                emails.push(line);
+            }
+        });
+
+        document.getElementById('emails').value = emails.join('\n');
+        updateEmailCount();
+        
+        document.getElementById('fileStatus').innerHTML = `
+            <div class="alert alert-success alert-dismissible fade show">
+                <i data-feather="check-circle"></i> 
+                <strong>Başarılı!</strong> ${emails.length.toLocaleString()} mail adresi yüklendi
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`;
+        feather.replace();
+        
+        // Manuel tab'a geç
+        document.querySelector('[href="#manualTab"]').click();
+    };
+    reader.readAsText(file);
+}
+
+function readExcelFile(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+
+            let emails = [];
+            rows.forEach((row, index) => {
+                if (index === 0 && (row[0]?.toLowerCase() === 'email' || row[0]?.toLowerCase() === 'e-mail')) {
+                    return; // Skip header
+                }
+                
+                const email = row[0];
+                const name = row[1] || '';
+                
+                if (email && email.toString().includes('@')) {
+                    if (name) {
+                        emails.push(`${email},${name}`);
+                    } else {
+                        emails.push(email);
+                    }
+                }
+            });
+
+            document.getElementById('emails').value = emails.join('\n');
+            updateEmailCount();
+            
+            document.getElementById('fileStatus').innerHTML = `
+                <div class="alert alert-success alert-dismissible fade show">
+                    <i data-feather="check-circle"></i> 
+                    <strong>Başarılı!</strong> ${emails.length.toLocaleString()} mail adresi Excel'den yüklendi
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`;
+            feather.replace();
+            
+            // Manuel tab'a geç
+            document.querySelector('[href="#manualTab"]').click();
+        } catch (error) {
+            document.getElementById('fileStatus').innerHTML = `
+                <div class="alert alert-danger alert-dismissible fade show">
+                    <i data-feather="x-circle"></i> 
+                    <strong>Hata!</strong> Excel dosyası okunamadı: ${error.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`;
+            feather.replace();
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function showAddLoading() {
+    const emails = document.getElementById('emails').value.trim();
+    if (!emails) {
+        alert('Lütfen en az bir mail adresi girin');
+        return false;
+    }
+
+    const count = emails.split('\n').filter(l => l.trim()).length;
+    document.getElementById('loadingText').textContent = `${count.toLocaleString()} adres ekleniyor…`;
+    document.getElementById('loadingSubtext').textContent = 'Lütfen bekleyin';
+    const progressBar = document.getElementById('loadingProgress');
+    progressBar.style.width = '0%';
+    progressBar.textContent = '';
+    const overlay = document.getElementById('loadingOverlay');
+    overlay.classList.add('is-visible');
+
+    let progress = 0;
+    const interval = setInterval(() => {
+        progress += 5;
+        if (progress >= 90) clearInterval(interval);
+        progressBar.style.width = progress + '%';
+    }, 100);
+
+    return true;
+}
+
+function showRemoveLoading() {
+    const ta = document.getElementById('removeEmails');
+    const emails = (ta && ta.value.trim()) || '';
+    if (!emails) {
+        alert('Lütfen en az bir mail adresi girin veya dosyadan yükleyin');
+        return false;
+    }
+    const scopeEl = document.querySelector('input[name="remove_scope"]:checked');
+    const scope = scopeEl ? scopeEl.value : 'current_list';
+    if (scope === 'all_lists') {
+        const ok = confirm(
+            'Seçilen adresler TÜM havuz listelerinden silinecek.\n\nAynı mail birden fazla listede kayıtlıysa tüm kopyalar kaldırılır. Devam edilsin mi?'
+        );
+        if (!ok) return false;
+    }
+    const count = emails.split('\n').filter(l => l.trim()).length;
+    document.getElementById('loadingText').textContent =
+        scope === 'all_lists'
+            ? `${count.toLocaleString()} adres tüm listelerden çıkarılıyor…`
+            : `${count.toLocaleString()} adres bu listeden çıkarılıyor…`;
+    document.getElementById('loadingSubtext').textContent = 'Lütfen bekleyin';
+    const progressBar = document.getElementById('loadingProgress');
+    progressBar.style.width = '0%';
+    progressBar.textContent = '';
+    document.getElementById('loadingOverlay').classList.add('is-visible');
+    let progress = 0;
+    const interval = setInterval(() => {
+        progress += 5;
+        if (progress >= 90) clearInterval(interval);
+        progressBar.style.width = progress + '%';
+    }, 100);
+    return true;
+}
+
+function deleteAll() {
+    const totalAll = {{ list_total_all|default(0) }};
+    if (totalAll === 0) {
+        alert('Silinecek mail adresi yok');
+        return;
+    }
+    if (!confirm(`TÜM ${totalAll.toLocaleString('tr-TR')} mail adresini silmek istediğinize EMİN MİSİNİZ?\n\nBu işlem GERİ ALINAMAZ!`)) {
+        return;
+    }
+    if (!confirm('Son uyarı! Bu listedeki tüm kayıtlar silinecek. Onaylıyor musunuz?')) {
+        return;
+    }
+    document.getElementById('loadingText').textContent = 'Liste temizleniyor…';
+    document.getElementById('loadingSubtext').textContent = `${totalAll.toLocaleString('tr-TR')} kayıt siliniyor…`;
+    document.getElementById('loadingProgress').style.width = '100%';
+    document.getElementById('loadingOverlay').classList.add('is-visible');
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/admin/email-data-pool/delete-all';
+    appendPoolListToForm(form);
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Remove modal fonksiyonları
+function updateRemoveEmailCount() {
+    const textarea = document.getElementById('removeEmails');
+    const lines = textarea.value.split('\n').filter(line => line.trim() !== '');
+    document.getElementById('removeEmailCount').textContent = `${lines.length} mail`;
+}
+
+function handleRemoveFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const statusDiv = document.getElementById('removeFileStatus');
+    statusDiv.innerHTML = '<div class="alert alert-info">Dosya okunuyor...</div>';
+
+    const fileExt = file.name.split('.').pop().toLowerCase();
+
+    if (fileExt === 'txt' || fileExt === 'csv') {
+        readRemoveTextFile(file, fileExt);
+    } else if (fileExt === 'xlsx' || fileExt === 'xls') {
+        readRemoveExcelFile(file);
+    } else {
+        statusDiv.innerHTML = '<div class="alert alert-danger">Desteklenmeyen dosya formatı</div>';
+    }
+}
+
+function readRemoveTextFile(file, type) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        const lines = text.split('\n');
+        
+        let emails = [];
+        
+        // CSV ise header kontrolü yap
+        if (type === 'csv' && lines.length > 0) {
+            const headers = lines[0].split(/[,\t]/);
+            const emailColumnIndex = headers.findIndex(h => 
+                h.toLowerCase().includes('recipient') || 
+                h.toLowerCase().includes('email')
+            );
+            
+            if (emailColumnIndex !== -1) {
+                // Header var, email kolonundan oku
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].split(/[,\t]/);
+                    const email = cols[emailColumnIndex]?.trim();
+                    if (email && email.includes('@')) {
+                        emails.push(email);
+                    }
+                }
+            } else {
+                // Header yok veya bulunamadı, normal parse et
+                lines.forEach(line => {
+                    line = line.trim();
+                    if (line && line.includes('@')) {
+                        // Satırda @ varsa email ara
+                        const parts = line.split(/[,\t]/);
+                        parts.forEach(part => {
+                            part = part.trim();
+                            if (part && part.includes('@')) {
+                                emails.push(part);
+                            }
+                        });
+                    }
+                });
+            }
+        } else {
+            // TXT dosyası
+            lines.forEach(line => {
+                line = line.trim();
+                if (line && line.includes('@')) {
+                    emails.push(line);
+                }
+            });
+        }
+
+        // Benzersiz yap
+        emails = [...new Set(emails)];
+
+        document.getElementById('removeEmails').value = emails.join('\n');
+        updateRemoveEmailCount();
+        
+        document.getElementById('removeFileStatus').innerHTML = `
+            <div class="alert alert-success alert-dismissible fade show">
+                <i data-feather="check-circle"></i> 
+                <strong>Başarılı!</strong> ${emails.length.toLocaleString()} mail adresi yüklendi
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`;
+        feather.replace();
+    };
+    reader.readAsText(file);
+}
+
+function readRemoveExcelFile(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+            
+            let emails = [];
+            const headers = jsonData[0] || [];
+            
+            // RecipientAddress veya email kolonunu bul
+            const emailColumnIndex = headers.findIndex(h => 
+                (typeof h === 'string' && (
+                    h.toLowerCase().includes('recipient') || 
+                    h.toLowerCase().includes('email')
+                ))
+            );
+            
+            if (emailColumnIndex !== -1) {
+                // Kolon bulundu, o kolondan oku
+                for (let i = 1; i < jsonData.length; i++) {
+                    const row = jsonData[i];
+                    const email = row[emailColumnIndex];
+                    if (email && typeof email === 'string' && email.includes('@')) {
+                        emails.push(email.trim());
+                    }
+                }
+            } else {
+                // Kolon bulunamadı, tüm satırları tara
+                for (let i = 1; i < jsonData.length; i++) {
+                    const row = jsonData[i];
+                    row.forEach(cell => {
+                        if (cell && typeof cell === 'string' && cell.includes('@')) {
+                            emails.push(cell.trim());
+                        }
+                    });
+                }
+            }
+            
+            // Benzersiz yap
+            emails = [...new Set(emails)];
+            
+            document.getElementById('removeEmails').value = emails.join('\n');
+            updateRemoveEmailCount();
+            
+            document.getElementById('removeFileStatus').innerHTML = `
+                <div class="alert alert-success alert-dismissible fade show">
+                    <i data-feather="check-circle"></i> 
+                    <strong>Başarılı!</strong> ${emails.length.toLocaleString()} mail adresi yüklendi
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`;
+            feather.replace();
+        } catch (error) {
+            document.getElementById('removeFileStatus').innerHTML = `
+                <div class="alert alert-danger">
+                    <i data-feather="x-circle"></i> Dosya okuma hatası: ${error.message}
+                </div>`;
+            feather.replace();
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+
+    ['addModal', 'removeModal', 'newListModal', 'editListModal'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('shown.bs.modal', function () {
+                feather.replace();
+            });
+        }
+    });
+});
+</script>
+{% endblock %}

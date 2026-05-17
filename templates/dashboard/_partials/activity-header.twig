@@ -1,0 +1,13 @@
+{# Koyu başlık: ikon + başlık (isteğe bağlı meta) | Tümünü Gör #}
+<div class="nx-dash-activity-header">
+    <div class="nx-dash-activity-header-inner">
+        <span class="nx-dash-activity-header-ic"><i data-feather="{{ icon }}"></i></span>
+        <div class="nx-dash-activity-header-text min-w-0">
+            <h6 class="nx-dash-activity-header-title mb-0 text-truncate">{{ title }}</h6>
+        </div>
+    </div>
+    <a href="{{ more_href }}" class="nx-dash-activity-more">
+        <span>Tümünü Gör</span>
+        <i data-feather="chevron-right" class="nx-dash-activity-more-chevron"></i>
+    </a>
+</div>

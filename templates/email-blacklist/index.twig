@@ -1,0 +1,824 @@
+{% extends "_layouts/main.twig" %}
+
+{% block title %}Email Kara Liste - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+<li class="breadcrumb-item active" aria-current="page">Kara Liste</li>
+{% endblock %}
+
+{% block page_title %}
+<div class="row nx-orders-page-head">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head pb-0">
+            <div class="d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div class="min-w-0">
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+                            <li class="breadcrumb-item active">Email Kara Liste</li>
+                        </ol>
+                    </div>
+                    <h4 class="page-title nx-page-title mb-1">Email Kara Liste</h4>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page" id="nxBlHeadRefresh" title="Yenile">
+                        <i data-feather="refresh-cw" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Yenile</span>
+                    </button>
+                    <a href="/email-orders" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page">
+                        <i data-feather="send" class="nx-orders-tool-ic"></i>
+                        <span class="d-none d-sm-inline">Mail Gönder</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_icon %}{% endblock %}
+{% block title_text %}{% endblock %}
+
+{% block content %}
+
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 9999; backdrop-filter: blur(5px);">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+            <div class="spinner-border text-light mb-3" role="status" style="width: 4rem; height: 4rem; border-width: 0.3rem;">
+                <span class="visually-hidden">Yükleniyor...</span>
+            </div>
+            <h4 class="text-white mb-2" id="loadingText">İşlem Yapılıyor...</h4>
+            <p class="text-white-50 mb-3" id="loadingSubtext">Lütfen bekleyin</p>
+            <div class="progress mx-auto" style="width: 300px; height: 8px; background: rgba(255,255,255,0.2);">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 100%"></div>
+            </div>
+        </div>
+    </div>
+
+    {% set bl_today = 0 %}
+    {% for item in blacklist %}
+        {% if item.createdAt|date('Y-m-d') == 'now'|date('Y-m-d') %}
+            {% set bl_today = bl_today + 1 %}
+        {% endif %}
+    {% endfor %}
+
+    <div class="nx-orders-page nx-email-page nx-orders-shell">
+    <div class="row g-3 nx-orders-kpis mb-3">
+        <div class="col-12 col-md-4">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--orders"><i data-feather="shield-off"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ total|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Toplam kara liste</div>
+                    <div class="nx-orders-kpi-hint">Kayıtlı engellenen adres</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--sent"><i data-feather="calendar"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ bl_today|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Bugün eklenen (bu sayfa)</div>
+                    <div class="nx-orders-kpi-hint">Geçerli sayfadaki kayıtlar</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--credit"><i data-feather="layers"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ totalPages > 1 ? currentPage ~ ' / ' ~ totalPages : '1' }}</div>
+                    <div class="nx-orders-kpi-label">Sayfa</div>
+                    <div class="nx-orders-kpi-hint">{{ perPage }} kayıt / sayfa</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="nx-orders-cols nx-email-cols">
+        <main class="nx-orders-main">
+        <div class="card nx-card nx-orders-list-card">
+            <div class="nx-orders-card-head nx-orders-card-head--title-only justify-content-between align-items-center flex-wrap gap-2">
+                <div class="nx-orders-card-head-main flex-grow-1">
+                    <div class="nx-orders-icon-chip"><i data-feather="list"></i></div>
+                    <div class="min-w-0">
+                        <h4 class="nx-orders-card-title mb-0">Mail kara liste</h4>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 justify-content-end">
+                    <button type="button" class="btn btn-sm btn-outline-danger d-none" onclick="deleteSelected()" id="bulkDeleteBtn">
+                        <i data-feather="trash-2" class="align-self-center icon-xs me-1"></i>
+                        Seçilileri sil
+                    </button>
+                    {% if total > 0 %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAllConfirm()">
+                        <i data-feather="trash" class="align-self-center icon-xs me-1"></i>
+                        Tümünü temizle
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% if total > 0 %}
+            <div class="nx-orders-toolbar-strip">
+                <div class="nx-orders-list-toolbar orders-toolbar">
+                    <input type="search" class="form-control form-control-sm nx-orders-search-input" id="nxBlSearch" placeholder="Mail veya sebep ara…" autocomplete="off" aria-label="Karaliste ara">
+                    <span class="nx-orders-toolbar-mid" aria-hidden="true"></span>
+                    <button type="button" class="btn nx-orders-icon-refresh" id="nxBlToolbarRefresh" title="Yenile"><i data-feather="refresh-cw"></i></button>
+                </div>
+            </div>
+            {% endif %}
+            <div class="card-body nx-orders-list-body">
+                    {% if total == 0 %}
+                    <div class="nx-orders-empty text-center py-5 px-3">
+                        <div class="nx-orders-empty-icon mb-3"><i data-feather="shield"></i></div>
+                        <h5 class="fw-semibold mb-2">Kara liste boş</h5>
+                        <p class="text-muted small mb-0">Engellemek istediğiniz adresleri sağdaki formdan ekleyebilirsiniz.</p>
+                    </div>
+                    {% else %}
+                    <form method="POST" action="/email-blacklist/bulk-delete" id="bulkDeleteForm" onsubmit="return handleBulkDelete(event)">
+                    <div class="table-responsive nx-orders-table-wrap">
+                        <table class="table table-hover mb-0 nx-orders-table" id="nxBlTable">
+                            <thead>
+                                <tr>
+                                    <th width="36">
+                                        <input type="checkbox" class="form-check-input" id="selectAll" title="Tümünü seç">
+                                    </th>
+                                    <th>Mail adresi</th>
+                                    <th>Sebep</th>
+                                    <th>Eklenme</th>
+                                    <th class="text-end nx-orders-col-action">İşlem</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in blacklist %}
+                                <tr class="nx-bl-row" data-search="{{ item.email }} {{ item.reason ?? '' }} {{ item.createdAt|date('d.m.Y') }}">
+                                    <td>
+                                        <input type="checkbox" class="form-check-input row-checkbox" name="ids[]" value="{{ item.id }}">
+                                    </td>
+                                    <td><span class="font-monospace small">{{ item.email }}</span></td>
+                                    <td><small class="text-muted">{{ item.reason ?? '—' }}</small></td>
+                                    <td><span class="text-muted small">{{ item.createdAt|date('d.m.Y H:i') }}</span></td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn nx-orders-icon-btn" onclick="deleteSingleMail({{ item.id }}, '{{ item.email|e('js') }}')" title="Sil">
+                                            <i data-feather="trash-2" class="align-self-center icon-xs"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    </form>
+
+                    {% if totalPages > 1 %}
+                    <nav class="mt-3 nx-orders-pagination">
+                        <ul class="pagination pagination-sm justify-content-center mb-0">
+                            <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
+                                <a class="page-link" href="/email-blacklist?page={{ currentPage - 1 }}">Önceki</a>
+                            </li>
+                            {% for page in 1..totalPages %}
+                                {% if page == currentPage %}
+                                    <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                                {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                                    <li class="page-item"><a class="page-link" href="/email-blacklist?page={{ page }}">{{ page }}</a></li>
+                                {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                                {% endif %}
+                            {% endfor %}
+                            <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
+                                <a class="page-link" href="/email-blacklist?page={{ currentPage + 1 }}">Sonraki</a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+
+        <aside class="nx-orders-side" id="nx-bl-form">
+            <div class="card nx-card nx-orders-form-card">
+                <div class="nx-orders-card-head nx-orders-card-head--form nx-orders-card-head--compact">
+                    <div class="nx-orders-card-head-main">
+                        <div class="nx-orders-icon-chip nx-orders-icon-chip--accent"><i data-feather="shield-off"></i></div>
+                        <div>
+                            <h4 class="nx-orders-card-title mb-0">Kara liste işlemleri</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body nx-orders-form-body">
+                    <!-- Mail Ekleme Formu -->
+                    <form action="/email-blacklist" method="POST" onsubmit="return handleBulkSubmit(event)">
+                        <div class="mb-3">
+                            <label for="emails" class="form-label">Mail Listesi <span class="text-danger">*</span></label>
+                            <textarea class="form-control font-monospace" id="emails" name="emails" rows="8" placeholder="Her satıra bir mail adresi:
+
+spam@example.com
+abuse@example.com
+user@test.com" required></textarea>
+                            <small class="text-muted">Her satıra bir mail adresi yazın</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="file_input" class="form-label">Dosyadan İçe Aktar (Opsiyonel)</label>
+                            <input type="file" class="form-control" id="file_input" accept=".txt,.csv,.xlsx,.xls" onchange="handleFileSelect(event)">
+                            <small class="text-muted">TXT, CSV, Excel (Max 500 MB)</small>
+                            
+                            <!-- File Upload Progress -->
+                            <div id="fileUploadProgress" style="display: none; margin-top: 10px;">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <small class="text-primary fw-semibold">
+                                        <i data-feather="loader" class="icon-xs spinning me-1"></i>
+                                        <span id="fileProgressText">Dosya okunuyor...</span>
+                                    </small>
+                                    <small class="text-primary fw-semibold" id="fileProgressPercent">0%</small>
+                                </div>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%" id="fileProgressBar"></div>
+                                </div>
+                                <div class="d-flex justify-content-between mt-1">
+                                    <small class="text-muted" id="fileProgressCount">0 mail bulundu</small>
+                                    <small class="text-muted" id="fileProgressSpeed">0 KB/s</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reason_bulk" class="form-label">Sebep (Opsiyonel)</label>
+                            <input type="text" class="form-control" id="reason_bulk" name="reason" placeholder="Örn: Spam, Bounce">
+                        </div>
+
+                        <button type="submit" class="btn btn-outline-danger w-100 rounded-3 fw-semibold">
+                            <i data-feather="shield-off" class="align-self-center icon-xs me-1"></i>
+                            Karalisteye ekle
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </aside>
+    </div>
+    </div>
+
+<!-- Seçilileri Sil Modal -->
+<div class="modal fade" id="bulkDeleteModal" tabindex="-1" aria-labelledby="bulkDeleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="bulkDeleteModalLabel">
+                    <i data-feather="alert-triangle" class="align-self-center icon-sm me-2"></i>
+                    Seçili Mailler Silinecek
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger border-0 mb-3" role="alert">
+                    <strong>⚠️ DİKKAT!</strong> Bu işlem <strong>GERİ ALINAMAZ!</strong>
+                </div>
+                
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i data-feather="trash-2" class="icon-xxl text-danger"></i>
+                    </div>
+                    <h5 class="text-danger mb-2">
+                        <strong id="bulkDeleteCount">0</strong> mail adresi silinecek
+                    </h5>
+                    <p class="text-muted mb-0">
+                        Seçili mail adresleri kara listeden kalıcı olarak çıkarılacaktır.
+                    </p>
+                </div>
+                
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="confirmBulkDelete">
+                    <label class="form-check-label" for="confirmBulkDelete">
+                        <strong>Evet, seçili mail adreslerini silmek istiyorum</strong>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="align-self-center icon-xs me-1"></i>
+                    İptal
+                </button>
+                <button type="button" class="btn btn-danger" id="confirmBulkDeleteBtn" onclick="confirmBulkDelete()" disabled>
+                    <i data-feather="trash-2" class="align-self-center icon-xs me-1"></i>
+                    Evet, Sil
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tüm Kara Liste Temizleme Modal -->
+<div class="modal fade" id="clearAllModal" tabindex="-1" aria-labelledby="clearAllModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="clearAllModalLabel">
+                    <i data-feather="alert-triangle" class="align-self-center icon-sm me-2"></i>
+                    Tüm Kara Liste Temizlenecek
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger border-0 mb-3" role="alert">
+                    <strong>DİKKAT!</strong> Bu işlem <strong>GERİ ALINAMAZ!</strong>
+                </div>
+                
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i data-feather="trash-2" class="icon-xxl text-danger"></i>
+                    </div>
+                    <h5 class="text-danger mb-2">Tüm kara liste silinecek</h5>
+                    <p class="text-muted mb-0">
+                        Toplam <strong class="text-danger">{{ total }} mail adresi</strong> kalıcı olarak kaldırılacaktır.
+                    </p>
+                </div>
+                
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="confirmClearAll">
+                    <label class="form-check-label" for="confirmClearAll">
+                        <strong>Evet, tüm kara listeyi temizlemek istiyorum</strong>
+                    </label>
+                </div>
+                
+                <div class="alert alert-warning border-0 mb-0" role="alert">
+                    <small>
+                        <i data-feather="info" class="align-self-center icon-xs me-1"></i>
+                        Bu işlem tüm kara liste mail adreslerini siler.
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i data-feather="x" class="align-self-center icon-xs me-1"></i>
+                    İptal
+                </button>
+                <form method="POST" action="/email-blacklist/delete-all" id="clearAllForm" class="d-inline" onsubmit="handleClearAll(event)">
+                    <button type="submit" class="btn btn-danger" id="confirmClearAllBtn" disabled>
+                        <i data-feather="trash" class="align-self-center icon-xs me-1"></i>
+                        Evet, Tümünü Temizle
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+.spinning {
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.btn-pulse {
+    animation: pulse 1s ease-in-out 3;
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+}
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+        transform: scale(1.05);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+        transform: scale(1);
+    }
+}
+</style>
+
+<script>
+// Toplu ekleme form
+function handleBulkSubmit(event) {
+    const emails = document.getElementById('emails').value.trim();
+    
+    if (!emails) {
+        iziToast.warning({
+            title: 'Uyarı',
+            message: 'Lütfen en az bir mail adresi girin!',
+            position: 'topRight'
+        });
+        event.preventDefault();
+        return false;
+    }
+    
+    showLoading('Mail Adresleri Ekleniyor...', 'Lütfen bekleyin...');
+    return true;
+}
+
+// Toplu silme butonunu göster/gizle
+function updateBulkDeleteBtn() {
+    const checkedCount = document.querySelectorAll('.row-checkbox:checked').length;
+    const btn = document.getElementById('bulkDeleteBtn');
+    if (checkedCount > 0) {
+        btn.style.display = 'inline-block';
+        btn.innerHTML = '<i data-feather="trash-2" class="align-self-center icon-xs me-1"></i> Seçilileri Sil (' + checkedCount + ')';
+        feather.replace();
+    } else {
+        btn.style.display = 'none';
+    }
+}
+
+// Tekli mail sil (basit confirm ile)
+function deleteSingleMail(id, email) {
+    if (confirm(email + ' mail adresini kara listeden çıkarmak istediğinize emin misiniz?')) {
+        showLoading('Siliniyor...', 'Mail adresi kaldırılıyor...');
+        
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/email-blacklist/' + id + '/delete';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Seçilileri sil - Modal ile
+function deleteSelected() {
+    const checkedCount = document.querySelectorAll('.row-checkbox:checked').length;
+    if (checkedCount === 0) {
+        iziToast.warning({
+            title: 'Uyarı',
+            message: 'Lütfen silinecek mail adreslerini seçin!',
+            position: 'topRight'
+        });
+        return;
+    }
+    
+    document.getElementById('bulkDeleteCount').textContent = checkedCount;
+    document.getElementById('confirmBulkDelete').checked = false;
+    document.getElementById('confirmBulkDeleteBtn').disabled = true;
+    
+    const modal = new bootstrap.Modal(document.getElementById('bulkDeleteModal'));
+    modal.show();
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+function confirmBulkDelete() {
+    const checkedCount = document.querySelectorAll('.row-checkbox:checked').length;
+    showLoading('Siliniyor...', checkedCount + ' mail adresi kaldırılıyor...');
+    document.getElementById('bulkDeleteForm').submit();
+}
+
+// Bulk delete form handler
+function handleBulkDelete(event) {
+    return true;
+}
+
+// Tümünü temizle - Modal aç
+function clearAllConfirm() {
+    const modal = new bootstrap.Modal(document.getElementById('clearAllModal'));
+    modal.show();
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Clear all form handler
+function handleClearAll(event) {
+    showLoading('Tüm Liste Temizleniyor...', 'Tüm kara liste mail adresleri siliniyor...');
+    return true;
+}
+
+// Loading overlay göster
+function showLoading(title, subtitle) {
+    document.getElementById('loadingText').textContent = title;
+    document.getElementById('loadingSubtext').textContent = subtitle;
+    document.getElementById('loadingOverlay').style.display = 'block';
+}
+
+// Loading overlay gizle
+function hideLoading() {
+    document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+function showFileProgress(percent, text, count, speed) {
+    const progressDiv = document.getElementById('fileUploadProgress');
+    const progressBar = document.getElementById('fileProgressBar');
+    const progressText = document.getElementById('fileProgressText');
+    const progressPercent = document.getElementById('fileProgressPercent');
+    const progressCount = document.getElementById('fileProgressCount');
+    const progressSpeed = document.getElementById('fileProgressSpeed');
+    
+    progressDiv.style.display = 'block';
+    progressBar.style.width = percent + '%';
+    progressText.textContent = text;
+    progressPercent.textContent = Math.round(percent) + '%';
+    progressCount.textContent = count.toLocaleString('tr-TR') + ' mail bulundu';
+    if (speed > 0) {
+        progressSpeed.textContent = speed + ' KB/s';
+    }
+    
+    feather.replace();
+}
+
+function hideFileProgress() {
+    document.getElementById('fileUploadProgress').style.display = 'none';
+}
+
+
+// Optimize edilmiş dosya yükleme (Milyonlarca kayıt için)
+async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const maxSize = 500 * 1024 * 1024; // 500 MB
+    if (file.size > maxSize) {
+        iziToast.error({
+            title: 'Hata',
+            message: 'Dosya boyutu 500 MB\'dan küçük olmalıdır!',
+            position: 'topRight'
+        });
+        event.target.value = '';
+        return;
+    }
+    
+    const startTime = Date.now();
+    showFileProgress(0, 'Dosya okunuyor...', 0, 0);
+    
+    try {
+        let emails = [];
+        const fileName = file.name.toLowerCase();
+        
+        if (fileName.endsWith('.txt') || fileName.endsWith('.csv')) {
+            emails = await readTextFileOptimized(file, (progress, count) => {
+                const elapsed = (Date.now() - startTime) / 1000;
+                const speed = elapsed > 0 ? (file.size * progress / 100 / 1024 / elapsed).toFixed(0) : 0;
+                showFileProgress(progress, 'Metin dosyası işleniyor...', count, speed);
+            });
+        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+            showFileProgress(10, 'Excel dosyası okunuyor...', 0, 0);
+            emails = await readExcelFileOptimized(file);
+        } else {
+            hideFileProgress();
+            iziToast.error({
+                title: 'Hata',
+                message: 'Desteklenmeyen dosya formatı! TXT, CSV veya Excel kullanın.',
+                position: 'topRight'
+            });
+            event.target.value = '';
+            return;
+        }
+        
+        // HYPER FAST duplicate removal
+        showFileProgress(90, 'Duplicate\'lar temizleniyor...', emails.length, 0);
+        const uniqueEmails = [...new Set(emails)];
+        
+        showFileProgress(95, 'Tamamlanıyor...', uniqueEmails.length, 0);
+        
+        if (uniqueEmails.length === 0) {
+            hideFileProgress();
+            iziToast.warning({
+                title: 'Uyarı',
+                message: 'Dosyada geçerli mail adresi bulunamadı!',
+                position: 'topRight'
+            });
+        } else {
+            // Textarea'ya yaz
+            const textarea = document.getElementById('emails');
+            const existingEmails = textarea.value.trim();
+            const combined = existingEmails ? existingEmails + '\n' + uniqueEmails.join('\n') : uniqueEmails.join('\n');
+            textarea.value = combined;
+            
+            showFileProgress(100, 'Tamamlandı!', uniqueEmails.length, 0);
+            
+            setTimeout(() => {
+                hideFileProgress();
+                
+                // Sayfa içi başarı mesajı
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-success alert-dismissible fade show';
+                alertDiv.innerHTML = `
+                    <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
+                    <strong>${uniqueEmails.length.toLocaleString('tr-TR')}</strong> mail adresi yüklendi. "Karalisteye Ekle" butonuna basın.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                `;
+                
+                const container = document.querySelector('.container-fluid');
+                container.insertBefore(alertDiv, container.firstChild);
+                feather.replace();
+                
+                // Textarea'yı vurgula
+                textarea.focus();
+                textarea.scrollTop = 0;
+                
+                // Scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                
+                // Submit butonu vurgula (pulse animasyonu)
+                const submitBtn = document.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.classList.add('btn-pulse');
+                    setTimeout(() => {
+                        submitBtn.classList.remove('btn-pulse');
+                    }, 3000);
+                }
+            }, 500);
+        }
+    } catch (error) {
+        console.error('Dosya okuma hatası:', error);
+        hideFileProgress();
+        iziToast.error({
+            title: 'Hata',
+            message: 'Dosya okunamadı: ' + error.message,
+            position: 'topRight'
+        });
+    } finally {
+        event.target.value = '';
+    }
+}
+
+// HYPER SPEED TXT/CSV okuma - Büyük chunk'lar
+function readTextFileOptimized(file, progressCallback) {
+    return new Promise((resolve, reject) => {
+        const chunkSize = 10 * 1024 * 1024; // 10MB chunks (daha büyük = daha hızlı)
+        let offset = 0;
+        let emails = [];
+        let buffer = '';
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        
+        const readChunk = () => {
+            const slice = file.slice(offset, offset + chunkSize);
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                const text = e.target.result;
+                buffer += text;
+                
+                // Process complete lines
+                const lines = buffer.split(/[\r\n]+/);
+                buffer = lines.pop() || '';
+                
+                // Ultra fast email extraction
+                for (let i = 0; i < lines.length; i++) {
+                    const trimmed = lines[i].trim().toLowerCase();
+                    if (trimmed.length > 5 && trimmed.indexOf('@') > 0 && emailRegex.test(trimmed)) {
+                        emails.push(trimmed);
+                    }
+                }
+                
+                offset += chunkSize;
+                const progress = Math.min((offset / file.size) * 100, 100);
+                progressCallback(progress, emails.length);
+                
+                if (offset < file.size) {
+                    setTimeout(readChunk, 0); // Next chunk immediately
+                } else {
+                    // Process last buffer
+                    if (buffer.trim().length > 5) {
+                        const trimmed = buffer.trim().toLowerCase();
+                        if (trimmed.indexOf('@') > 0 && emailRegex.test(trimmed)) {
+                            emails.push(trimmed);
+                        }
+                    }
+                    resolve(emails);
+                }
+            };
+            
+            reader.onerror = reject;
+            reader.readAsText(slice);
+        };
+        
+        readChunk();
+    });
+}
+
+// HYPER SPEED Excel okuma - Optimize edilmiş
+function readExcelFileOptimized(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { 
+                    type: 'array',
+                    cellText: false,
+                    cellDates: false,
+                    sheetRows: 0 // Tüm satırları oku
+                });
+                
+                const emails = [];
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                
+                // Sadece ilk sheet'i oku (çoğu durumda yeterli)
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { 
+                    header: 1,
+                    defval: '',
+                    blankrows: false,
+                    raw: true
+                });
+                
+                // Ultra fast processing
+                for (let r = 0; r < jsonData.length; r++) {
+                    const row = jsonData[r];
+                    for (let c = 0; c < row.length; c++) {
+                        const cell = row[c];
+                        if (cell && typeof cell === 'string') {
+                            const trimmed = cell.trim().toLowerCase();
+                            if (trimmed.length > 5 && trimmed.indexOf('@') > 0 && emailRegex.test(trimmed)) {
+                                emails.push(trimmed);
+                            }
+                        }
+                    }
+                }
+                
+                resolve(emails);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function nxBlApplyFilter() {
+    const q = (document.getElementById('nxBlSearch')?.value || '').toLowerCase().trim();
+    document.querySelectorAll('.nx-bl-row').forEach(function (row) {
+        const hay = (row.getAttribute('data-search') || '').toLowerCase();
+        row.style.display = !q || hay.includes(q) ? '' : 'none';
+    });
+}
+
+// DOM yüklendikten sonra
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+    document.getElementById('nxBlSearch')?.addEventListener('input', nxBlApplyFilter);
+    document.getElementById('nxBlToolbarRefresh')?.addEventListener('click', function () { location.reload(); });
+    document.getElementById('nxBlHeadRefresh')?.addEventListener('click', function () { location.reload(); });
+    
+    // Tümünü seç/kaldır
+    document.getElementById('selectAll')?.addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        checkboxes.forEach(cb => cb.checked = this.checked);
+        updateBulkDeleteBtn();
+    });
+    
+    // Checkbox değişikliklerini dinle
+    document.querySelectorAll('.row-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateBulkDeleteBtn);
+    });
+    
+    // Bulk Delete Modal - Checkbox kontrolü
+    document.getElementById('confirmBulkDelete')?.addEventListener('change', function() {
+        document.getElementById('confirmBulkDeleteBtn').disabled = !this.checked;
+    });
+    
+    // Clear All Modal - Checkbox kontrolü
+    document.getElementById('confirmClearAll')?.addEventListener('change', function() {
+        document.getElementById('confirmClearAllBtn').disabled = !this.checked;
+    });
+    
+    // Modal kapandığında checkbox'ı sıfırla
+    document.getElementById('bulkDeleteModal')?.addEventListener('hidden.bs.modal', function () {
+        document.getElementById('confirmBulkDelete').checked = false;
+        document.getElementById('confirmBulkDeleteBtn').disabled = true;
+    });
+    
+    document.getElementById('clearAllModal')?.addEventListener('hidden.bs.modal', function () {
+        document.getElementById('confirmClearAll').checked = false;
+        document.getElementById('confirmClearAllBtn').disabled = true;
+    });
+    
+    // Modal açıldığında feather iconları yenile
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+        modal.addEventListener('shown.bs.modal', function() {
+            feather.replace();
+        });
+    });
+    
+    // Alert dismiss için Bootstrap'ı aktif et
+    var alertList = document.querySelectorAll('.alert');
+    alertList.forEach(function (alertEl) {
+        var bsAlert = new bootstrap.Alert(alertEl);
+    });
+});
+</script>
+{% endblock %}

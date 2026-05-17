@@ -1,0 +1,53 @@
+#!/bin/bash
+
+###############################################################################
+# Domain Config Deploy Script
+# Admin panelden domain güncellemesi yaptıktan sonra çalıştırın
+###############################################################################
+
+echo "🚀 Domain ayarları sunucuya gönderiliyor..."
+
+# Git commit ve push
+cd /Applications/MAMP/htdocs
+git add config/domains/*.php 2>/dev/null || true
+git commit -m "Domain ayarları güncellendi - $(date '+%Y-%m-%d %H:%M:%S')" 2>/dev/null || echo "Değişiklik yok, direkt sunucuya gönderiliyor..."
+git push origin main 2>/dev/null || echo "Push atlandı (değişiklik yok)"
+
+# Sunucuda işlemler
+echo ""
+echo "📡 Sunucuya bağlanılıyor..."
+ssh root@104.238.158.46 << 'ENDSSH'
+cd /var/www/hub-nexus.com
+
+# Domain config klasörünü oluştur (yoksa)
+mkdir -p config/domains
+
+# Git pull (hata olsa bile devam et)
+echo "Git güncelleniyor..."
+git pull origin main 2>/dev/null || echo "Git pull başarısız, devam ediliyor..."
+
+# Dosya izinlerini düzelt
+chmod 755 config/domains 2>/dev/null || true
+chmod 644 config/domains/*.php 2>/dev/null || true
+
+echo "✅ Domain ayarları sunucuda güncellendi!"
+
+# Dosyaları listele
+echo ""
+echo "📁 Sunucudaki domain config dosyaları:"
+ls -lah config/domains/*.php 2>/dev/null || echo "Henüz domain config yok"
+ENDSSH
+
+echo ""
+echo "✅ DEPLOY TAMAMLANDI!"
+echo ""
+echo "🌐 Domain'leri kontrol edin:"
+echo "  - https://hub-nexus.com"
+echo "  - http://prime-medya.com"
+echo "  - http://x-solutions.app"
+echo ""
+echo "💡 SSL yoksa ekleyin:"
+echo "   ssh root@104.238.158.46"
+echo "   sudo certbot --apache -d prime-medya.com"
+echo "   sudo certbot --apache -d x-solutions.app"
+

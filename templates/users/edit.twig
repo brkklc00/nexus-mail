@@ -1,0 +1,319 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Kullanıcı Düzenle - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title_text %}Kullanıcı Düzenle{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h4 class="card-title">
+                            <i data-feather="edit" class="align-self-center icon-xs me-2"></i>
+                            Kullanıcı Bilgilerini Düzenle
+                        </h4>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/users" class="btn btn-sm btn-secondary">
+                            <i data-feather="arrow-left" class="align-self-center icon-xs me-1"></i>
+                            Geri Dön
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                
+                {% if error %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i data-feather="alert-triangle" class="align-self-center icon-xs me-2"></i>
+                    {{ error }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+                
+                <form method="POST" action="/users/{{ user.id }}/edit">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">Kullanıcı Adı <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="username" name="username" value="{{ user.username }}" required>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">E-posta <span class="text-danger">*</span></label>
+                                <input type="email" class="form-control" id="email" name="email" value="{{ user.email }}" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="full_name" class="form-label">Ad Soyad <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="full_name" name="full_name" value="{{ user.fullName }}" required>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="role_id" class="form-label">Rol <span class="text-danger">*</span></label>
+                                <select class="form-select" id="role_id" name="role_id" required>
+                                    <option value="">Rol Seçin</option>
+                                    {% for role in roles %}
+                                    <option value="{{ role.id }}" {% if user.role.id == role.id %}selected{% endif %}>
+                                        {{ role.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Yeni Şifre</label>
+                                <input type="password" class="form-control" id="password" name="password" placeholder="Boş bırakırsanız değişmez">
+                                <small class="text-muted">Şifreyi değiştirmek için yeni şifre girin</small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="password_confirm" class="form-label">Yeni Şifre (Tekrar)</label>
+                                <input type="password" class="form-control" id="password_confirm" name="password_confirm" placeholder="Yeni şifreyi tekrar girin">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    <h5 class="mb-3"><i data-feather="mail" class="align-self-center icon-xs me-2"></i>Email Ayarları</h5>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="email_delivery_percentage" class="form-label">Email Gönderim Yüzdesi</label>
+                                <input type="number" class="form-control" id="email_delivery_percentage" name="email_delivery_percentage" 
+                                       value="{{ user.emailDeliveryPercentage ?? 100 }}" min="0" max="100" required>
+                                <small class="text-muted">%0-100 arası bir değer girin. Gerçek Email gönderim oranı.</small>
+                            </div>
+                        </div>
+                        
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="is_active" name="is_active" {% if user.isActive %}checked{% endif %}>
+                                <label class="form-check-label" for="is_active">
+                                    Aktif Kullanıcı
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-12 d-flex justify-content-between">
+                            <div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i data-feather="save" class="align-self-center icon-xs me-2"></i>
+                                    Kaydet
+                                </button>
+                                <a href="/users" class="btn btn-secondary ms-2">
+                                    <i data-feather="x" class="align-self-center icon-xs me-2"></i>
+                                    İptal
+                                </a>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-danger" onclick="showDeleteModal()">
+                                    <i data-feather="trash-2" class="align-self-center icon-xs me-2"></i>
+                                    Kullanıcıyı Sil
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </form>
+                
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title">
+                    <i data-feather="info" class="align-self-center icon-xs me-2"></i>
+                    Kullanıcı Bilgileri
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Kayıt Tarihi:</strong> {{ user.createdAt|date('d.m.Y H:i') }}</p>
+                        <p><strong>Son Güncelleme:</strong> {{ user.updatedAt ? user.updatedAt|date('d.m.Y H:i') : '-' }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Son Giriş:</strong> {{ user.lastLoginAt ? user.lastLoginAt|date('d.m.Y H:i') : 'Henüz giriş yapmadı' }}</p>
+                        <p><strong>2FA Durumu:</strong> 
+                            {% if user.twoFactorEnabled %}
+                                <span class="badge bg-success">Aktif</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Pasif</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title">
+                    <i data-feather="shopping-cart" class="align-self-center icon-xs me-2"></i>
+                    Mail Kredi Yönetimi
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <strong>Mevcut Mail Kredi:</strong> {{ user.emailCredit|default(0)|number_format(0, ',', '.') }}
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i data-feather="plus-circle" class="icon-xs me-1"></i>Mail Kredi Ekle</h6>
+                        <form method="POST" action="/users/{{ user.id }}/mail-credit/add" class="mb-3">
+                            <div class="mb-2">
+                                <label for="add_amount" class="form-label">Kredi Miktarı</label>
+                                <input type="number" class="form-control" id="add_amount" name="amount" min="1" required>
+                            </div>
+                            <div class="mb-2">
+                                <label for="add_description" class="form-label">Açıklama</label>
+                                <input type="text" class="form-control" id="add_description" name="description" value="Mail kredi yükleme">
+                            </div>
+                            <button type="submit" class="btn btn-success btn-sm">
+                                <i data-feather="plus" class="icon-xs me-1"></i>
+                                Kredi Ekle
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="col-md-6">
+                        <h6><i data-feather="minus-circle" class="icon-xs me-1"></i>Mail Kredi Düş</h6>
+                        <form method="POST" action="/users/{{ user.id }}/mail-credit/deduct" class="mb-3">
+                            <div class="mb-2">
+                                <label for="deduct_amount" class="form-label">Kredi Miktarı</label>
+                                <input type="number" class="form-control" id="deduct_amount" name="amount" min="1" max="{{ user.emailCredit|default(0) }}" required>
+                            </div>
+                            <div class="mb-2">
+                                <label for="deduct_description" class="form-label">Açıklama</label>
+                                <input type="text" class="form-control" id="deduct_description" name="description" value="Mail kredi düşürme">
+                            </div>
+                            <button type="submit" class="btn btn-danger btn-sm">
+                                <i data-feather="minus" class="icon-xs me-1"></i>
+                                Kredi Düş
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+    </div>
+</div>
+
+<!-- Kullanıcı Silme Modal -->
+<div class="modal fade" id="deleteUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i data-feather="alert-triangle" class="icon-xs me-2"></i>
+                    Kullanıcı Silinecek
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger">
+                    <strong>DİKKAT!</strong> Bu işlem geri alınamaz!
+                </div>
+                
+                <p class="mb-3">
+                    <strong>Kullanıcı:</strong> {{ user.name }} ({{ user.username }})
+                </p>
+                
+                <p class="text-muted mb-3">
+                    Bu kullanıcı ve tüm ilişkili verileri (siparişler, rehberler, bakiye geçmişi vb.) 
+                    <strong class="text-danger">kalıcı olarak silinecektir</strong>.
+                </p>
+                
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="confirmDelete">
+                    <label class="form-check-label" for="confirmDelete">
+                        <strong>Evet, bu kullanıcıyı silmek istiyorum</strong>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    İptal
+                </button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn" disabled onclick="deleteUser()">
+                    <i data-feather="trash" class="icon-xs me-1"></i>
+                    Evet, Sil
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Feather icons
+feather.replace();
+
+// Delete modal
+let deleteModal = null;
+
+function showDeleteModal() {
+    const modalEl = document.getElementById('deleteUserModal');
+    deleteModal = new bootstrap.Modal(modalEl);
+    deleteModal.show();
+    
+    // Checkbox'ı sıfırla
+    document.getElementById('confirmDelete').checked = false;
+    document.getElementById('confirmDeleteBtn').disabled = true;
+    
+    setTimeout(() => feather.replace(), 100);
+}
+
+// Checkbox değiştiğinde buton aktif et
+document.getElementById('confirmDelete').addEventListener('change', function() {
+    document.getElementById('confirmDeleteBtn').disabled = !this.checked;
+});
+
+// Kullanıcıyı sil
+function deleteUser() {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/users/{{ user.id }}/delete';
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
+{% endblock %}

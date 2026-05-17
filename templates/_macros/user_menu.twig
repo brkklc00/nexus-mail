@@ -1,0 +1,18 @@
+{# Kullanıcı dropdown — yeniden kullanılabilir parçalar (sadece şablon) #}
+{% macro section_title(label) %}
+<h6 class="dropdown-header nx-dd-section text-uppercase small fw-bold mb-0">{{ label }}</h6>
+{% endmacro %}
+
+{% macro item_row(href, icon, label, class_extra) %}
+<a class="dropdown-item nx-dd-item {{ class_extra|default('') }}" href="{{ href }}">
+    {% if icon %}<i data-feather="{{ icon }}" class="nx-dd-icon"></i>{% endif %}
+    <span>{{ label }}</span>
+</a>
+{% endmacro %}
+
+{% macro item_button(type, class_extra, icon, label) %}
+<button type="{{ type|default('submit') }}" class="dropdown-item nx-dd-item {{ class_extra|default('') }}">
+    {% if icon %}<i data-feather="{{ icon }}" class="nx-dd-icon"></i>{% endif %}
+    <span>{{ label }}</span>
+</button>
+{% endmacro %}

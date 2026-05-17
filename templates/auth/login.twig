@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giriş Yap - {{ site_title|default('Nexus Panel') }}</title>
+    
+    <link rel="icon" type="image/png" href="{{ site_favicon|default('/assets/images/default-avatar.png') }}">
+    <link rel="shortcut icon" type="image/png" href="{{ site_favicon|default('/assets/images/default-avatar.png') }}">
+    
+    <link href="/assets/css/bootstrap.min.css" rel="stylesheet" type="text/css" />
+    <link href="/assets/css/icons.min.css" rel="stylesheet" type="text/css" />
+    <link href="/assets/css/app.min.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="account-body accountbg">
+
+<div class="container">
+    <div class="row vh-100 d-flex justify-content-center">
+        <div class="col-12 align-self-center">
+            <div class="row">
+                <div class="col-lg-5 mx-auto">
+                    <div class="card">
+                        <div class="card-body p-0 auth-header-box">
+                            <div class="text-center p-3">
+                                <a href="/" class="logo logo-admin">
+                                    <img src="{{ site_logo|default('/assets/images/nexus-logo.png') }}" height="100" alt="{{ site_title|default('Nexus Panel') }}" class="auth-logo" onerror="this.src='/assets/images/nexus-logo.png'">
+                                </a>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="tab-content">
+                                <div class="tab-pane active p-3" id="LogIn_Tab" role="tabpanel">
+                                    <!-- Mesaj alanı (JS ile doldurulacak) -->
+                                    <div id="loginMessage"></div>
+                                    
+                                    {% if error %}
+                                    <div class="alert alert-danger" role="alert">
+                                        <i class="fas fa-exclamation-triangle"></i> {{ error }}
+                                    </div>
+                                    {% endif %}
+                                    
+                                    <form method="POST" action="/login" class="form-horizontal auth-form">
+                                        <div class="form-group mb-2">
+                                            <label class="form-label" for="username">Kullanıcı Adı</label>
+                                            <input type="text" class="form-control" id="username" name="username" placeholder="Kullanıcı adınızı girin" required>
+                                        </div>
+
+                                        <div class="form-group mb-2">
+                                            <label class="form-label" for="password">Şifre</label>
+                                            <input type="password" class="form-control" id="password" name="password" placeholder="Şifrenizi girin" required>
+                                        </div>
+
+                                        <div class="form-group mb-0 row">
+                                            <div class="col-12">
+                                                <button class="btn btn-primary w-100 waves-effect waves-light" type="submit">
+                                                    Giriş Yap <i class="fas fa-sign-in-alt ms-1"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body bg-light-alt text-center">
+                            <span class="text-muted d-block">© {{ "now"|date("Y") }} {{ site_title|default('Nexus Panel') }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/assets/js/jquery.min.js"></script>
+<script src="/assets/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/js/waves.js"></script>
+<script src="/assets/js/feather.min.js"></script>
+
+<script>
+// URL parametrelerini kontrol et
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const message = urlParams.get('msg');
+    const messageDiv = document.getElementById('loginMessage');
+    
+    if (message === 'password_changed') {
+        messageDiv.innerHTML = `
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i data-feather="check-circle"></i>
+                <strong>Şifre Değiştirildi!</strong> Yeni şifrenizle giriş yapabilirsiniz.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        feather.replace();
+        
+        // URL'den parametreyi temizle
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+});
+</script>
+
+</body>
+</html>
+
