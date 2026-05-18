@@ -361,35 +361,35 @@
                 </div>
             </div>
 
-            <div class="card nx-es-main-card mt-3">
-                <div class="panel-card-header">
-                    <span class="icon-box"><i data-feather="package"></i></span>
-                    <div>
-                        <h5>Hazır paketler</h5>
-                        <p class="small mb-0">Tek tık: günlük kota seçilir, saniyelik hız otomatik hesaplanır ve worker ayarları önerilen değerlere çekilir.</p>
-                    </div>
-                </div>
-                <div class="card-body pt-3">
-                    <form method="post" action="/admin/email-sending-settings/apply-preset" class="row g-2">
-                        {% for key, p in plans %}
-                        <div class="col-6 col-md-4 col-xl-3">
-                            <button type="submit" name="plan" value="{{ key }}" class="btn btn-outline-primary w-100 text-start py-3 px-3 h-100 rounded-3 shadow-sm">
-                                <span class="fw-semibold d-block">{{ p.title }}</span>
-                                <span class="small text-muted d-block mt-2">
-                                    ≈ <strong class="text-body">{{ p.effective_rate|number_format(2, ',', '.') }}</strong> mail/sn
-                                </span>
-                                <span class="small text-muted d-block">
-                                    ~{{ p.hourly_approx|number_format(0, ',', '.') }} / saat · ~{{ p.minute_approx|number_format(0, ',', '.') }} / dk
-                                </span>
-                            </button>
-                        </div>
-                        {% endfor %}
-                    </form>
-                </div>
-            </div>
         </div>
 
         <div class="col-xl-4 col-lg-4 nx-es-sidebar-col">
+            <div class="card nx-es-side-card mb-3">
+                <div class="panel-card-header">
+                    <span class="icon-box"><i data-feather="navigation"></i></span>
+                    <div>
+                        <h6>Hızlı erişim</h6>
+                        <small>Sık kullanılan email yönetim ekranları</small>
+                    </div>
+                </div>
+                <div class="card-body pt-3">
+                    <div class="d-grid gap-2">
+                        <a href="/admin/email-smtp" class="nx-es-quick-link text-start">
+                            <span class="avatar-xs rounded-circle bg-soft-secondary d-inline-flex align-items-center justify-content-center me-2" style="width: 2rem; height: 2rem;">
+                                <i data-feather="server" class="icon-dual-secondary" style="width: 14px; height: 14px;"></i>
+                            </span>
+                            SMTP hesapları
+                        </a>
+                        <a href="/email-dashboard" class="nx-es-quick-link text-start">
+                            <span class="avatar-xs rounded-circle bg-soft-primary d-inline-flex align-items-center justify-content-center me-2" style="width: 2rem; height: 2rem;">
+                                <i data-feather="mail" class="icon-dual-primary" style="width: 14px; height: 14px;"></i>
+                            </span>
+                            Email paneli
+                        </a>
+                    </div>
+                </div>
+            </div>
+
             <div class="card nx-es-side-card mb-3">
                 <div class="panel-card-header">
                     <span class="icon-box"><i data-feather="bar-chart-2"></i></span>
@@ -437,27 +437,25 @@
 
             <div class="card nx-es-side-card">
                 <div class="panel-card-header">
-                    <span class="icon-box"><i data-feather="navigation"></i></span>
+                    <span class="icon-box"><i data-feather="package"></i></span>
                     <div>
-                        <h6>Hızlı erişim</h6>
-                        <small>Sık kullanılan email yönetim ekranları</small>
+                        <h6>Hazır paketler</h6>
+                        <small>Tek tık: kota + hız + worker önerileri</small>
                     </div>
                 </div>
                 <div class="card-body pt-3">
-                    <div class="d-grid gap-2">
-                        <a href="/admin/email-smtp" class="nx-es-quick-link text-start">
-                            <span class="avatar-xs rounded-circle bg-soft-secondary d-inline-flex align-items-center justify-content-center me-2" style="width: 2rem; height: 2rem;">
-                                <i data-feather="server" class="icon-dual-secondary" style="width: 14px; height: 14px;"></i>
-                            </span>
-                            SMTP hesapları
-                        </a>
-                        <a href="/email-dashboard" class="nx-es-quick-link text-start">
-                            <span class="avatar-xs rounded-circle bg-soft-primary d-inline-flex align-items-center justify-content-center me-2" style="width: 2rem; height: 2rem;">
-                                <i data-feather="mail" class="icon-dual-primary" style="width: 14px; height: 14px;"></i>
-                            </span>
-                            Email paneli
-                        </a>
-                    </div>
+                    <form method="post" action="/admin/email-sending-settings/apply-preset" class="row g-2">
+                        {% for key, p in plans %}
+                        <div class="col-6">
+                            <button type="submit" name="plan" value="{{ key }}" class="btn btn-outline-primary w-100 text-start py-2 px-2 h-100 rounded-3">
+                                <span class="fw-semibold d-block">{{ p.title }}</span>
+                                <span class="small text-muted d-block mt-1">
+                                    ≈ <strong class="text-body">{{ p.effective_rate|number_format(2, ',', '.') }}</strong> mail/sn
+                                </span>
+                            </button>
+                        </div>
+                        {% endfor %}
+                    </form>
                 </div>
             </div>
         </div>
