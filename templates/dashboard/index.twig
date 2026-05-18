@@ -17,10 +17,6 @@
                     <h4 class="page-title nx-page-title mb-1 text-white fw-semibold">Mail Dashboard</h4>
                     <p class="mb-0 text-white-50">Mail gönderim performansı, SMTP kapasitesi ve günlük kullanım.</p>
                 </div>
-                <button type="button" class="btn btn-sm nx-dash-tool-btn" id="nxDashRefresh">
-                    <i data-feather="refresh-cw" class="nx-dash-tool-ic"></i>
-                    <span>Yenile</span>
-                </button>
             </div>
         </div>
     </div>
@@ -65,7 +61,10 @@
             extra_class: 'nx-dash-kpi--mail'
         } only %}
     </div>
-    <div class="col-12 col-md-6 col-lg-4">
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-12 col-md-6 col-lg-2">
         {% include 'dashboard/_partials/kpi-card.twig' with {
             icon: 'check-circle',
             label: 'Başarılı Gönderim',
@@ -75,7 +74,7 @@
             extra_class: 'nx-dash-kpi--support'
         } only %}
     </div>
-    <div class="col-12 col-md-6 col-lg-4">
+    <div class="col-12 col-md-6 col-lg-2">
         {% include 'dashboard/_partials/kpi-card.twig' with {
             icon: 'alert-triangle',
             label: 'Hatalı / Bounce',
@@ -85,7 +84,7 @@
             extra_class: 'nx-dash-kpi--support'
         } only %}
     </div>
-    <div class="col-12 col-md-6 col-lg-4">
+    <div class="col-12 col-md-6 col-lg-2">
         {% include 'dashboard/_partials/kpi-card.twig' with {
             icon: 'server',
             label: 'Aktif SMTP',
@@ -95,7 +94,7 @@
             extra_class: 'nx-dash-kpi--url'
         } only %}
     </div>
-    <div class="col-12 col-md-6 col-lg-4">
+    <div class="col-12 col-md-6 col-lg-2">
         {% include 'dashboard/_partials/kpi-card.twig' with {
             icon: 'activity',
             label: 'Günlük Limit Kullanımı',
@@ -105,7 +104,7 @@
             extra_class: 'nx-dash-kpi--support'
         } only %}
     </div>
-    <div class="col-12 col-md-6 col-lg-4">
+    <div class="col-12 col-md-6 col-lg-2">
         {% include 'dashboard/_partials/kpi-card.twig' with {
             icon: 'headphones',
             label: 'Destek Talepleri',
@@ -115,7 +114,7 @@
             extra_class: 'nx-dash-kpi--support'
         } only %}
     </div>
-    <div class="col-12 col-md-6 col-lg-4">
+    <div class="col-12 col-md-6 col-lg-2">
         {% include 'dashboard/_partials/kpi-card.twig' with {
             icon: 'link',
             label: 'Kısa URL Performansı',
@@ -158,17 +157,14 @@
                     <a href="/email-orders" class="btn btn-primary btn-sm py-2">Mail Gönder</a>
                     <a href="/email-phonebooks" class="btn btn-outline-primary btn-sm py-2">Mail Rehber</a>
                     <a href="/email-templates" class="btn btn-outline-primary btn-sm py-2">Mail Şablonları</a>
-                    <a href="/admin/email-orders" class="btn btn-outline-primary btn-sm py-2">Tüm Mail Gönderimler</a>
+                    <a href="/admin/email-orders" class="btn btn-outline-primary btn-sm py-2">Mail Siparişleri</a>
                     <a href="/admin/email-smtp" class="btn btn-outline-primary btn-sm py-2">SMTP Hesapları</a>
                     <a href="/admin/email-sending-settings" class="btn btn-outline-primary btn-sm py-2">Gönderim Hızı ve Limitler</a>
-                    <a href="/admin/email-data-pool" class="btn btn-outline-primary btn-sm py-2">Email Havuzu</a>
                     <a href="/email-blacklist" class="btn btn-outline-primary btn-sm py-2">Email Kara Liste</a>
                     <a href="/url-shortener" class="btn btn-outline-primary btn-sm py-2">Link Kısaltıcı</a>
-                    <a href="/tickets" class="btn btn-outline-primary btn-sm py-2">Destek Talebi Oluştur</a>
                 </div>
                 <hr>
                 <div class="small text-muted">
-                    Açık destek talebi: <strong>{{ supportStats.open_tickets|default(0) }}</strong><br>
                     Kısa URL: <strong>{{ urlStats.total_urls|default(0) }}</strong> link /
                     <strong>{{ urlStats.total_clicks|default(0)|number_format(0, ',', '.') }}</strong> tıklama
                 </div>
@@ -179,7 +175,7 @@
 
 <div class="row g-3 mt-1">
     <div class="col-lg-8">
-        <div class="card nx-dash-card">
+        <div class="card nx-dash-card h-100">
             <div class="card-header border-0">
                 <h5 class="mb-0 text-white fw-semibold">Son Mail Siparişleri</h5>
             </div>
@@ -222,13 +218,18 @@
         </div>
     </div>
     <div class="col-lg-4">
-        <div class="card nx-dash-card">
+        <div class="card nx-dash-card h-100">
             <div class="card-header border-0">
                 <h5 class="mb-0 text-white fw-semibold">Kısa URL Performansı</h5>
             </div>
-            <div class="card-body">
+            <div class="card-body d-flex flex-column justify-content-center">
                 {% if recentUrls is empty %}
-                <div class="text-muted small">Henüz kısa URL kaydı yok.</div>
+                <div class="text-center py-4">
+                    <span class="nx-dash-chart-empty-icon"><i data-feather="link-2"></i></span>
+                    <h6 class="mt-3 mb-1">Henüz kısa URL verisi yok</h6>
+                    <p class="text-muted small mb-3">Link Kısaltıcı ile yeni bir kısa link oluşturup performansı burada takip edebilirsiniz.</p>
+                    <a href="/url-shortener" class="btn btn-outline-primary btn-sm">Link Kısaltıcıya Git</a>
+                </div>
                 {% else %}
                 <ul class="list-unstyled mb-0 small">
                     {% for url in recentUrls %}
@@ -249,10 +250,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 {% endif %}
 <script>
-document.getElementById('nxDashRefresh')?.addEventListener('click', function () {
-    window.location.reload();
-});
-
 document.addEventListener('DOMContentLoaded', function () {
     if (typeof feather !== 'undefined') {
         feather.replace();

@@ -21,12 +21,4 @@
 </a>
 {% endif %}
 
-{% if _session.is_admin|default(false)
-    or _session.user_permissions.admin_email_orders.read|default(false)
-    or _session.user_permissions.email_smtp.read|default(false) %}
-<a class="dropdown-item nx-dd-item" href="/admin/email-orders">
-    <i data-feather="mail" class="nx-dd-icon"></i>
-    <span>Email Yönetimi</span>
-</a>
-{% endif %}
 {% endif %}
