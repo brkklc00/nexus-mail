@@ -1455,10 +1455,27 @@ body.nx-panel .page-wrapper {
     color: #f8fafc !important;
 }
 
+.page-content .card-header h1,
+.page-content .card-header h2,
+.page-content .card-header h3,
+.page-content .card-header h4,
+.page-content .card-header h5,
+.page-content .card-header h6 {
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+}
+
 .page-content .card-header .text-muted,
 .page-content .card-header small,
 .page-content .card-header .small {
     color: var(--nx-soft-text-on-dark) !important;
+}
+
+.page-content .card-header p,
+.page-content .card-header .text-primary,
+.page-content .card-header .text-dark,
+.page-content .card-header .text-body {
+    color: #cbd5e1 !important;
 }
 
 .page-content .card-header .btn-outline-secondary,

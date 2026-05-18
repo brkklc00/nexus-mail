@@ -20,22 +20,25 @@
 
     <div class="menu-content nx-sidebar-body flex-grow-1 min-h-0" data-simplebar>
         <ul class="left-sidenav-menu nx-sidebar-metismenu nx-sidebar-v2">
-                {% set nx_can_email = _session.is_admin|default(false)
+                {% set nx_is_admin = _session.is_admin|default(false) %}
+                {% set nx_can_email = nx_is_admin
                     or _session.user_permissions.email_order.read|default(false)
                     or _session.user_permissions.email_phonebook.read|default(false)
                     or _session.user_permissions.email_template.read|default(false)
-                    or _session.user_permissions.email_blacklist.read|default(false) %}
+                    or _session.user_permissions.email_blacklist.read|default(false)
+                    or _session.user_permissions.admin_email_orders.read|default(false)
+                    or _session.user_permissions.email_smtp.read|default(false) %}
 
                 {{ nx_sb.section_label('Genel') }}
                 <li class="nx-sb-item nx-sb-item--link">
-                    <a href="/">
+                    <a href="/dashboard">
                         <i data-feather="home" class="align-self-center menu-icon"></i>
                         <span>Ana Sayfa</span>
                     </a>
                 </li>
 
                 {% if nx_can_email %}
-                {{ nx_sb.section_label('İletişim') }}
+                {{ nx_sb.section_label('EMAIL İŞLEMLERİ') }}
                 <li class="nx-sb-group nx-sb-group--tier0" data-nx-sb="email">
                     <button type="button" class="nx-sb-group__trigger" aria-expanded="false" aria-controls="nxSbPanelEmail">
                         <i data-feather="mail" class="align-self-center menu-icon"></i>
@@ -44,24 +47,34 @@
                     </button>
                     <div id="nxSbPanelEmail" class="nx-sb-group__panel" role="region" inert>
                         <ul class="nx-sb-group__list">
-                            {% if _session.is_admin|default(false) or _session.user_permissions.email_order.read|default(false) %}
+                            {% if nx_is_admin or _session.user_permissions.email_order.read|default(false) %}
                             <li><a href="/email-orders">Email Gönder</a></li>
                             {% endif %}
-                            {% if _session.is_admin|default(false) or _session.user_permissions.email_phonebook.read|default(false) %}
+                            {% if nx_is_admin or _session.user_permissions.admin_email_orders.read|default(false) %}
+                            <li><a href="/admin/email-orders">Tüm Mail Gönderimler</a></li>
+                            {% endif %}
+                            {% if nx_is_admin or _session.user_permissions.email_phonebook.read|default(false) %}
                             <li><a href="/email-phonebooks">Email Rehberleri</a></li>
                             {% endif %}
-                            {% if _session.is_admin|default(false) or _session.user_permissions.email_template.read|default(false) %}
+                            {% if nx_is_admin or _session.user_permissions.email_template.read|default(false) %}
                             <li><a href="/email-templates">Email Şablonları</a></li>
                             {% endif %}
-                            {% if _session.is_admin|default(false) or _session.user_permissions.email_blacklist.read|default(false) %}
+                            {% if nx_is_admin or _session.user_permissions.email_blacklist.read|default(false) %}
                             <li><a href="/email-blacklist">Email Kara Liste</a></li>
+                            {% endif %}
+                            {% if nx_is_admin or _session.user_permissions.email_smtp.read|default(false) %}
+                            <li><a href="/admin/email-smtp">SMTP Hesapları</a></li>
+                            {% endif %}
+                            {% if nx_is_admin %}
+                            <li><a href="/admin/email-sending-settings">Gönderim Hızı ve Limitler</a></li>
+                            <li><a href="/admin/email-data-pool">Email Havuzu</a></li>
                             {% endif %}
                         </ul>
                     </div>
                 </li>
                 {% endif %}
 
-                {% if _session.user_permissions.url_shortener.read|default(false) %}
+                {% if nx_is_admin or _session.user_permissions.url_shortener.read|default(false) %}
                 {{ nx_sb.section_label('Araçlar') }}
                 <li class="nx-sb-item nx-sb-item--link">
                     <a href="/url-shortener">
@@ -71,7 +84,7 @@
                 </li>
                 {% endif %}
 
-                {% if _session.user_permissions.support_ticket.read|default(true) %}
+                {% if nx_is_admin or _session.user_permissions.support_ticket.read|default(true) %}
                 {{ nx_sb.section_label('Destek') }}
                 <li class="nx-sb-item nx-sb-item--link">
                     <a href="/tickets">
@@ -128,3 +141,62 @@
         </form>
     </footer>
 </div>
+
+<script>
+(function () {
+    var sidebar = document.getElementById('nxAppSidebar');
+    if (!sidebar) return;
+
+    var path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    var links = sidebar.querySelectorAll('.nx-sidebar-v2 a[href^="/"]');
+
+    function normalize(v) {
+        return (v || '/').replace(/\/+$/, '') || '/';
+    }
+
+    function matchRoute(current, target) {
+        var c = normalize(current);
+        var t = normalize(target);
+        if (t === '/dashboard') {
+            return c === '/' || c === '/dashboard';
+        }
+        if (t === '/email-orders' && (c === '/email-send' || c.indexOf('/email-send/') === 0)) {
+            return true;
+        }
+        if (t === '/email-phonebooks' && (c === '/email-guides' || c.indexOf('/email-guides/') === 0)) {
+            return true;
+        }
+        if (t === '/admin/email-data-pool' && (c === '/email-pool' || c.indexOf('/email-pool/') === 0)) {
+            return true;
+        }
+        if (t === '/url-shortener' && (c === '/short-links' || c.indexOf('/short-links/') === 0)) {
+            return true;
+        }
+        if (t === '/tickets' && (c === '/support-tickets' || c.indexOf('/support-tickets/') === 0)) {
+            return true;
+        }
+        if (t === '/tickets' && c.indexOf('/admin/support-tickets') === 0) {
+            return true;
+        }
+        if (t === '/email-templates' && c.indexOf('/admin/email-templates') === 0) {
+            return true;
+        }
+        if (t === '/email-blacklist' && c.indexOf('/admin/email-blacklists') === 0) {
+            return true;
+        }
+        return c === t || c.indexOf(t + '/') === 0;
+    }
+
+    links.forEach(function (link) {
+        var href = link.getAttribute('href');
+        if (!href || href === '/logout') return;
+        if (matchRoute(path, href)) {
+            link.classList.add('active');
+        }
+    });
+
+    if (window.NxSidebarNav && typeof window.NxSidebarNav.syncFromActive === 'function') {
+        window.NxSidebarNav.syncFromActive();
+    }
+})();
+</script>

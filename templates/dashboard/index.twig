@@ -14,8 +14,8 @@
                             <li class="breadcrumb-item active">Ana Sayfa</li>
                         </ol>
                     </div>
-                    <h4 class="page-title nx-page-title mb-1">Mail Dashboard</h4>
-                    <p class="text-muted mb-0">Mail gönderim performansı, SMTP kapasitesi ve günlük kullanım.</p>
+                    <h4 class="page-title nx-page-title mb-1 text-white fw-semibold">Mail Dashboard</h4>
+                    <p class="mb-0 text-white-50">Mail gönderim performansı, SMTP kapasitesi ve günlük kullanım.</p>
                 </div>
                 <button type="button" class="btn btn-sm nx-dash-tool-btn" id="nxDashRefresh">
                     <i data-feather="refresh-cw" class="nx-dash-tool-ic"></i>
@@ -48,9 +48,19 @@
     <div class="col-12 col-md-6 col-lg-4">
         {% include 'dashboard/_partials/kpi-card.twig' with {
             icon: 'send',
-            label: 'Toplam Mail Gönderimi',
-            value: emailStats.total_sent|default(0)|number_format(0, ',', '.'),
-            hint: 'Tüm siparişlerden gönderilen mail',
+            label: 'Bugün Gönderilen',
+            value: usageStats.sent_today|default(0)|number_format(0, ',', '.'),
+            hint: 'Bugün teslim kuyruğuna alınan mail',
+            trend: null,
+            extra_class: 'nx-dash-kpi--mail'
+        } only %}
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+        {% include 'dashboard/_partials/kpi-card.twig' with {
+            icon: 'layers',
+            label: 'Toplam Mail Siparişi',
+            value: emailStats.total_orders|default(0)|number_format(0, ',', '.'),
+            hint: 'Oluşturulan kampanya siparişleri',
             trend: null,
             extra_class: 'nx-dash-kpi--mail'
         } only %}
@@ -95,13 +105,33 @@
             extra_class: 'nx-dash-kpi--support'
         } only %}
     </div>
+    <div class="col-12 col-md-6 col-lg-4">
+        {% include 'dashboard/_partials/kpi-card.twig' with {
+            icon: 'headphones',
+            label: 'Destek Talepleri',
+            value: supportStats.open_tickets|default(0)|number_format(0, ',', '.'),
+            hint: 'Açık ve bekleyen destek talepleri',
+            trend: null,
+            extra_class: 'nx-dash-kpi--support'
+        } only %}
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+        {% include 'dashboard/_partials/kpi-card.twig' with {
+            icon: 'link',
+            label: 'Kısa URL Performansı',
+            value: urlStats.total_clicks|default(0)|number_format(0, ',', '.'),
+            hint: (urlStats.total_urls|default(0)|number_format(0, ',', '.')) ~ ' aktif kısa link',
+            trend: null,
+            extra_class: 'nx-dash-kpi--url'
+        } only %}
+    </div>
 </div>
 
 <div class="row g-3">
     <div class="col-lg-8">
         <div class="card nx-dash-card h-100">
             <div class="card-header border-0">
-                <h5 class="mb-0">Son 7 Gün Mail Gönderim İstatistiği</h5>
+                <h5 class="mb-0 text-white fw-semibold">Son 7 Gün Mail Gönderim İstatistiği</h5>
             </div>
             <div class="card-body">
                 {% if chartEmpty %}
@@ -121,16 +151,20 @@
     <div class="col-lg-4">
         <div class="card nx-dash-card h-100">
             <div class="card-header border-0">
-                <h5 class="mb-0">Hızlı İşlemler</h5>
+                <h5 class="mb-0 text-white fw-semibold">Hızlı İşlemler</h5>
             </div>
             <div class="card-body">
                 <div class="d-grid gap-2">
-                    <a href="/email-orders" class="btn btn-primary btn-sm">Mail Gönder</a>
-                    <a href="/email-phonebooks" class="btn btn-outline-primary btn-sm">Mail Rehber</a>
-                    <a href="/email-templates" class="btn btn-outline-primary btn-sm">Mail Şablonları</a>
-                    <a href="/email-blacklist" class="btn btn-outline-primary btn-sm">Email Kara Liste</a>
-                    <a href="/url-shortener" class="btn btn-outline-primary btn-sm">Link Kısaltıcı</a>
-                    <a href="/tickets" class="btn btn-outline-primary btn-sm">Destek Talebi Oluştur</a>
+                    <a href="/email-orders" class="btn btn-primary btn-sm py-2">Mail Gönder</a>
+                    <a href="/email-phonebooks" class="btn btn-outline-primary btn-sm py-2">Mail Rehber</a>
+                    <a href="/email-templates" class="btn btn-outline-primary btn-sm py-2">Mail Şablonları</a>
+                    <a href="/admin/email-orders" class="btn btn-outline-primary btn-sm py-2">Tüm Mail Gönderimler</a>
+                    <a href="/admin/email-smtp" class="btn btn-outline-primary btn-sm py-2">SMTP Hesapları</a>
+                    <a href="/admin/email-sending-settings" class="btn btn-outline-primary btn-sm py-2">Gönderim Hızı ve Limitler</a>
+                    <a href="/admin/email-data-pool" class="btn btn-outline-primary btn-sm py-2">Email Havuzu</a>
+                    <a href="/email-blacklist" class="btn btn-outline-primary btn-sm py-2">Email Kara Liste</a>
+                    <a href="/url-shortener" class="btn btn-outline-primary btn-sm py-2">Link Kısaltıcı</a>
+                    <a href="/tickets" class="btn btn-outline-primary btn-sm py-2">Destek Talebi Oluştur</a>
                 </div>
                 <hr>
                 <div class="small text-muted">
@@ -147,7 +181,7 @@
     <div class="col-lg-8">
         <div class="card nx-dash-card">
             <div class="card-header border-0">
-                <h5 class="mb-0">Son Mail Siparişleri</h5>
+                <h5 class="mb-0 text-white fw-semibold">Son Mail Siparişleri</h5>
             </div>
             <div class="card-body">
                 {% if recentEmailOrders is empty %}
@@ -190,7 +224,7 @@
     <div class="col-lg-4">
         <div class="card nx-dash-card">
             <div class="card-header border-0">
-                <h5 class="mb-0">Kısa URL Performansı</h5>
+                <h5 class="mb-0 text-white fw-semibold">Kısa URL Performansı</h5>
             </div>
             <div class="card-body">
                 {% if recentUrls is empty %}

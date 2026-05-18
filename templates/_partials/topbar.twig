@@ -1,4 +1,3 @@
-{% import '_macros/user_menu.twig' as um %}
 <div class="topbar nx-topbar">
     <nav class="navbar-custom">
         <ul class="list-unstyled topbar-nav float-end mb-0">
@@ -31,15 +30,6 @@
                             </div>
                         </div>
                         <div class="nx-dd-scroll">
-                            {{ um.section_title('Hesabım') }}
-                            <a class="dropdown-item nx-dd-item" href="#" data-bs-toggle="modal" data-bs-target="#profileModal">
-                                <i data-feather="user" class="nx-dd-icon"></i>
-                                <span>Profil</span>
-                            </a>
-                            <a class="dropdown-item nx-dd-item" href="#" data-bs-toggle="modal" data-bs-target="#securityModal">
-                                <i data-feather="shield" class="nx-dd-icon"></i>
-                                <span>Güvenlik</span>
-                            </a>
                             {% include '_partials/user-dropdown-admin-section.twig' %}
                         </div>
                         <div class="nx-dd-footer">
