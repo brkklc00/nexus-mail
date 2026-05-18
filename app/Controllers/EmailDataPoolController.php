@@ -26,48 +26,87 @@ class EmailDataPoolController
     {
         $params = $request->getQueryParams();
         $listIdParam = (int) ($params['list_id'] ?? 0);
+        $listSearch = trim((string) ($params['list_search'] ?? ''));
+        $listPage = max(1, (int) ($params['list_page'] ?? 1));
+        $listPerPage = 50;
 
-        /** @var EmailDataPoolList[] $allLists */
-        $allLists = $this->em->getRepository(EmailDataPoolList::class)->findBy([], ['sortOrder' => 'ASC', 'id' => 'ASC']);
+        $listQb = $this->em->createQueryBuilder()
+            ->select('l')
+            ->from(EmailDataPoolList::class, 'l');
+        if ($listSearch !== '') {
+            $listQb->where('l.name LIKE :listSearch')
+                ->setParameter('listSearch', '%' . $listSearch . '%');
+        }
+        $totalLists = (int) (clone $listQb)->select('COUNT(l.id)')->getQuery()->getSingleScalarResult();
+        $listOffset = ($listPage - 1) * $listPerPage;
+
+        /** @var EmailDataPoolList[] $visibleLists */
+        $visibleLists = $listQb
+            ->orderBy('l.sortOrder', 'ASC')
+            ->addOrderBy('l.id', 'ASC')
+            ->setFirstResult($listOffset)
+            ->setMaxResults($listPerPage)
+            ->getQuery()
+            ->getResult();
+
         $currentList = $listIdParam > 0 ? $this->em->find(EmailDataPoolList::class, $listIdParam) : null;
-        if (!$currentList && $allLists !== []) {
-            $currentList = $allLists[0];
+        if (!$currentList && $visibleLists !== []) {
+            $currentList = $visibleLists[0];
+        }
+        if ($currentList) {
+            $hasCurrentInVisible = false;
+            foreach ($visibleLists as $visibleList) {
+                if ($visibleList->getId() === $currentList->getId()) {
+                    $hasCurrentInVisible = true;
+                    break;
+                }
+            }
+            if (!$hasCurrentInVisible) {
+                array_unshift($visibleLists, $currentList);
+            }
         }
 
-        $aggregates = $this->fetchPoolListEntryAggregates();
+        $totalAllPoolsEntries = (int) $this->em->getConnection()->fetchOne('SELECT COALESCE(SUM(total_count), 0) FROM email_data_pool_lists');
         $listSummaries = [];
-        foreach ($allLists as $pl) {
+        foreach ($visibleLists as $pl) {
             $lid = $pl->getId();
             $listSummaries[] = [
                 'id' => $lid,
                 'name' => $pl->getName(),
                 'sort_order' => $pl->getSortOrder(),
-                'entry_count' => $aggregates[$lid]['entry_count'] ?? 0,
-                'active_count' => $aggregates[$lid]['active_count'] ?? 0,
+                'entry_count' => $pl->getTotalCount(),
+                'active_count' => $pl->getActiveCount(),
+                'passive_count' => $pl->getPassiveCount(),
+                'updated_count_at' => $pl->getUpdatedCountAt()?->format('Y-m-d H:i:s'),
             ];
         }
 
         $total = 0;
         $activeCount = 0;
+        $passiveCount = 0;
         $listTotalAll = 0;
-        $totalAllPoolsEntries = 0;
-        foreach ($aggregates as $agg) {
-            $totalAllPoolsEntries += (int) ($agg['entry_count'] ?? 0);
-        }
+        $updatedCountAt = null;
         if ($currentList) {
-            $lid = (int) $currentList->getId();
-            $listTotalAll = (int) ($aggregates[$lid]['entry_count'] ?? 0);
+            $listTotalAll = $currentList->getTotalCount();
             $total = $listTotalAll;
-            $activeCount = (int) ($aggregates[$lid]['active_count'] ?? 0);
+            $activeCount = $currentList->getActiveCount();
+            $passiveCount = $currentList->getPassiveCount();
+            $updatedCountAt = $currentList->getUpdatedCountAt()?->format('Y-m-d H:i:s');
         }
 
         $html = $this->twig->render('admin/email-data-pool/index.twig', [
             'pool_lists' => $listSummaries,
             'current_list_id' => $currentList?->getId(),
             'current_list_name' => $currentList?->getName(),
+            'list_search' => $listSearch,
+            'list_page' => $listPage,
+            'list_per_page' => $listPerPage,
+            'list_total' => $totalLists,
             'total' => $total,
             'active_count' => $activeCount,
+            'passive_count' => $passiveCount,
             'list_total_all' => $listTotalAll,
+            'updated_count_at' => $updatedCountAt,
             'total_all_pools_entries' => $totalAllPoolsEntries,
             'success' => $_SESSION['success'] ?? null,
             'error' => $_SESSION['error'] ?? null
@@ -129,6 +168,9 @@ class EmailDataPoolController
             
             // Bulk insert ile ekle (aktif olarak)
             $added = $this->bulkInsertEmails($newEmails, $poolList->getId());
+            if ($added > 0) {
+                $this->incrementListCounts((int) $poolList->getId(), $added, $added, 0);
+            }
             
             $elapsed = round(microtime(true) - $startTime, 2);
             $_SESSION['success'] = sprintf(
@@ -147,7 +189,7 @@ class EmailDataPoolController
             error_log('EmailDataPoolController::store import error: ' . $e->getMessage());
             $_SESSION['error'] = $e instanceof \RuntimeException
                 ? $e->getMessage()
-                : 'Import sırasında bir hata oluştu.';
+                : 'Import sırasında bir hata oluştu. Lütfen tekrar deneyin.';
         }
 
         return $response->withHeader('Location', $this->poolListRedirect($poolList?->getId()))->withStatus(302);
@@ -433,9 +475,13 @@ class EmailDataPoolController
 
             $removeAllLists = (($data['remove_scope'] ?? '') === 'all_lists');
             $listIdForDelete = $removeAllLists ? null : $poolList->getId();
+            $affectedListIds = $this->findImpactedListIdsForEmails($emailAddresses, $listIdForDelete);
 
             // Bulk delete ile sil (RAW SQL — listId null ise tüm pool listeleri)
             $removed = $this->bulkDeleteEmails($emailAddresses, $listIdForDelete);
+            if ($removed > 0 && $affectedListIds !== []) {
+                $this->recalculateListCounts($affectedListIds);
+            }
 
             $elapsed = round(microtime(true) - $startTime, 2);
 
@@ -451,8 +497,11 @@ class EmailDataPoolController
                     : 'Belirtilen mail adresleri bu listede bulunamadı';
             }
 
-        } catch (\Exception $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::remove error: ' . $e->getMessage());
+            $_SESSION['error'] = $e instanceof \RuntimeException
+                ? $e->getMessage()
+                : 'Mail çıkarma sırasında bir hata oluştu.';
         }
 
         return $response->withHeader('Location', $this->poolListRedirect($poolList->getId()))->withStatus(302);
@@ -501,16 +550,20 @@ class EmailDataPoolController
         try {
             $id = (int) $args['id'];
             $conn = $this->em->getConnection();
-            
+            $row = $conn->fetchAssociative('SELECT pool_list_id FROM email_data_pool WHERE id = ?', [$id]);
             $deleted = $conn->executeStatement('DELETE FROM email_data_pool WHERE id = ?', [$id]);
             
             if ($deleted > 0) {
+                if (!empty($row['pool_list_id'])) {
+                    $this->recalculateListCounts([(int) $row['pool_list_id']]);
+                }
                 $_SESSION['success'] = 'Mail havuzdan çıkarıldı';
             } else {
                 $_SESSION['error'] = 'Mail bulunamadı';
             }
-        } catch (\Exception $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::delete error: ' . $e->getMessage());
+            $_SESSION['error'] = 'Mail silinirken bir hata oluştu.';
         }
 
         return $response->withHeader('Location', $redirect)->withStatus(302);
@@ -543,12 +596,16 @@ class EmailDataPoolController
             $sql = "DELETE FROM email_data_pool WHERE id IN ($placeholders) AND pool_list_id = ?";
             $params = array_merge($ids, [$poolList->getId()]);
             $deleted = $conn->executeStatement($sql, $params);
+            if ($deleted > 0) {
+                $this->recalculateListCounts([(int) $poolList->getId()]);
+            }
             
             $elapsed = round(microtime(true) - $startTime, 2);
             $_SESSION['success'] = "{$deleted} mail {$elapsed}s içinde havuzdan silindi";
 
-        } catch (\Exception $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::bulkDelete error: ' . $e->getMessage());
+            $_SESSION['error'] = 'Toplu silme sırasında bir hata oluştu.';
         }
 
         return $response->withHeader('Location', $this->poolListRedirect($poolList->getId()))->withStatus(302);
@@ -571,12 +628,14 @@ class EmailDataPoolController
                 'DELETE FROM email_data_pool WHERE pool_list_id = ?',
                 [$poolList->getId()]
             );
+            $this->setListCounts((int) $poolList->getId(), 0, 0, 0);
             
             $elapsed = round(microtime(true) - $startTime, 2);
             $_SESSION['success'] = sprintf('"%s" listesindeki %d kayıt %ss içinde silindi', $poolList->getName(), (int) $deleted, $elapsed);
 
-        } catch (\Exception $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::deleteAll error: ' . $e->getMessage());
+            $_SESSION['error'] = 'Liste temizleme sırasında bir hata oluştu.';
         }
 
         return $response->withHeader('Location', $this->poolListRedirect($poolList->getId()))->withStatus(302);
@@ -604,17 +663,25 @@ class EmailDataPoolController
             // Convert to integers for security
             $ids = array_map('intval', $ids);
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $toActivate = (int) $conn->fetchOne(
+                "SELECT COUNT(*) FROM email_data_pool WHERE id IN ($placeholders) AND pool_list_id = ? AND is_active = 0",
+                array_merge($ids, [$poolList->getId()])
+            );
             
             // Raw SQL bulk update
             $sql = "UPDATE email_data_pool SET is_active = 1, updated_at = NOW() WHERE id IN ($placeholders) AND pool_list_id = ?";
             $params = array_merge($ids, [$poolList->getId()]);
             $updated = $conn->executeStatement($sql, $params);
+            if ($toActivate > 0) {
+                $this->incrementListCounts((int) $poolList->getId(), 0, $toActivate, -$toActivate);
+            }
             
             $elapsed = round(microtime(true) - $startTime, 2);
             $_SESSION['success'] = "{$updated} mail {$elapsed}s içinde aktif yapıldı";
 
-        } catch (\Exception $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::bulkActivate error: ' . $e->getMessage());
+            $_SESSION['error'] = 'Toplu aktif etme sırasında bir hata oluştu.';
         }
 
         return $response->withHeader('Location', $this->poolListRedirect($poolList->getId()))->withStatus(302);
@@ -642,17 +709,25 @@ class EmailDataPoolController
             // Convert to integers for security
             $ids = array_map('intval', $ids);
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $toDeactivate = (int) $conn->fetchOne(
+                "SELECT COUNT(*) FROM email_data_pool WHERE id IN ($placeholders) AND pool_list_id = ? AND is_active = 1",
+                array_merge($ids, [$poolList->getId()])
+            );
             
             // Raw SQL bulk update
             $sql = "UPDATE email_data_pool SET is_active = 0, updated_at = NOW() WHERE id IN ($placeholders) AND pool_list_id = ?";
             $params = array_merge($ids, [$poolList->getId()]);
             $updated = $conn->executeStatement($sql, $params);
+            if ($toDeactivate > 0) {
+                $this->incrementListCounts((int) $poolList->getId(), 0, -$toDeactivate, $toDeactivate);
+            }
             
             $elapsed = round(microtime(true) - $startTime, 2);
             $_SESSION['success'] = "{$updated} mail {$elapsed}s içinde pasif yapıldı";
 
-        } catch (\Exception $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::bulkDeactivate error: ' . $e->getMessage());
+            $_SESSION['error'] = 'Toplu pasif etme sırasında bir hata oluştu.';
         }
 
         return $response->withHeader('Location', $this->poolListRedirect($poolList->getId()))->withStatus(302);
@@ -795,6 +870,57 @@ class EmailDataPoolController
             ->withHeader('Expires', '0');
     }
 
+    /**
+     * TXT export — her satırda tek email olacak şekilde akışlı oluşturulur.
+     */
+    public function exportTxt(Request $request, Response $response): Response
+    {
+        @set_time_limit(0);
+        if (function_exists('ini_set')) {
+            @ini_set('max_execution_time', '0');
+            @ini_set('memory_limit', '512M');
+        }
+
+        $params = $request->getQueryParams();
+        $search = trim((string) ($params['search'] ?? ''));
+        $listId = (int) ($params['list_id'] ?? 0);
+        $poolList = $this->resolvePoolListById($listId);
+        $listPk = (int) $poolList->getId();
+
+        try {
+            $tmpPath = $this->writePoolListTxtToTempFile($listPk, $search);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::exportTxt error: ' . $e->getMessage());
+            $_SESSION['error'] = 'TXT oluşturulamadı.';
+
+            return $response->withHeader('Location', $this->poolListRedirect($listPk))->withStatus(302);
+        }
+
+        $resource = fopen($tmpPath, 'rb');
+        if ($resource === false) {
+            @unlink($tmpPath);
+            $_SESSION['error'] = 'TXT dosyası okunamadı.';
+
+            return $response->withHeader('Location', $this->poolListRedirect($listPk))->withStatus(302);
+        }
+
+        register_shutdown_function(static function () use ($tmpPath): void {
+            @unlink($tmpPath);
+        });
+
+        $stream = new \Slim\Psr7\Stream($resource);
+        $safeName = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $poolList->getName());
+        $filename = 'mail_havuzu_' . $safeName . '_' . date('Y-m-d_His') . '.txt';
+
+        return $response
+            ->withBody($stream)
+            ->withHeader('Content-Type', 'text/plain; charset=utf-8')
+            ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->withHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+            ->withHeader('Pragma', 'no-cache')
+            ->withHeader('Expires', '0');
+    }
+
     private function countPoolExportRows(int $poolListId, string $search): int
     {
         $conn = $this->em->getConnection();
@@ -894,31 +1020,132 @@ class EmailDataPoolController
         return $tmpPath;
     }
 
-    /**
-     * @return array<int, array{entry_count: int, active_count: int}>
-     */
-    private function fetchPoolListEntryAggregates(): array
+    private function writePoolListTxtToTempFile(int $poolListId, string $search): string
     {
-        $sql = 'SELECT pool_list_id,
-                       COUNT(*) AS entry_count,
-                       SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_count
-                FROM email_data_pool
-                GROUP BY pool_list_id';
-
-        $rows = $this->em->getConnection()->fetchAllAssociative($sql);
-        $out = [];
-        foreach ($rows as $row) {
-            $id = (int) ($row['pool_list_id'] ?? 0);
-            if ($id < 1) {
-                continue;
-            }
-            $out[$id] = [
-                'entry_count' => (int) ($row['entry_count'] ?? 0),
-                'active_count' => (int) ($row['active_count'] ?? 0),
-            ];
+        $tmpPath = tempnam(sys_get_temp_dir(), 'edptxt');
+        if ($tmpPath === false) {
+            throw new \RuntimeException('Geçici dosya oluşturulamadı.');
         }
 
-        return $out;
+        $fp = fopen($tmpPath, 'wb');
+        if ($fp === false) {
+            @unlink($tmpPath);
+            throw new \RuntimeException('Geçici dosya açılamadı.');
+        }
+
+        $batchSize = max(2000, min(20000, (int) ($_ENV['EMAIL_POOL_TXT_EXPORT_BATCH'] ?? 10000)));
+        $lastId = 0;
+        do {
+            $batch = $this->fetchPoolExportBatch($poolListId, $search, $lastId, $batchSize);
+            foreach ($batch as $row) {
+                $lastId = (int) ($row['id'] ?? 0);
+                $email = trim((string) ($row['email'] ?? ''));
+                if ($email !== '') {
+                    fwrite($fp, $email . PHP_EOL);
+                }
+            }
+        } while (count($batch) === $batchSize);
+
+        if (fclose($fp) === false) {
+            @unlink($tmpPath);
+            throw new \RuntimeException('TXT dosyası kapatılamadı.');
+        }
+
+        return $tmpPath;
+    }
+
+    private function incrementListCounts(int $listId, int $totalDelta, int $activeDelta, int $passiveDelta): void
+    {
+        if ($listId < 1) {
+            return;
+        }
+
+        $this->em->getConnection()->executeStatement(
+            'UPDATE email_data_pool_lists
+                SET total_count = GREATEST(0, total_count + ?),
+                    active_count = GREATEST(0, active_count + ?),
+                    passive_count = GREATEST(0, passive_count + ?),
+                    updated_count_at = NOW()
+              WHERE id = ?',
+            [$totalDelta, $activeDelta, $passiveDelta, $listId]
+        );
+    }
+
+    private function setListCounts(int $listId, int $total, int $active, int $passive): void
+    {
+        if ($listId < 1) {
+            return;
+        }
+
+        $this->em->getConnection()->executeStatement(
+            'UPDATE email_data_pool_lists
+                SET total_count = ?,
+                    active_count = ?,
+                    passive_count = ?,
+                    updated_count_at = NOW()
+              WHERE id = ?',
+            [max(0, $total), max(0, $active), max(0, $passive), $listId]
+        );
+    }
+
+    /**
+     * @param array<int, int> $listIds
+     */
+    private function recalculateListCounts(array $listIds): void
+    {
+        $listIds = array_values(array_unique(array_map('intval', $listIds)));
+        $listIds = array_values(array_filter($listIds, static fn (int $id) => $id > 0));
+        if ($listIds === []) {
+            return;
+        }
+
+        $conn = $this->em->getConnection();
+        foreach ($listIds as $listId) {
+            $row = $conn->fetchAssociative(
+                'SELECT COUNT(*) AS total_count,
+                        SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_count
+                   FROM email_data_pool
+                  WHERE pool_list_id = ?',
+                [$listId]
+            ) ?: [];
+            $total = (int) ($row['total_count'] ?? 0);
+            $active = (int) ($row['active_count'] ?? 0);
+            $this->setListCounts($listId, $total, $active, max(0, $total - $active));
+        }
+    }
+
+    /**
+     * @param array<int, string> $emails
+     * @return array<int, int>
+     */
+    private function findImpactedListIdsForEmails(array $emails, ?int $poolListId = null): array
+    {
+        $emails = array_values(array_unique(array_filter(array_map('strval', $emails), static fn (string $email) => $email !== '')));
+        if ($emails === []) {
+            return [];
+        }
+
+        $conn = $this->em->getConnection();
+        $batchSize = 2000;
+        $listIds = [];
+        foreach (array_chunk($emails, $batchSize) as $batch) {
+            $placeholders = implode(',', array_fill(0, count($batch), '?'));
+            $sql = "SELECT DISTINCT pool_list_id FROM email_data_pool WHERE email IN ($placeholders)";
+            $params = $batch;
+            if ($poolListId !== null) {
+                $sql .= ' AND pool_list_id = ?';
+                $params[] = $poolListId;
+            }
+            $rows = $conn->fetchFirstColumn($sql, $params);
+            foreach ($rows as $id) {
+                $id = (int) $id;
+                if ($id > 0) {
+                    $listIds[$id] = $id;
+                }
+            }
+        }
+
+        return array_values($listIds);
     }
 
     public function storeList(Request $request, Response $response): Response
@@ -933,6 +1160,7 @@ class EmailDataPoolController
         $list = new EmailDataPoolList();
         $list->setName($name);
         $list->setSortOrder($sortOrder);
+        $list->setUpdatedCountAt(new \DateTimeImmutable());
         $this->em->persist($list);
         $this->em->flush();
         $_SESSION['success'] = 'Yeni liste oluşturuldu: ' . $name;

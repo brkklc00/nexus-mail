@@ -563,6 +563,8 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/export-csv', [\App\Controllers\EmailDataPoolController::class, 'exportCsv'])->setName('admin.email-data-pool.export-csv')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/export-txt', [\App\Controllers\EmailDataPoolController::class, 'exportTxt'])->setName('admin.email-data-pool.export-txt')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
         });
 
         // Notifications (User)

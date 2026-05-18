@@ -37,6 +37,11 @@
         background: rgba(255, 255, 255, 0.2) !important;
         color: #fff !important;
     }
+    .pool-list-scroll {
+        max-height: calc(100vh - 320px);
+        min-height: 360px;
+        overflow-y: auto;
+    }
 </style>
 {% endblock %}
 
@@ -61,7 +66,8 @@
     {% if current_list_id is null %}
     <div class="alert alert-warning">Havuz listesi bulunamadı. Veritabanı migration’ını çalıştırın (<code>email_data_pool_lists</code>).</div>
     {% else %}
-    {% set inactive_count = total - active_count %}
+    {% set inactive_count = passive_count|default(total - active_count) %}
+    {% set list_pages = (list_total / list_per_page)|round(0, 'ceil') %}
     <div class="row g-3">
         <div class="col-lg-3">
             <div class="card h-100">
@@ -76,15 +82,37 @@
                         </button>
                     </div>
                 </div>
-                <div class="list-group list-group-flush pool-list-group">
+                <div class="card-body border-bottom py-2">
+                    <input
+                        type="text"
+                        id="poolListSearch"
+                        class="form-control form-control-sm"
+                        placeholder="Liste ara..."
+                        value="{{ list_search|default('') }}"
+                        autocomplete="off">
+                </div>
+                <div class="list-group list-group-flush pool-list-group pool-list-scroll">
                     {% for pl in pool_lists %}
-                    <a href="/admin/email-data-pool?list_id={{ pl.id }}"
+                    <a href="/admin/email-data-pool?list_id={{ pl.id }}{% if list_search %}&list_search={{ list_search|url_encode }}{% endif %}{% if list_page > 1 %}&list_page={{ list_page }}{% endif %}"
                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3 {% if pl.id == current_list_id %}active{% endif %}">
                         <span class="text-truncate me-2" title="{{ pl.name }}">{{ pl.name }}</span>
                         <span class="badge {% if pl.id == current_list_id %}bg-white text-primary{% else %}bg-soft-secondary text-secondary{% endif %} rounded-pill">{{ pl.entry_count|number_format }}</span>
                     </a>
+                    {% else %}
+                    <div class="list-group-item text-muted small">Eşleşen liste bulunamadı.</div>
                     {% endfor %}
                 </div>
+                {% if list_pages > 1 %}
+                <div class="card-body border-top py-2">
+                    <div class="d-flex align-items-center justify-content-between small">
+                        {% set prev_page = list_page - 1 %}
+                        {% set next_page = list_page + 1 %}
+                        <a class="btn btn-soft-secondary btn-sm {% if list_page <= 1 %}disabled{% endif %}" href="/admin/email-data-pool?list_id={{ current_list_id }}{% if list_search %}&list_search={{ list_search|url_encode }}{% endif %}&list_page={{ prev_page > 0 ? prev_page : 1 }}">Önceki</a>
+                        <span class="text-muted">{{ list_page }} / {{ list_pages }}</span>
+                        <a class="btn btn-soft-secondary btn-sm {% if list_page >= list_pages %}disabled{% endif %}" href="/admin/email-data-pool?list_id={{ current_list_id }}{% if list_search %}&list_search={{ list_search|url_encode }}{% endif %}&list_page={{ next_page <= list_pages ? next_page : list_pages }}">Sonraki</a>
+                    </div>
+                </div>
+                {% endif %}
                 <div class="card-body border-top pt-3">
                     <button type="button" class="btn btn-sm btn-soft-primary w-100 mb-2" data-bs-toggle="modal" data-bs-target="#editListModal">
                         <i data-feather="edit-2" class="icon-xs me-1"></i> Listeyi düzenle
@@ -187,6 +215,9 @@
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top">
                         <p class="small text-muted mb-0">
                             Bu listeden çıkarma veya <strong>tüm havuz listelerinden</strong> silme için <strong>Mail çıkar</strong> içinde kapsam seçin. Listenin tamamı için <strong>Tümünü sil</strong>.
+                            {% if updated_count_at %}
+                                <br><span class="text-muted">Sayaç güncelleme: {{ updated_count_at }}</span>
+                            {% endif %}
                         </p>
                         <div class="d-flex flex-wrap gap-2">
                             <div class="btn-group">
@@ -194,6 +225,9 @@
                                     <i data-feather="download" class="icon-xs me-1"></i> Dışa aktar
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="/admin/email-data-pool/export-txt?list_id={{ current_list_id }}">
+                                        <i data-feather="file-minus" class="icon-xs me-2"></i> TXT (sadece email)
+                                    </a></li>
                                     <li><a class="dropdown-item" href="/admin/email-data-pool/export-excel?list_id={{ current_list_id }}">
                                         <i data-feather="file" class="icon-xs me-2"></i> Excel
                                     </a></li>
@@ -1008,6 +1042,27 @@ function readRemoveExcelFile(file) {
 
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
+    const listSearchInput = document.getElementById('poolListSearch');
+    if (listSearchInput) {
+        let searchTimer = null;
+        listSearchInput.addEventListener('input', function () {
+            clearTimeout(searchTimer);
+            const value = this.value.trim();
+            searchTimer = setTimeout(function () {
+                const params = new URLSearchParams(window.location.search);
+                if (value) {
+                    params.set('list_search', value);
+                } else {
+                    params.delete('list_search');
+                }
+                params.set('list_page', '1');
+                if (CURRENT_POOL_LIST_ID) {
+                    params.set('list_id', String(CURRENT_POOL_LIST_ID));
+                }
+                window.location.href = '/admin/email-data-pool?' + params.toString();
+            }, 300);
+        });
+    }
 
     ['addModal', 'removeModal', 'newListModal', 'editListModal'].forEach(function (id) {
         const el = document.getElementById(id);
