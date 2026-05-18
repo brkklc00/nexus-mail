@@ -34,13 +34,15 @@ class EmailOrderController
 
         // Siparişleri çek
         $qb = $this->em->createQueryBuilder();
-        $orders = $qb->select('o')
+        $orders = $qb->select('o', 't')
             ->from(EmailOrder::class, 'o')
+            ->leftJoin('o.template', 't')
             ->where('o.user = :user')
             ->setParameter('user', $user)
             ->orderBy('o.createdAt', 'DESC')
             ->getQuery()
             ->getResult();
+        $templateMetaByOrderId = $this->buildFallbackTemplateMapForOrders($orders);
 
         // Email Blacklist sayısını al
         $blacklistCount = $this->em->createQueryBuilder()
@@ -73,6 +75,7 @@ class EmailOrderController
 
         $html = $this->twig->render('email-orders/index.twig', [
             'orders' => $orders,
+            'template_meta_by_order_id' => $templateMetaByOrderId,
             'phonebooks' => $phonebooks,
             'templates' => $templates,
             'email_credit' => $user->getEmailCredit() ?? 0,
@@ -266,9 +269,11 @@ class EmailOrderController
             if ($bodyTemplate) {
                 $order->setSubject($bodyTemplate->getSubject());
                 $order->setBody($bodyTemplate->getBody());
+                $order->setTemplate($bodyTemplate);
             } else {
                 $order->setSubject($data['subject'] ?? '');
                 $order->setBody($data['body'] ?? '');
+                $order->setTemplate(null);
             }
             $order->setTotal($totalEmails);
             $order->setCost($totalEmails);
@@ -421,6 +426,10 @@ class EmailOrderController
                         'email' => $order->getUser()->getEmail()
                     ],
                     'subject' => $order->getSubject(),
+                    'template' => $order->getTemplate() ? [
+                        'id' => $order->getTemplate()->getId(),
+                        'name' => $order->getTemplate()->getName(),
+                    ] : null,
                     'body' => $order->getBody(),
                     'status' => EnumHelper::normalizeEnumValue($order->getStatus()),
                     'total' => $order->getTotal(),
@@ -452,6 +461,78 @@ class EmailOrderController
             ], JSON_UNESCAPED_UNICODE));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
+    }
+
+    /**
+     * Email listesini parse et
+     */
+    private function buildFallbackTemplateMapForOrders(array $orders): array
+    {
+        $subjects = [];
+        foreach ($orders as $order) {
+            if (!$order instanceof EmailOrder || $order->getTemplate()) {
+                continue;
+            }
+            $subject = trim((string) $order->getSubject());
+            if ($subject !== '') {
+                $subjects[] = $subject;
+            }
+        }
+
+        $subjects = array_values(array_unique($subjects));
+        if ($subjects === []) {
+            return [];
+        }
+
+        $rows = $this->em->createQueryBuilder()
+            ->select('t.id AS id', 't.name AS name', 't.subject AS subject')
+            ->from(EmailTemplate::class, 't')
+            ->where('t.isApproved = :approved')
+            ->andWhere('t.subject IN (:subjects)')
+            ->setParameter('approved', true)
+            ->setParameter('subjects', $subjects)
+            ->orderBy('t.id', 'DESC')
+            ->getQuery()
+            ->getArrayResult();
+
+        $subjectMap = [];
+        foreach ($rows as $row) {
+            $normalized = $this->normalizeSubject((string) ($row['subject'] ?? ''));
+            if ($normalized === '' || isset($subjectMap[$normalized])) {
+                continue;
+            }
+            $subjectMap[$normalized] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'name' => trim((string) ($row['name'] ?? '')),
+            ];
+        }
+
+        $result = [];
+        foreach ($orders as $order) {
+            if (!$order instanceof EmailOrder || $order->getTemplate()) {
+                continue;
+            }
+            $normalized = $this->normalizeSubject((string) $order->getSubject());
+            if (isset($subjectMap[$normalized])) {
+                $result[$order->getId()] = $subjectMap[$normalized];
+            }
+        }
+
+        return $result;
+    }
+
+    private function normalizeSubject(string $subject): string
+    {
+        $subject = trim($subject);
+        if ($subject === '') {
+            return '';
+        }
+
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($subject);
+        }
+
+        return strtolower($subject);
     }
 
     /**

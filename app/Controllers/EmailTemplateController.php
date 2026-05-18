@@ -26,9 +26,9 @@ class EmailTemplateController
     {
         $user = $this->em->find(User::class, $_SESSION['user']['id']);
 
-        // Template'leri getir (kendi şablonları + onaylı global şablonlar)
+        // Liste için sadece gerekli alanları çek (body gibi büyük alanları bu sorguda taşıma)
         $templates = $this->em->createQueryBuilder()
-            ->select('t')
+            ->select('partial t.{id,name,subject,isGlobal,isApproved,createdAt}')
             ->from(EmailTemplate::class, 't')
             ->where('t.user = :user OR (t.isGlobal = :global AND t.isApproved = true)')
             ->setParameter('user', $user)
@@ -113,7 +113,8 @@ class EmailTemplateController
             return $response->withHeader('Location', '/email-templates')->withStatus(302);
 
         } catch (\Exception $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+            error_log('EmailTemplateController::store error: ' . $e->getMessage());
+            $_SESSION['error'] = 'Şablon oluşturulurken bir hata oluştu.';
             return $response->withHeader('Location', '/email-templates')->withStatus(302);
         }
     }
@@ -184,27 +185,70 @@ class EmailTemplateController
      */
     public function update(Request $request, Response $response, array $args): Response
     {
+        $isAjax = strtolower((string) $request->getHeaderLine('X-Requested-With')) === 'xmlhttprequest';
         $data = $request->getParsedBody();
+        $data = is_array($data) ? $data : [];
+
+        $name = trim((string) ($data['name'] ?? ''));
+        $subject = trim((string) ($data['subject'] ?? ''));
+        $body = trim((string) ($data['body'] ?? ''));
+
+        if ($name === '' || $subject === '' || $body === '') {
+            if ($isAjax) {
+                return $this->json($response, [
+                    'success' => false,
+                    'message' => 'Şablon adı, konu ve içerik zorunludur.'
+                ], 422);
+            }
+            $_SESSION['error'] = 'Şablon adı, konu ve içerik zorunludur.';
+            return $response->withHeader('Location', '/email-templates')->withStatus(302);
+        }
+
         $user = $this->em->find(User::class, $_SESSION['user']['id']);
         $template = $this->em->find(EmailTemplate::class, (int) $args['id']);
 
         if (!$template || ($template->getUser() !== $user && !($template->isGlobal() && $_SESSION['user']['role']['name'] === 'admin'))) {
-            $_SESSION['error'] = 'Şablon bulunamadı veya erişim yok';
+            if ($isAjax) {
+                return $this->json($response, [
+                    'success' => false,
+                    'message' => 'Şablon bulunamadı veya erişim yok.'
+                ], 404);
+            }
+            $_SESSION['error'] = 'Şablon bulunamadı veya erişim yok.';
             return $response->withHeader('Location', '/email-templates')->withStatus(302);
         }
 
         try {
-            $template->setName($data['name']);
-            $template->setSubject($data['subject']);
-            $template->setBody($data['body']);
+            $template->setName($name);
+            $template->setSubject($subject);
+            $template->setBody($body);
 
             $this->em->flush();
 
-            $_SESSION['success'] = 'Şablon güncellendi';
+            if ($isAjax) {
+                return $this->json($response, [
+                    'success' => true,
+                    'message' => 'Şablon güncellendi.',
+                    'item' => [
+                        'id' => $template->getId(),
+                        'name' => $template->getName(),
+                        'subject' => $template->getSubject(),
+                    ],
+                ]);
+            }
+
+            $_SESSION['success'] = 'Şablon güncellendi.';
             return $response->withHeader('Location', '/email-templates')->withStatus(302);
 
         } catch (\Exception $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+            error_log('EmailTemplateController::update error: ' . $e->getMessage());
+            if ($isAjax) {
+                return $this->json($response, [
+                    'success' => false,
+                    'message' => 'Şablon güncellenirken bir hata oluştu.'
+                ], 500);
+            }
+            $_SESSION['error'] = 'Şablon güncellenirken bir hata oluştu.';
             return $response->withHeader('Location', '/email-templates')->withStatus(302);
         }
     }
@@ -228,10 +272,15 @@ class EmailTemplateController
             return $response->withHeader('Location', '/email-templates')->withStatus(302);
         }
 
-        $this->em->remove($template);
-        $this->em->flush();
+        try {
+            $this->em->remove($template);
+            $this->em->flush();
+            $_SESSION['success'] = 'Şablon silindi';
+        } catch (\Exception $e) {
+            error_log('EmailTemplateController::delete error: ' . $e->getMessage());
+            $_SESSION['error'] = 'Şablon silinirken bir hata oluştu.';
+        }
 
-        $_SESSION['success'] = 'Şablon silindi';
         return $response->withHeader('Location', '/email-templates')->withStatus(302);
     }
 
@@ -259,6 +308,12 @@ class EmailTemplateController
         ]));
 
         return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    private function json(Response $response, array $payload, int $status = 200): Response
+    {
+        $response->getBody()->write((string) json_encode($payload, JSON_UNESCAPED_UNICODE));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
     }
 }
 

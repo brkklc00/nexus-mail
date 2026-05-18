@@ -1,6 +1,6 @@
 {% extends "_layouts/main.twig" %}
 
-{% block title %}Email Şablonlarım - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title %}Şablonlar - {{ site_title|default('Nexus Panel') }}{% endblock %}
 
 {% block breadcrumb_items %}
 <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
@@ -17,10 +17,10 @@
                         <ol class="breadcrumb m-0">
                             <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
                             <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
-                            <li class="breadcrumb-item active">Email Şablonlarım</li>
+                            <li class="breadcrumb-item active">Şablonlar</li>
                         </ol>
                     </div>
-                    <h4 class="page-title nx-page-title mb-1">Email Şablonlarım</h4>
+                    <h4 class="page-title nx-page-title mb-1">Şablonlar</h4>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button type="button" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page" id="nxTplHeadRefresh" title="Yenile">
@@ -29,7 +29,7 @@
                     </button>
                     <a href="/email-orders" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page">
                         <i data-feather="send" class="nx-orders-tool-ic"></i>
-                        <span class="d-none d-sm-inline">Mail Gönder</span>
+                        <span class="d-none d-sm-inline">Yeni Gönderim</span>
                     </a>
                 </div>
             </div>
@@ -187,20 +187,45 @@
         padding-bottom: 0.62rem;
     }
 
+    .nx-email-page .nx-tpl-col-id {
+        width: 70px;
+        max-width: 70px;
+    }
+
+    .nx-email-page .nx-tpl-col-name {
+        width: 24%;
+    }
+
+    .nx-email-page .nx-tpl-col-subject {
+        width: 44%;
+        min-width: 280px;
+    }
+
+    .nx-email-page .nx-tpl-col-created {
+        width: 150px;
+        min-width: 150px;
+    }
+
+    .nx-email-page .nx-tpl-col-actions {
+        width: 150px;
+        min-width: 150px;
+    }
+
     .nx-email-page .nx-tpl-name {
         font-weight: 600;
         color: #0f172a;
     }
 
     .nx-email-page .nx-tpl-subject {
-        display: inline-block;
+        display: -webkit-box;
         max-width: 100%;
         color: #334155;
-        font-size: 0.79rem;
-        line-height: 1.35;
+        font-size: 0.82rem;
+        line-height: 1.4;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
     }
 
     .nx-email-page .nx-tpl-created {
@@ -318,13 +343,13 @@
                 <div class="nx-tpl-toolbar">
                     <div class="nx-tpl-search-wrap">
                         <i data-feather="search" class="nx-tpl-search-ic"></i>
-                        <input type="search" class="form-control nx-tpl-search-input" id="nxTplSearch" placeholder="Şablon adı veya konu ara..." autocomplete="off" aria-label="Şablonda ara">
+                        <input type="search" class="form-control nx-tpl-search-input" id="nxTplSearch" placeholder="Şablon adı, konu veya ID ara..." autocomplete="off" aria-label="Şablonda ara">
                     </div>
                     <select class="form-select nx-tpl-filter-select" id="nxTplSort" aria-label="Sıralama">
                         <option value="new_desc">Sıralama: Yeni oluşturulan</option>
                         <option value="old_asc">Sıralama: Eski oluşturulan</option>
-                        <option value="name_asc">Sıralama: Ada göre A-Z</option>
-                        <option value="name_desc">Sıralama: Ada göre Z-A</option>
+                        <option value="id_desc">Sıralama: ID büyükten küçüğe</option>
+                        <option value="id_asc">Sıralama: ID küçükten büyüğe</option>
                     </select>
                     <select class="form-select nx-tpl-filter-select" id="nxTplType" aria-label="Şablon tipi">
                         <option value="all">Tüm şablonlar</option>
@@ -357,11 +382,11 @@
                         <table class="table table-hover mb-0 nx-orders-table" id="nxTplTable">
                             <thead>
                                 <tr>
-                                    <th width="48">#</th>
-                                    <th>Şablon adı</th>
-                                    <th>Konu</th>
-                                    <th>Oluşturulma</th>
-                                    <th class="text-end nx-orders-col-action">İşlemler</th>
+                                    <th class="nx-tpl-col-id">ID</th>
+                                    <th class="nx-tpl-col-name">Şablon adı</th>
+                                    <th class="nx-tpl-col-subject">Konu</th>
+                                    <th class="nx-tpl-col-created">Oluşturulma</th>
+                                    <th class="text-end nx-orders-col-action nx-tpl-col-actions">İşlemler</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -371,6 +396,7 @@
                                     data-search="{{ template.name }} {{ template.subject }} {{ template.id }}"
                                     data-name="{{ template.name|lower }}"
                                     data-created="{{ template.createdAt|date('U') }}"
+                                    data-id="{{ template.id }}"
                                     data-template-type="{{ template.isGlobal ? 'global' : 'user' }}"
                                 >
                                     <td><span class="nx-orders-id">#{{ template.id }}</span></td>
@@ -383,8 +409,11 @@
                                     <td><span class="nx-tpl-subject" title="{{ template.subject|e('html_attr') }}">{{ template.subject }}</span></td>
                                     <td><span class="nx-tpl-created">{{ template.createdAt|date('d.m.Y H:i') }}</span></td>
                                     <td class="text-end">
-                                        <button type="button" class="btn nx-orders-icon-btn" onclick="previewTemplate({{ template.id }})" title="Önizle">
+                                        <button type="button" class="btn nx-orders-icon-btn" onclick="previewTemplate({{ template.id }})" title="Görüntüle">
                                             <i data-feather="eye" class="icon-xs"></i>
+                                        </button>
+                                        <button type="button" class="btn nx-orders-icon-btn text-primary" onclick="editTemplate({{ template.id }})" title="Düzenle">
+                                            <i data-feather="edit-2" class="icon-xs"></i>
                                         </button>
                                         {% if not template.isGlobal or _session.user.role.name == 'admin' %}
                                         <button type="button" class="btn nx-orders-icon-btn" onclick="deleteTemplate({{ template.id }}, '{{ template.name|e('js') }}')" title="Sil">
@@ -484,6 +513,44 @@
     </div>
 </div>
 
+<!-- Edit Modal -->
+<div class="modal fade" id="editTemplateModal" tabindex="-1" aria-labelledby="editTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2 mb-0" id="editTemplateModalLabel">
+                    <i data-feather="edit-2" class="icon-xs"></i> Şablon düzenle
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editTemplateForm">
+                    <input type="hidden" id="editTemplateId" value="">
+                    <div class="mb-3">
+                        <label for="editTemplateName" class="form-label small fw-semibold">Şablon adı <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editTemplateName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editTemplateSubject" class="form-label small fw-semibold">Mail konusu <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editTemplateSubject" required>
+                    </div>
+                    <div class="mb-0">
+                        <label for="editTemplateBody" class="form-label small fw-semibold">Mail içeriği <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="editTemplateBody" rows="12" required></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-primary" id="saveTemplateEditBtn">
+                    <i data-feather="save" class="icon-xs me-1"></i>
+                    Güncelle
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteTemplateModal" tabindex="-1" aria-labelledby="deleteTemplateModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -565,6 +632,74 @@ function previewTemplate(id) {
         });
 }
 
+function editTemplate(id) {
+    const modal = new bootstrap.Modal(document.getElementById('editTemplateModal'));
+    document.getElementById('editTemplateId').value = String(id);
+    document.getElementById('editTemplateName').value = '';
+    document.getElementById('editTemplateSubject').value = '';
+    document.getElementById('editTemplateBody').value = '';
+
+    modal.show();
+
+    fetch(`/email-templates/${id}/edit-data`, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || 'Şablon yüklenemedi');
+            }
+            document.getElementById('editTemplateName').value = data.name || '';
+            document.getElementById('editTemplateSubject').value = data.subject || '';
+            document.getElementById('editTemplateBody').value = data.body || '';
+        })
+        .catch(err => {
+            alert(err.message || 'Şablon verisi alınamadı.');
+            modal.hide();
+        });
+}
+
+function saveTemplateEdit() {
+    const id = parseInt(document.getElementById('editTemplateId').value || '0', 10);
+    const name = (document.getElementById('editTemplateName').value || '').trim();
+    const subject = (document.getElementById('editTemplateSubject').value || '').trim();
+    const body = (document.getElementById('editTemplateBody').value || '').trim();
+
+    if (!id || !name || !subject || !body) {
+        alert('Şablon adı, konu ve içerik zorunludur.');
+        return;
+    }
+
+    if (!confirm('Şablon güncellensin mi?')) {
+        return;
+    }
+
+    fetch(`/email-templates/${id}/update`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new URLSearchParams({
+            name: name,
+            subject: subject,
+            body: body
+        })
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || 'Güncelleme başarısız');
+            }
+            location.reload();
+        })
+        .catch(err => {
+            alert(err.message || 'Şablon güncellenemedi.');
+        });
+}
+
 let templateToDelete = null;
 
 function deleteTemplate(id, name) {
@@ -608,9 +743,11 @@ function nxTplApplyFilter() {
         const aCreated = parseInt(a.getAttribute('data-created') || '0', 10);
         const bCreated = parseInt(b.getAttribute('data-created') || '0', 10);
 
+        const aId = parseInt(a.getAttribute('data-id') || '0', 10);
+        const bId = parseInt(b.getAttribute('data-id') || '0', 10);
         if (sort === 'old_asc') return aCreated - bCreated;
-        if (sort === 'name_asc') return aName.localeCompare(bName, 'tr');
-        if (sort === 'name_desc') return bName.localeCompare(aName, 'tr');
+        if (sort === 'id_asc') return aId - bId;
+        if (sort === 'id_desc') return bId - aId;
         return bCreated - aCreated;
     });
 
@@ -712,6 +849,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('nxTplNoResultClearBtn')?.addEventListener('click', nxTplClearFilters);
     document.getElementById('nxTplToolbarRefresh')?.addEventListener('click', function () { location.reload(); });
     document.getElementById('nxTplHeadRefresh')?.addEventListener('click', function () { location.reload(); });
+    document.getElementById('saveTemplateEditBtn')?.addEventListener('click', saveTemplateEdit);
     nxTplApplyFilter();
     
     // Checkbox değiştiğinde butonu aktifleştir

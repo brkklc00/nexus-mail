@@ -29,6 +29,10 @@ class EmailOrder
     #[ORM\JoinColumn(name: 'smtp_account_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?EmailSmtpAccount $smtpAccount = null;
 
+    #[ORM\ManyToOne(targetEntity: EmailTemplate::class)]
+    #[ORM\JoinColumn(name: 'template_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?EmailTemplate $template = null;
+
     #[ORM\Column(type: 'string', length: 500)]
     private string $subject;
 
@@ -139,6 +143,17 @@ class EmailOrder
     public function setSmtpAccount(?EmailSmtpAccount $smtpAccount): self
     {
         $this->smtpAccount = $smtpAccount;
+        return $this;
+    }
+
+    public function getTemplate(): ?EmailTemplate
+    {
+        return $this->template;
+    }
+
+    public function setTemplate(?EmailTemplate $template): self
+    {
+        $this->template = $template;
         return $this;
     }
 

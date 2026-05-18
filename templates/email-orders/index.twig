@@ -1,10 +1,10 @@
 {% extends "_layouts/main.twig" %}
 
-{% block title %}Mail Siparişlerim - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title %}Yeni Gönderim - {{ site_title|default('Nexus Panel') }}{% endblock %}
 
 {% block breadcrumb_items %}
 <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
-<li class="breadcrumb-item active" aria-current="page">Mail Gönder</li>
+<li class="breadcrumb-item active" aria-current="page">Yeni Gönderim</li>
 {% endblock %}
 
 {% block page_title %}
@@ -17,10 +17,10 @@
                         <ol class="breadcrumb m-0">
                             <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
                             <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
-                            <li class="breadcrumb-item active">Mail Gönder</li>
+                            <li class="breadcrumb-item active">Yeni Gönderim</li>
                         </ol>
                     </div>
-                    <h4 class="page-title nx-page-title mb-1">Mail Gönder</h4>
+                    <h4 class="page-title nx-page-title mb-1">Yeni Gönderim</h4>
                     <p class="nx-page-lead text-muted mb-0">Mail siparişlerinizi oluşturun, durumlarını takip edin ve gönderim performansını görüntüleyin.</p>
                 </div>
                 <div class="d-flex flex-wrap align-items-center gap-2 nx-orders-toolbar">
@@ -73,6 +73,41 @@
     .modal-body {
         overflow-x: hidden;
         word-wrap: break-word;
+    }
+
+    .nx-email-col-id {
+        width: 72px;
+        max-width: 72px;
+    }
+
+    .nx-email-col-subject {
+        width: 34%;
+        min-width: 280px;
+    }
+
+    .nx-email-col-num {
+        width: 88px;
+    }
+
+    .nx-email-order-subject-title {
+        font-weight: 600;
+        color: #0f172a;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        line-height: 1.35;
+    }
+
+    .nx-email-order-template-meta {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 0.75rem;
+        color: #64748b;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     
 </style>
@@ -207,7 +242,7 @@
                         <thead>
                             <tr>
                                 <th class="nx-email-col-id">No</th>
-                                <th class="nx-email-col-subject">Konu</th>
+                                <th class="nx-email-col-subject">Konu / Template</th>
                                 <th class="nx-email-col-status">Durum</th>
                                 <th class="text-end nx-email-col-num">Toplam</th>
                                 <th class="text-end nx-email-col-num">OK</th>
@@ -222,11 +257,14 @@
                             {% set sv = order.status.value %}
                             {% set stFilter = sv in ['sent','completed'] ? 'sent' : (sv in ['pending_approval','pending'] ? 'pending' : (sv == 'processing' ? 'processing' : (sv == 'failed' ? 'failed' : 'other'))) %}
                             {% set createdStr = order.createdAt|date('d.m.Y H:i') %}
-                            <tr class="nx-email-order-row" data-status="{{ stFilter }}" data-search="#{{ order.id }} {{ order.id }} {{ order.subject|e('html_attr') }} {{ createdStr }}">
+                            {% set tplMeta = order.template ?: (template_meta_by_order_id[order.id] ?? null) %}
+                            {% set tplLabel = tplMeta and tplMeta.id ? 'Template: #' ~ tplMeta.id ~ ' - ' ~ (tplMeta.name ?: 'İsimsiz') : 'Template: Eşleşmedi' %}
+                            <tr class="nx-email-order-row" data-status="{{ stFilter }}" data-search="#{{ order.id }} {{ order.id }} {{ order.subject|e('html_attr') }} {{ tplLabel|e('html_attr') }} {{ createdStr }}">
                                 <td><span class="nx-orders-id">#{{ order.id }}</span></td>
                                 <td class="nx-email-td-subject">
                                     <a href="/email-orders/{{ order.id }}" class="nx-email-subject-link text-decoration-none" title="{{ order.subject|e('html_attr') }}">
-                                        <span class="nx-email-subject-clamp">{{ order.subject }}</span>
+                                        <span class="nx-email-order-subject-title">{{ order.subject }}</span>
+                                        <span class="nx-email-order-template-meta" title="{{ tplLabel|e('html_attr') }}">{{ tplLabel }}</span>
                                     </a>
                                 </td>
                                 <td>

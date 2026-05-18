@@ -154,13 +154,14 @@
             </div>
             <div class="card-body">
                 <div class="d-grid gap-2">
-                    <a href="/email-orders" class="btn btn-primary btn-sm py-2">Mail Gönder</a>
-                    <a href="/email-phonebooks" class="btn btn-outline-primary btn-sm py-2">Mail Rehber</a>
-                    <a href="/email-templates" class="btn btn-outline-primary btn-sm py-2">Mail Şablonları</a>
-                    <a href="/admin/email-orders" class="btn btn-outline-primary btn-sm py-2">Mail Siparişleri</a>
-                    <a href="/admin/email-smtp" class="btn btn-outline-primary btn-sm py-2">SMTP Hesapları</a>
-                    <a href="/admin/email-sending-settings" class="btn btn-outline-primary btn-sm py-2">Gönderim Hızı ve Limitler</a>
-                    <a href="/email-blacklist" class="btn btn-outline-primary btn-sm py-2">Email Kara Liste</a>
+                    <a href="/email-orders" class="btn btn-primary btn-sm py-2">Yeni Gönderim</a>
+                    <a href="/email-phonebooks" class="btn btn-outline-primary btn-sm py-2">Alıcı Listeleri</a>
+                    <a href="/email-templates" class="btn btn-outline-primary btn-sm py-2">Şablonlar</a>
+                    <a href="/admin/email-orders" class="btn btn-outline-primary btn-sm py-2">Gönderimler</a>
+                    <a href="/admin/email-smtp" class="btn btn-outline-primary btn-sm py-2">SMTP</a>
+                    <a href="/admin/email-sending-settings" class="btn btn-outline-primary btn-sm py-2">Hız &amp; Limitler</a>
+                    <a href="/admin/email-data-pool" class="btn btn-outline-primary btn-sm py-2">Mail Havuzu</a>
+                    <a href="/email-blacklist" class="btn btn-outline-primary btn-sm py-2">Kara Liste</a>
                     <a href="/url-shortener" class="btn btn-outline-primary btn-sm py-2">Link Kısaltıcı</a>
                 </div>
                 <hr>
@@ -177,16 +178,16 @@
     <div class="col-lg-8">
         <div class="card nx-dash-card h-100">
             <div class="card-header border-0">
-                <h5 class="mb-0 text-white fw-semibold">Son Mail Siparişleri</h5>
+                <h5 class="mb-0 text-white fw-semibold">Son Gönderimler</h5>
             </div>
             <div class="card-body">
                 {% if recentEmailOrders is empty %}
                 {% include 'dashboard/_partials/empty-state.twig' with {
                     icon: 'inbox',
-                    title: 'Henüz mail siparişi yok',
+                    title: 'Henüz gönderim yok',
                     text: 'İlk mail kampanyanızı oluşturun.',
                     action_href: '/email-orders',
-                    action_label: 'Mail Gönder'
+                    action_label: 'Yeni Gönderim'
                 } only %}
                 {% else %}
                 <div class="table-responsive">

@@ -1082,7 +1082,9 @@ class EmailOrderController
     private function buildOrderSummaryPayload(EmailOrder $order, bool $includeBody = false): array
     {
         $subject = $this->scalarToString($order->getSubject());
-        $template = $this->findTemplateMetaBySubject($subject);
+        $template = $order->getTemplate()
+            ? ['id' => $order->getTemplate()->getId(), 'name' => $order->getTemplate()->getName()]
+            : $this->findTemplateMetaBySubject($subject);
         return [
             'id' => $order->getId(),
             'user' => [

@@ -1,10 +1,10 @@
 {% extends "_layouts/main.twig" %}
 
-{% block title %}Mail Rehberim - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title %}Alıcı Listeleri - {{ site_title|default('Nexus Panel') }}{% endblock %}
 
 {% block breadcrumb_items %}
 <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
-<li class="breadcrumb-item active" aria-current="page">Mail Rehberim</li>
+<li class="breadcrumb-item active" aria-current="page">Alıcı Listeleri</li>
 {% endblock %}
 
 {% block page_title %}
@@ -17,10 +17,10 @@
                         <ol class="breadcrumb m-0">
                             <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
                             <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
-                            <li class="breadcrumb-item active">Mail Rehberim</li>
+                            <li class="breadcrumb-item active">Alıcı Listeleri</li>
                         </ol>
                     </div>
-                    <h4 class="page-title nx-page-title mb-1">Mail Rehberim</h4>
+                    <h4 class="page-title nx-page-title mb-1">Alıcı Listeleri</h4>
                 </div>
                 <div class="d-flex flex-wrap align-items-center gap-2">
                     <button type="button" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page" id="nxPbHeadRefresh" title="Yenile">
@@ -29,7 +29,7 @@
                     </button>
                     <a href="/email-orders" class="btn btn-sm nx-orders-tool-btn nx-orders-tool-btn--page">
                         <i data-feather="send" class="nx-orders-tool-ic"></i>
-                        <span class="d-none d-sm-inline">Mail Gönder</span>
+                        <span class="d-none d-sm-inline">Yeni Gönderim</span>
                     </a>
                 </div>
             </div>
@@ -304,15 +304,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div class="nx-orders-info-card nx-orders-info-card--compact mt-3">
-                <div class="nx-orders-info-title nx-orders-info-title--compact mb-2"><i data-feather="info" class="nx-orders-info-title-ic"></i> Bilgi</div>
-                <ul class="nx-orders-info-lines list-unstyled mb-0 small text-muted">
-                    <li class="mb-1"><span class="text-secondary fw-semibold">Formatlar:</span> CSV, Excel (xls/xlsx), TXT</li>
-                    <li class="mb-1"><span class="text-secondary fw-semibold">Boyut:</span> Büyük listeler için dosya yükleme (sunucu limitleri geçerli)</li>
-                    <li class="mb-0"><span class="text-secondary fw-semibold">Not:</span> Adresler genelde ilk sütunda olmalı; geçersiz satırlar elenir.</li>
-                </ul>
             </div>
 
         </aside>

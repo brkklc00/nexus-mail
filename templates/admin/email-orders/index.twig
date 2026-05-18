@@ -1,6 +1,6 @@
 {% extends "_layouts/main.twig" %}
 
-{% block title %}Tüm Email Siparişleri - Admin - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title %}Gönderimler - Admin - {{ site_title|default('Nexus Panel') }}{% endblock %}
 
 {% block breadcrumb_items %}{% endblock %}
 
@@ -16,12 +16,12 @@
                     <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
                     <li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
                     <li class="breadcrumb-item">Email</li>
-                    <li class="breadcrumb-item active" aria-current="page">Tüm Siparişler</li>
+                    <li class="breadcrumb-item active" aria-current="page">Gönderimler</li>
                 </ol>
             </div>
             <div class="d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
                 <div class="min-w-0">
-                    <h4 class="page-title nx-page-title mb-1">Tüm Email Siparişleri</h4>
+                    <h4 class="page-title nx-page-title mb-1">Gönderimler</h4>
                 </div>
                 <div class="d-flex flex-wrap align-items-center gap-2 nx-adm-eo-head-actions flex-shrink-0">
                     <button type="button" class="btn btn-sm nx-adm-eo-head-btn" onclick="window.location.reload()" title="Yenile">
@@ -99,7 +99,7 @@
             <div class="d-flex align-items-start gap-2 min-w-0">
                 <span class="nx-adm-eo-list-card-ic"><i data-feather="mail"></i></span>
                 <div class="min-w-0">
-                    <h2 class="nx-adm-eo-list-card-title mb-0">Tüm Email Siparişleri</h2>
+                    <h2 class="nx-adm-eo-list-card-title mb-0">Gönderimler</h2>
                 </div>
             </div>
         </div>
@@ -194,16 +194,15 @@
                                     </td>
                                     <td class="nx-adm-eo-td-subject">
                                         <div class="nx-adm-eo-subject-stack">
-                                            {% if order.template_id %}
-                                            <span class="nx-adm-eo-template-badge">TPL #{{ order.template_id }}</span>
-                                            {% else %}
-                                            <span class="nx-adm-eo-template-badge nx-adm-eo-template-badge--empty">TPL -</span>
-                                            {% endif %}
                                             <span class="nx-adm-eo-subject-clamp" title="{{ order.subject|e('html_attr') }}">
                                                 {{ order.subject }}
                                             </span>
-                                            {% if order.template_name %}
-                                            <span class="nx-adm-eo-template-name">{{ order.template_name }}</span>
+                                            {% if order.template_id and order.template_name %}
+                                            <span class="nx-adm-eo-template-name" title="Template: #{{ order.template_id }} - {{ order.template_name|e('html_attr') }}">Template: #{{ order.template_id }} - {{ order.template_name }}</span>
+                                            {% elseif order.template_id %}
+                                            <span class="nx-adm-eo-template-name">Template: #{{ order.template_id }}</span>
+                                            {% else %}
+                                            <span class="nx-adm-eo-template-name">Template: Eşleşmedi</span>
                                             {% endif %}
                                         </div>
                                     </td>
@@ -590,7 +589,7 @@ function openPoolApproveModal(orderId) {
         .then(data => {
             if (!data.success || !data.pool_lists || data.pool_lists.length === 0) {
                 select.innerHTML = '';
-                alert('Havuz listesi yüklenemedi. Önce Email Havuzu sayfasında liste oluşturun.');
+                alert('Havuz listesi yüklenemedi. Önce Mail Havuzu sayfasında liste oluşturun.');
                 return;
             }
             select.innerHTML = '';

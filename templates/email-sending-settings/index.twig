@@ -1,17 +1,17 @@
 {% extends "_layouts/main.twig" %}
 
-{% block title %}E-posta gönderim ayarları - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title %}Hız & Limitler - {{ site_title|default('Nexus Panel') }}{% endblock %}
 
 {% block breadcrumb_items %}
 <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
 <li class="breadcrumb-item"><a href="/dashboard">Yönetici</a></li>
 <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
-<li class="breadcrumb-item active">Gönderim ayarları</li>
+<li class="breadcrumb-item active">Hız &amp; Limitler</li>
 {% endblock %}
 
 {% block page_icon %}<i data-feather="sliders" class="icon-dual icon-sm me-2"></i>{% endblock %}
 
-{% block title_text %}E-posta gönderim ayarları{% endblock %}
+{% block title_text %}Hız &amp; Limitler{% endblock %}
 
 {% block page_lead %}
 <p class="nx-es-page-lead">E-posta gönderim hızını, günlük kotayı ve worker davranışlarını yönetin.</p>
@@ -20,8 +20,16 @@
 {% block styles %}
 <style>
 .nx-es-page-lead { color: #64748b; margin: 6px 0 0; }
-.nx-es-layout { gap: 24px; }
-.nx-es-sidebar-col { width: 100%; max-width: 420px; }
+.email-sending-settings-page { padding-bottom: 8px; }
+.settings-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 24px;
+    align-items: start;
+}
+.settings-main,
+.settings-side { min-width: 0; }
+.settings-side { display: grid; gap: 16px; }
 .nx-es-main-card,
 .nx-es-side-card { border: 1px solid #dbe4f0; border-radius: 20px; box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06); overflow: hidden; background: #ffffff; }
 .panel-card-header {
@@ -121,44 +129,30 @@
 .nx-es-usage-label { color: #64748b; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
 .nx-es-usage-value { font-size: 13px; font-weight: 700; color: #0f172a; }
 .nx-es-usage-progress.progress { height: 8px; background: #e5edf8; }
-
-.nx-es-quick-link {
-    min-height: 58px;
-    border-radius: 14px;
-    border: 1px solid #dbe4f0;
-    background: #fff;
-    color: #0f172a;
-    padding: 10px 12px;
-    display: flex;
-    align-items: center;
-    transition: all .18s ease;
+.settings-preset-body {
+    max-height: 520px;
+    overflow-y: auto;
 }
-.nx-es-quick-link:hover {
-    border-color: #bfdbfe;
-    transform: translateY(-1px);
-    box-shadow: 0 10px 20px rgba(37, 99, 235, 0.12);
-    color: #0f172a;
+.settings-preset-btn {
+    min-height: 86px;
+    border-radius: 12px;
 }
-.nx-es-quick-link .avatar-xs {
-    width: 34px !important;
-    height: 34px !important;
-    border-radius: 10px !important;
-    background: #dbeafe !important;
-    color: #2563eb !important;
-}
-.nx-es-quick-link .avatar-xs i { color: #2563eb !important; }
 
 @media (max-width: 1199.98px) {
     .nx-es-worker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .settings-layout { grid-template-columns: minmax(0, 1fr) 340px; }
+}
+@media (max-width: 1023.98px) {
+    .settings-layout { grid-template-columns: minmax(0, 1fr) 320px; }
 }
 @media (max-width: 991.98px) {
-    .nx-es-layout { row-gap: 18px; }
-    .nx-es-sidebar-col { max-width: none; }
+    .settings-layout { grid-template-columns: 1fr; gap: 18px; }
 }
 @media (max-width: 767.98px) {
     .nx-es-form-grid,
     .nx-es-worker-grid { grid-template-columns: 1fr; }
     .panel-card-header { padding: 18px 16px; }
+    .settings-preset-body { max-height: none; overflow: visible; }
 }
 </style>
 {% endblock %}
@@ -175,7 +169,7 @@
 {% set daily_pct_raw = daily_limit > 0 ? (daily_sent / daily_limit * 100)|round(1) : 0 %}
 
 {% block content %}
-<div class="container-fluid">
+<div class="container-fluid email-sending-settings-page">
     {% if success %}
     <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm" role="alert">
         <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
@@ -191,8 +185,8 @@
     </div>
     {% endif %}
 
-    <div class="row nx-es-layout">
-        <div class="col-xl-8 col-lg-8">
+    <div class="settings-layout">
+        <section class="settings-main">
             <div class="card nx-es-main-card mb-0">
                 <div class="panel-card-header">
                     <span class="icon-box"><i data-feather="zap"></i></span>
@@ -360,37 +354,10 @@
                     </form>
                 </div>
             </div>
+        </section>
 
-        </div>
-
-        <div class="col-xl-4 col-lg-4 nx-es-sidebar-col">
-            <div class="card nx-es-side-card mb-3">
-                <div class="panel-card-header">
-                    <span class="icon-box"><i data-feather="navigation"></i></span>
-                    <div>
-                        <h6>Hızlı erişim</h6>
-                        <small>Sık kullanılan email yönetim ekranları</small>
-                    </div>
-                </div>
-                <div class="card-body pt-3">
-                    <div class="d-grid gap-2">
-                        <a href="/admin/email-smtp" class="nx-es-quick-link text-start">
-                            <span class="avatar-xs rounded-circle bg-soft-secondary d-inline-flex align-items-center justify-content-center me-2" style="width: 2rem; height: 2rem;">
-                                <i data-feather="server" class="icon-dual-secondary" style="width: 14px; height: 14px;"></i>
-                            </span>
-                            SMTP hesapları
-                        </a>
-                        <a href="/email-dashboard" class="nx-es-quick-link text-start">
-                            <span class="avatar-xs rounded-circle bg-soft-primary d-inline-flex align-items-center justify-content-center me-2" style="width: 2rem; height: 2rem;">
-                                <i data-feather="mail" class="icon-dual-primary" style="width: 14px; height: 14px;"></i>
-                            </span>
-                            Email paneli
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card nx-es-side-card mb-3">
+        <aside class="settings-side">
+            <div class="card nx-es-side-card mb-0">
                 <div class="panel-card-header">
                     <span class="icon-box"><i data-feather="bar-chart-2"></i></span>
                     <div>
@@ -435,7 +402,7 @@
                 </div>
             </div>
 
-            <div class="card nx-es-side-card">
+            <div class="card nx-es-side-card mb-0">
                 <div class="panel-card-header">
                     <span class="icon-box"><i data-feather="package"></i></span>
                     <div>
@@ -443,11 +410,11 @@
                         <small>Tek tık: kota + hız + worker önerileri</small>
                     </div>
                 </div>
-                <div class="card-body pt-3">
+                <div class="card-body pt-3 settings-preset-body">
                     <form method="post" action="/admin/email-sending-settings/apply-preset" class="row g-2">
                         {% for key, p in plans %}
                         <div class="col-6">
-                            <button type="submit" name="plan" value="{{ key }}" class="btn btn-outline-primary w-100 text-start py-2 px-2 h-100 rounded-3">
+                            <button type="submit" name="plan" value="{{ key }}" class="btn btn-outline-primary w-100 text-start py-2 px-2 h-100 rounded-3 settings-preset-btn">
                                 <span class="fw-semibold d-block">{{ p.title }}</span>
                                 <span class="small text-muted d-block mt-1">
                                     ≈ <strong class="text-body">{{ p.effective_rate|number_format(2, ',', '.') }}</strong> mail/sn
@@ -458,7 +425,7 @@
                     </form>
                 </div>
             </div>
-        </div>
+        </aside>
     </div>
 </div>
 <script>
