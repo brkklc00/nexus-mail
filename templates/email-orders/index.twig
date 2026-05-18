@@ -344,6 +344,12 @@
                                 <span>Manuel</span>
                             </a>
                         </li>
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" data-bs-toggle="tab" href="#poolTab" role="tab" onclick="refreshIcons()">
+                                <i data-feather="database" class="nx-orders-tab-ic"></i>
+                                <span>Sistem Havuzu</span>
+                            </a>
+                        </li>
                     </ul>
 
                     <div class="tab-content nx-orders-tab-panels">
@@ -481,6 +487,65 @@
                                 <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
                                     <i data-feather="send" class="align-self-center icon-xs me-1"></i>
                                     Mail Gönder
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Sistem Havuzundan Gönder -->
+                        <div class="tab-pane fade" id="poolTab" role="tabpanel">
+                            <form method="POST" action="/email-orders" onsubmit="return showLoadingPool(event)">
+                                <input type="hidden" name="send_type" value="pool">
+
+                                <div class="mb-3">
+                                    <label for="pool_count" class="form-label">Gönderilecek Mail Sayısı <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" id="pool_count" name="pool_count" min="1" step="1" placeholder="Örn: 1000" required oninput="calculatePoolCredits()">
+                                    <small class="text-muted d-block">Sistem havuzundan çekilecek toplam mail adedi</small>
+
+                                    <div class="alert alert-warning mt-2 py-2 px-3" id="pool_credit_calc" style="display:none;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <small class="text-dark">
+                                                    <strong>Seçilen Adet:</strong> <span id="pool_count_display">0</span><br>
+                                                    <strong>Gerekli Kredi:</strong> <span id="pool_required_credit">0</span>
+                                                </small>
+                                            </div>
+                                            <div>
+                                                <span class="badge bg-success" id="pool_status_badge">Yeterli</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="template_pool" class="form-label nx-email-template-head">
+                                        <span class="nx-email-template-head-l">
+                                            <i data-feather="file-text" class="icon-xs me-1"></i>
+                                            Mail Şablonu <span class="text-danger">*</span>
+                                        </span>
+                                        <a href="/email-templates" class="btn btn-sm nx-email-new-template-btn" target="_blank" rel="noopener">
+                                            <i data-feather="plus" class="icon-xs me-1"></i>
+                                            Yeni Şablon
+                                        </a>
+                                    </label>
+                                    <select class="form-select" id="template_pool" name="template_id" required>
+                                        <option value="">-- Şablon Seçin --</option>
+                                        {% for template in templates %}
+                                        <option value="{{ template.id }}" data-subject="{{ template.subject|e('html_attr') }}">
+                                            {{ template.name }}
+                                            {% if template.category %}
+                                            <small class="text-muted">({{ template.category }})</small>
+                                            {% endif %}
+                                        </option>
+                                        {% else %}
+                                        <option value="" disabled>Henüz şablon oluşturmadınız</option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted">Sistem havuzu için şablon seçimi zorunludur</small>
+                                </div>
+
+                                <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
+                                    <i data-feather="send" class="align-self-center icon-xs me-1"></i>
+                                    Havuzdan Gönder
                                 </button>
                             </form>
                         </div>

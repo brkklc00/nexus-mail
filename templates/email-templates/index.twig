@@ -479,14 +479,6 @@
                 </div>
             </div>
 
-            <div class="nx-orders-info-card nx-orders-info-card--compact mt-3">
-                <div class="nx-orders-info-title nx-orders-info-title--compact mb-2"><i data-feather="info" class="nx-orders-info-title-ic"></i> Bilgi</div>
-                <ul class="nx-orders-info-lines list-unstyled mb-0 small text-muted">
-                    <li class="mb-1"><span class="text-secondary fw-semibold">Kullanım:</span> Şablonlar mail gönderiminde seçilir; içerik sunucuda tutulur.</li>
-                    <li class="mb-1"><span class="text-secondary fw-semibold">Önizleme:</span> Listeden göz ikonu ile konu + HTML önizleyin.</li>
-                    <li class="mb-0"><span class="text-secondary fw-semibold">Editör:</span> Araç çubuğundan biçimlendirme ve kod görünümü.</li>
-                </ul>
-            </div>
         </aside>
     </div>
     </div>
@@ -602,6 +594,37 @@
 </div>
 
 <script>
+let nxTemplateEditEditor = null;
+
+function initTemplateEditEditor() {
+    if (nxTemplateEditEditor || typeof ClassicEditor === 'undefined') {
+        return;
+    }
+
+    const el = document.getElementById('editTemplateBody');
+    if (!el) {
+        return;
+    }
+
+    ClassicEditor
+        .create(el, {
+            toolbar: [
+                'undo', 'redo', '|',
+                'heading', '|',
+                'bold', 'italic', 'link', '|',
+                'bulletedList', 'numberedList', '|',
+                'blockQuote', 'insertTable', '|',
+                'code', 'codeBlock'
+            ]
+        })
+        .then(editor => {
+            nxTemplateEditEditor = editor;
+        })
+        .catch(() => {
+            nxTemplateEditEditor = null;
+        });
+}
+
 function previewTemplate(id) {
     const modal = new bootstrap.Modal(document.getElementById('previewModal'));
     modal.show();
@@ -653,7 +676,11 @@ function editTemplate(id) {
             }
             document.getElementById('editTemplateName').value = data.name || '';
             document.getElementById('editTemplateSubject').value = data.subject || '';
-            document.getElementById('editTemplateBody').value = data.body || '';
+            if (nxTemplateEditEditor) {
+                nxTemplateEditEditor.setData(data.body || '');
+            } else {
+                document.getElementById('editTemplateBody').value = data.body || '';
+            }
         })
         .catch(err => {
             alert(err.message || 'Şablon verisi alınamadı.');
@@ -665,7 +692,10 @@ function saveTemplateEdit() {
     const id = parseInt(document.getElementById('editTemplateId').value || '0', 10);
     const name = (document.getElementById('editTemplateName').value || '').trim();
     const subject = (document.getElementById('editTemplateSubject').value || '').trim();
-    const body = (document.getElementById('editTemplateBody').value || '').trim();
+    const bodyRaw = nxTemplateEditEditor
+        ? nxTemplateEditEditor.getData()
+        : (document.getElementById('editTemplateBody').value || '');
+    const body = bodyRaw.trim();
 
     if (!id || !name || !subject || !body) {
         alert('Şablon adı, konu ve içerik zorunludur.');
@@ -819,6 +849,7 @@ function nxTplClearFilters() {
 
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
+    initTemplateEditEditor();
 
     const searchEl = document.getElementById('nxTplSearch');
     const sortEl = document.getElementById('nxTplSort');
@@ -880,6 +911,7 @@ document.addEventListener('DOMContentLoaded', function() {
 {% block scripts %}
 <!-- Summernote JS -->
 <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+<script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
 
 <script>
 $(document).ready(function() {
