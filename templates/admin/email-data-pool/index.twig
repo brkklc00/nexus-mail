@@ -347,15 +347,19 @@ Format: email@domain.com veya email@domain.com,İsim" oninput="updateEmailCount(
                 <label for="fileInput" class="form-label"><strong>Dosya Seç</strong></label>
                 <input type="file" class="form-control" id="fileInput" accept=".txt,.csv,.xlsx,.xls" onchange="handleFileSelect(event)">
                 <div class="form-text">
-                    <strong>Desteklenen formatlar:</strong> TXT, CSV, Excel (.xlsx, .xls)
+                    <strong>Desteklenen formatlar:</strong>
+                    <br>- TXT: Her satırda bir mail
+                    <br>- CSV: email veya email,isim
+                    <br>- CSV başlıklı dosya: ID, Mail Adresi, İsim, Durum, Tarih
+                    <br>- Excel: Mail Adresi / Email kolonu otomatik algılanır
                 </div>
             </div>
 
                             <div class="alert alert-light border">
                                 <h6 class="mb-2">Format Örnekleri:</h6>
                                 <ul class="mb-0 small">
-                                    <li><strong>TXT/CSV:</strong> Her satırda bir mail → <code>email@example.com</code> veya <code>email@example.com,İsim</code></li>
-                                    <li><strong>Excel:</strong> İlk sütun email, ikinci sütun isim (opsiyonel)</li>
+                                    <li><strong>TXT/CSV:</strong> <code>email@example.com</code> veya <code>email@example.com,İsim</code></li>
+                                    <li><strong>Başlıklı CSV:</strong><br><code>ID,"Mail Adresi",İsim,Durum,Tarih</code><br><code>15614143,example@gmail.com,,Aktif,"2026-05-15 18:46:25"</code></li>
                                 </ul>
                             </div>
 
@@ -524,35 +528,199 @@ function handleFileSelect(event) {
     }
 }
 
+function normalizeHeaderName(header) {
+    return String(header || '')
+        .replace(/^\uFEFF/, '')
+        .trim()
+        .toLowerCase()
+        .replace(/["']/g, '')
+        .replace(/[-_\s]/g, '');
+}
+
+function detectDelimiterFromText(text) {
+    const lines = String(text || '').split(/\r?\n/).filter(l => l.trim() !== '').slice(0, 5);
+    if (!lines.length) return ',';
+    const candidates = [',', ';', '\t'];
+    let best = ',';
+    let bestScore = -1;
+    for (const c of candidates) {
+        let score = 0;
+        for (const line of lines) {
+            score += line.split(c).length;
+        }
+        if (score > bestScore) {
+            best = c;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+function parseCsvLine(line, delimiter) {
+    const out = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+                cur += '"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+        if (ch === delimiter && !inQuotes) {
+            out.push(cur);
+            cur = '';
+            continue;
+        }
+        cur += ch;
+    }
+    out.push(cur);
+    return out.map(v => String(v || '').trim());
+}
+
+function detectHeaderMap(row) {
+    const emailAliases = ['mailadresi', 'email', 'e-mail', 'mail', 'eposta', 'e-posta', 'recipient', 'address'];
+    const nameAliases = ['isim', 'name', 'ad', 'full_name', 'fullname'];
+    const statusAliases = ['durum', 'status'];
+
+    let emailIndex = null;
+    let nameIndex = null;
+    let statusIndex = null;
+    let hasHeader = false;
+
+    row.forEach((col, idx) => {
+        const normalized = normalizeHeaderName(col);
+        if (!normalized) return;
+        if (emailIndex === null && emailAliases.map(normalizeHeaderName).includes(normalized)) {
+            emailIndex = idx;
+            hasHeader = true;
+        } else if (nameIndex === null && nameAliases.map(normalizeHeaderName).includes(normalized)) {
+            nameIndex = idx;
+            hasHeader = true;
+        } else if (statusIndex === null && statusAliases.map(normalizeHeaderName).includes(normalized)) {
+            statusIndex = idx;
+            hasHeader = true;
+        }
+    });
+
+    return { hasHeader, emailIndex, nameIndex, statusIndex };
+}
+
+function isPassiveStatus(value) {
+    const status = String(value || '').trim().toLowerCase();
+    const passive = ['pasif', 'passive', 'inactive', 'deleted', 'silindi', 'invalid', 'geçersiz', 'gecersiz', '0'];
+    return passive.includes(status);
+}
+
+function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim().toLowerCase());
+}
+
+function parseRowsToImport(rows, requireHeaderEmailColumn = false) {
+    const stats = {
+        totalRows: 0,
+        validEmail: 0,
+        duplicateSkipped: 0,
+        invalidSkipped: 0,
+        statusSkipped: 0
+    };
+
+    if (!rows.length) {
+        throw new Error('Dosya boş.');
+    }
+
+    const map = detectHeaderMap(rows[0] || []);
+    if (map.hasHeader && requireHeaderEmailColumn && map.emailIndex === null) {
+        throw new Error('Mail kolonu bulunamadı. Lütfen Mail Adresi, email veya mail başlıklı kolon kullanın.');
+    }
+
+    const start = map.hasHeader ? 1 : 0;
+    const seen = new Set();
+    const records = [];
+
+    for (let i = start; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row.length) continue;
+        stats.totalRows++;
+
+        let email = map.emailIndex !== null ? row[map.emailIndex] : '';
+        let name = map.nameIndex !== null ? row[map.nameIndex] : '';
+        const status = map.statusIndex !== null ? row[map.statusIndex] : '';
+
+        if (!email) {
+            const found = row.find(cell => String(cell || '').includes('@'));
+            email = found || '';
+        }
+
+        email = String(email || '').trim().toLowerCase();
+        name = String(name || '').trim();
+
+        if (!isValidEmail(email)) {
+            stats.invalidSkipped++;
+            continue;
+        }
+
+        if (map.statusIndex !== null && isPassiveStatus(status)) {
+            stats.statusSkipped++;
+            continue;
+        }
+
+        if (seen.has(email)) {
+            stats.duplicateSkipped++;
+            continue;
+        }
+        seen.add(email);
+        stats.validEmail++;
+
+        records.push(name ? `${email},${name}` : email);
+    }
+
+    return { records, stats };
+}
+
 function readTextFile(file, type) {
     const reader = new FileReader();
     reader.onload = function(e) {
-        const text = e.target.result;
-        const lines = text.split('\n');
-        
-        let emails = [];
-        lines.forEach(line => {
-            line = line.trim();
-            if (line && line.includes('@')) {
-                emails.push(line);
-            }
-        });
+        try {
+            const text = String(e.target.result || '').replace(/^\uFEFF/, '');
+            const delimiter = type === 'csv' ? detectDelimiterFromText(text) : ',';
+            const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+            const rows = type === 'csv'
+                ? lines.map(line => parseCsvLine(line, delimiter))
+                : lines.map(line => [line]);
 
-        document.getElementById('emails').value = emails.join('\n');
-        updateEmailCount();
-        
-        document.getElementById('fileStatus').innerHTML = `
-            <div class="alert alert-success alert-dismissible fade show">
-                <i data-feather="check-circle"></i> 
-                <strong>Başarılı!</strong> ${emails.length.toLocaleString()} mail adresi yüklendi
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>`;
-        feather.replace();
-        
-        // Manuel tab'a geç
-        document.querySelector('[href="#manualTab"]').click();
+            const result = parseRowsToImport(rows, true);
+            document.getElementById('emails').value = result.records.join('\n');
+            updateEmailCount();
+
+            document.getElementById('fileStatus').innerHTML = `
+                <div class="alert alert-success alert-dismissible fade show">
+                    <i data-feather="check-circle"></i>
+                    <strong>Import özeti:</strong>
+                    Toplam satır ${result.stats.totalRows.toLocaleString('tr-TR')},
+                    Geçerli ${result.stats.validEmail.toLocaleString('tr-TR')},
+                    Duplicate atlanan ${result.stats.duplicateSkipped.toLocaleString('tr-TR')},
+                    Geçersiz atlanan ${result.stats.invalidSkipped.toLocaleString('tr-TR')},
+                    Durum nedeniyle atlanan ${result.stats.statusSkipped.toLocaleString('tr-TR')}.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`;
+            feather.replace();
+            document.querySelector('[href="#manualTab"]').click();
+        } catch (err) {
+            document.getElementById('fileStatus').innerHTML = `
+                <div class="alert alert-danger alert-dismissible fade show">
+                    <i data-feather="x-circle"></i>
+                    ${err.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`;
+            feather.replace();
+        }
     };
-    reader.readAsText(file);
+    reader.readAsText(file, 'UTF-8');
 }
 
 function readExcelFile(file) {
@@ -562,33 +730,20 @@ function readExcelFile(file) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, {type: 'array'});
             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
-
-            let emails = [];
-            rows.forEach((row, index) => {
-                if (index === 0 && (row[0]?.toLowerCase() === 'email' || row[0]?.toLowerCase() === 'e-mail')) {
-                    return; // Skip header
-                }
-                
-                const email = row[0];
-                const name = row[1] || '';
-                
-                if (email && email.toString().includes('@')) {
-                    if (name) {
-                        emails.push(`${email},${name}`);
-                    } else {
-                        emails.push(email);
-                    }
-                }
-            });
-
-            document.getElementById('emails').value = emails.join('\n');
+            const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1, defval: ''});
+            const result = parseRowsToImport(rows, true);
+            document.getElementById('emails').value = result.records.join('\n');
             updateEmailCount();
             
             document.getElementById('fileStatus').innerHTML = `
                 <div class="alert alert-success alert-dismissible fade show">
-                    <i data-feather="check-circle"></i> 
-                    <strong>Başarılı!</strong> ${emails.length.toLocaleString()} mail adresi Excel'den yüklendi
+                    <i data-feather="check-circle"></i>
+                    <strong>Import özeti:</strong>
+                    Toplam satır ${result.stats.totalRows.toLocaleString('tr-TR')},
+                    Geçerli ${result.stats.validEmail.toLocaleString('tr-TR')},
+                    Duplicate atlanan ${result.stats.duplicateSkipped.toLocaleString('tr-TR')},
+                    Geçersiz atlanan ${result.stats.invalidSkipped.toLocaleString('tr-TR')},
+                    Durum nedeniyle atlanan ${result.stats.statusSkipped.toLocaleString('tr-TR')}.
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>`;
             feather.replace();

@@ -96,13 +96,10 @@ class EmailDataPoolController
             ini_set('memory_limit', '1024M');
             ini_set('max_execution_time', '600');
             
-            $emails = explode("\n", $data['emails'] ?? '');
-            
-            // Parse emails
-            $parsed = $this->parseEmails($emails);
-            
-            // Unique hale getir
-            $unique = $this->uniqueEmails($parsed);
+            $rawInput = (string) ($data['emails'] ?? '');
+            $parseResult = $this->parseImportInput($rawInput, true);
+            $unique = $parseResult['records'];
+            $stats = $parseResult['stats'];
             
             // Existing emails'leri bulk olarak çek (aynı liste içinde)
             $existingEmails = $this->em->createQueryBuilder()
@@ -119,9 +116,14 @@ class EmailDataPoolController
             
             // Yeni email'leri filtrele
             $newEmails = array_filter($unique, fn($item) => !isset($existingSet[$item['email']]));
+            $existingSkipped = count($unique) - count($newEmails);
             
             if (empty($newEmails)) {
-                $_SESSION['error'] = 'Tüm mail adresleri bu listede zaten mevcut';
+                if (($stats['valid_email'] ?? 0) === 0) {
+                    $_SESSION['error'] = 'Geçerli mail bulunamadı. Lütfen formatı kontrol edin.';
+                } else {
+                    $_SESSION['error'] = 'Tüm mail adresleri bu listede zaten mevcut';
+                }
                 return $response->withHeader('Location', $this->poolListRedirect($poolList->getId()))->withStatus(302);
             }
             
@@ -129,71 +131,232 @@ class EmailDataPoolController
             $added = $this->bulkInsertEmails($newEmails, $poolList->getId());
             
             $elapsed = round(microtime(true) - $startTime, 2);
-            $_SESSION['success'] = "{$added} mail adresi {$elapsed}s içinde listeye eklendi";
+            $_SESSION['success'] = sprintf(
+                'Import tamamlandı (%ss): Toplam satır %d, geçerli %d, eklenen %d, zaten var %d, duplicate atlanan %d, geçersiz atlanan %d, durum nedeniyle atlanan %d.',
+                $elapsed,
+                (int) ($stats['total_rows'] ?? 0),
+                (int) ($stats['valid_email'] ?? 0),
+                $added,
+                $existingSkipped,
+                (int) ($stats['duplicate_skipped'] ?? 0),
+                (int) ($stats['invalid_skipped'] ?? 0),
+                (int) ($stats['status_skipped'] ?? 0)
+            );
 
         } catch (\Throwable $e) {
-            $_SESSION['error'] = 'Hata: ' . $e->getMessage();
+            error_log('EmailDataPoolController::store import error: ' . $e->getMessage());
+            $_SESSION['error'] = $e instanceof \RuntimeException
+                ? $e->getMessage()
+                : 'Import sırasında bir hata oluştu.';
         }
 
         return $response->withHeader('Location', $this->poolListRedirect($poolList?->getId()))->withStatus(302);
     }
     
     /**
-     * Email'leri parse et
+     * Import metnini akıllı şekilde parse eder (TXT/CSV benzeri).
+     *
+     * @return array{
+     *   records: array<int, array{email: string, name: ?string}>,
+     *   stats: array{
+     *     total_rows: int,
+     *     valid_email: int,
+     *     duplicate_skipped: int,
+     *     invalid_skipped: int,
+     *     status_skipped: int
+     *   }
+     * }
      */
-    private function parseEmails(array $lines): array
+    private function parseImportInput(string $rawInput, bool $requireEmailColumnWhenHeader = false): array
     {
+        $rawInput = preg_replace('/^\xEF\xBB\xBF/', '', $rawInput) ?? $rawInput;
+        $lines = preg_split('/\R/u', $rawInput) ?: [];
+        $lines = array_values(array_filter(array_map(static fn ($l) => rtrim((string) $l), $lines), static fn ($l) => trim($l) !== ''));
+
+        $stats = [
+            'total_rows' => 0,
+            'valid_email' => 0,
+            'duplicate_skipped' => 0,
+            'invalid_skipped' => 0,
+            'status_skipped' => 0,
+        ];
+        if ($lines === []) {
+            throw new \RuntimeException('Dosya boş. Lütfen import edilecek satırları kontrol edin.');
+        }
+
+        $delimiter = $this->detectDelimiter($lines);
+        $rows = array_map(static fn ($line) => str_getcsv((string) $line, $delimiter), $lines);
+        $rows = array_values(array_filter($rows, static fn ($row) => is_array($row) && count(array_filter($row, static fn ($v) => trim((string) $v) !== '')) > 0));
+        if ($rows === []) {
+            throw new \RuntimeException('Dosya boş. Lütfen import edilecek satırları kontrol edin.');
+        }
+
+        $headerMap = $this->detectHeaderMap($rows[0]);
+        $hasHeader = $headerMap['has_header'];
+        $emailIdx = $headerMap['email'];
+        $nameIdx = $headerMap['name'];
+        $statusIdx = $headerMap['status'];
+
+        if ($hasHeader && $requireEmailColumnWhenHeader && $emailIdx === null) {
+            throw new \RuntimeException('Mail kolonu bulunamadı. Lütfen Mail Adresi, email veya mail başlıklı kolon kullanın.');
+        }
+
+        $startRow = $hasHeader ? 1 : 0;
         $parsed = [];
-        
-        foreach ($lines as $line) {
-            $line = trim($line);
-            
-            if (empty($line)) {
+        $seen = [];
+
+        for ($i = $startRow; $i < count($rows); $i++) {
+            $row = $rows[$i];
+            if (!is_array($row)) {
                 continue;
             }
+            $stats['total_rows']++;
 
-            $email = '';
+            $email = null;
             $name = null;
+            $status = null;
 
-            // Email,Name formatı
-            if (strpos($line, ',') !== false) {
-                $parts = explode(',', $line, 2);
-                $email = trim($parts[0]);
-                $name = trim($parts[1] ?? '') ?: null;
-            } else {
-                $email = $line;
+            if ($emailIdx !== null && array_key_exists($emailIdx, $row)) {
+                $email = trim((string) $row[$emailIdx]);
+            }
+            if ($nameIdx !== null && array_key_exists($nameIdx, $row)) {
+                $name = trim((string) $row[$nameIdx]) ?: null;
+            }
+            if ($statusIdx !== null && array_key_exists($statusIdx, $row)) {
+                $status = trim((string) $row[$statusIdx]);
             }
 
-            // Basit email validation (performans için)
-            if (strpos($email, '@') === false || strpos($email, '.') === false) {
+            if ($email === null || $email === '') {
+                foreach ($row as $cell) {
+                    $candidate = trim((string) $cell);
+                    if (strpos($candidate, '@') !== false) {
+                        $email = $candidate;
+                        break;
+                    }
+                }
+            }
+
+            $email = strtolower(trim((string) $email));
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $stats['invalid_skipped']++;
                 continue;
             }
+
+            if ($statusIdx !== null && $this->isPassiveStatus($status)) {
+                $stats['status_skipped']++;
+                continue;
+            }
+
+            if (isset($seen[$email])) {
+                $stats['duplicate_skipped']++;
+                continue;
+            }
+            $seen[$email] = true;
+            $stats['valid_email']++;
 
             $parsed[] = [
-                'email' => strtolower($email),
+                'email' => $email,
                 'name' => $name
             ];
         }
-        
-        return $parsed;
+
+        return ['records' => $parsed, 'stats' => $stats];
     }
-    
-    /**
-     * Duplicate'leri kaldır
-     */
-    private function uniqueEmails(array $emails): array
+
+    private function detectDelimiter(array $lines): string
     {
-        $seen = [];
-        $unique = [];
-        
-        foreach ($emails as $item) {
-            if (!isset($seen[$item['email']])) {
-                $seen[$item['email']] = true;
-                $unique[] = $item;
+        $candidates = [',', ';', "\t"];
+        $sample = array_slice($lines, 0, 5);
+        $best = ',';
+        $bestScore = -1;
+        foreach ($candidates as $candidate) {
+            $score = 0;
+            foreach ($sample as $line) {
+                $cols = str_getcsv((string) $line, $candidate);
+                $score += is_array($cols) ? count($cols) : 0;
+            }
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $candidate;
             }
         }
-        
-        return $unique;
+        return $best;
+    }
+
+    private function normalizeHeaderName(string $header): string
+    {
+        $h = trim($header);
+        $h = str_replace("\xEF\xBB\xBF", '', $h);
+        if (function_exists('mb_strtolower')) {
+            $h = mb_strtolower($h, 'UTF-8');
+        } else {
+            $h = strtolower($h);
+        }
+        $h = str_replace(['"', "'", '-', ' '], '', $h);
+        return $h;
+    }
+
+    /**
+     * @param array<int, mixed> $headerRow
+     * @return array{has_header: bool, email: ?int, name: ?int, status: ?int}
+     */
+    private function detectHeaderMap(array $headerRow): array
+    {
+        $emailAliases = ['mailadresi', 'email', 'e-mail', 'mail', 'eposta', 'e-posta', 'recipient', 'address'];
+        $nameAliases = ['isim', 'name', 'ad', 'fullname', 'full_name'];
+        $statusAliases = ['durum', 'status'];
+        $emailAliasesNorm = array_map([$this, 'normalizeHeaderName'], $emailAliases);
+        $nameAliasesNorm = array_map([$this, 'normalizeHeaderName'], $nameAliases);
+        $statusAliasesNorm = array_map([$this, 'normalizeHeaderName'], $statusAliases);
+
+        $emailIdx = null;
+        $nameIdx = null;
+        $statusIdx = null;
+        $headerHits = 0;
+
+        foreach ($headerRow as $idx => $col) {
+            $normalized = $this->normalizeHeaderName((string) $col);
+            if ($normalized === '') {
+                continue;
+            }
+            if ($emailIdx === null && in_array($normalized, $emailAliasesNorm, true)) {
+                $emailIdx = (int) $idx;
+                $headerHits++;
+                continue;
+            }
+            if ($nameIdx === null && in_array($normalized, $nameAliasesNorm, true)) {
+                $nameIdx = (int) $idx;
+                $headerHits++;
+                continue;
+            }
+            if ($statusIdx === null && in_array($normalized, $statusAliasesNorm, true)) {
+                $statusIdx = (int) $idx;
+                $headerHits++;
+            }
+        }
+
+        return [
+            'has_header' => $headerHits > 0,
+            'email' => $emailIdx,
+            'name' => $nameIdx,
+            'status' => $statusIdx,
+        ];
+    }
+
+    private function isPassiveStatus(?string $status): bool
+    {
+        $status = trim((string) $status);
+        if ($status === '') {
+            return false;
+        }
+        if (function_exists('mb_strtolower')) {
+            $status = mb_strtolower($status, 'UTF-8');
+        } else {
+            $status = strtolower($status);
+        }
+
+        $passiveValues = ['pasif', 'passive', 'inactive', 'deleted', 'silindi', 'invalid', 'geçersiz', 'gecersiz', '0'];
+        return in_array($status, $passiveValues, true);
     }
     
     /**
@@ -256,11 +419,9 @@ class EmailDataPoolController
             ini_set('memory_limit', '1024M');
             ini_set('max_execution_time', '600');
             
-            $emails = explode("\n", $data['emails'] ?? '');
-            
-            // Parse emails (sadece email adreslerini al)
-            $parsed = $this->parseEmails($emails);
-            $emailAddresses = array_column($parsed, 'email');
+            $rawInput = (string) ($data['emails'] ?? '');
+            $parseResult = $this->parseImportInput($rawInput, false);
+            $emailAddresses = array_column($parseResult['records'], 'email');
             
             // Benzersiz yap
             $emailAddresses = array_unique($emailAddresses);
