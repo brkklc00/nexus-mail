@@ -415,6 +415,9 @@
                                         <button type="button" class="btn nx-orders-icon-btn text-primary" onclick="editTemplate({{ template.id }})" title="Düzenle">
                                             <i data-feather="edit-2" class="icon-xs"></i>
                                         </button>
+                                        <button type="button" class="btn nx-orders-icon-btn text-warning" onclick="openTestTemplateModal({{ template.id }}, '{{ template.name|e('js') }}')" title="Test Gönder">
+                                            <i data-feather="send" class="icon-xs"></i>
+                                        </button>
                                         {% if not template.isGlobal or _session.user.role.name == 'admin' %}
                                         <button type="button" class="btn nx-orders-icon-btn" onclick="deleteTemplate({{ template.id }}, '{{ template.name|e('js') }}')" title="Sil">
                                             <i data-feather="trash-2" class="icon-xs"></i>
@@ -501,6 +504,44 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Test Mail Modal -->
+<div class="modal fade" id="testTemplateModal" tabindex="-1" aria-labelledby="testTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2 mb-0" id="testTemplateModalLabel">
+                    <i data-feather="send" class="icon-xs"></i> Şablon test gönderimi
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <form id="testTemplateForm">
+                <div class="modal-body">
+                    <input type="hidden" id="testTemplateId" value="">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1">Şablon</label>
+                        <div class="small text-muted" id="testTemplateName">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="testTemplateEmail" class="form-label small fw-semibold">Alıcı email <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" id="testTemplateEmail" required placeholder="ornek@mail.com">
+                    </div>
+                    <div class="mb-0">
+                        <label for="testTemplateVariables" class="form-label small fw-semibold">Değişkenler (opsiyonel JSON)</label>
+                        <textarea class="form-control" id="testTemplateVariables" rows="5" placeholder='{"name":"Test Kullanıcı"}'></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary" id="testTemplateSubmitBtn">
+                        <i data-feather="send" class="icon-xs me-1"></i>
+                        Test Gönder
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -594,37 +635,6 @@
 </div>
 
 <script>
-let nxTemplateEditEditor = null;
-
-function initTemplateEditEditor() {
-    if (nxTemplateEditEditor || typeof ClassicEditor === 'undefined') {
-        return;
-    }
-
-    const el = document.getElementById('editTemplateBody');
-    if (!el) {
-        return;
-    }
-
-    ClassicEditor
-        .create(el, {
-            toolbar: [
-                'undo', 'redo', '|',
-                'heading', '|',
-                'bold', 'italic', 'link', '|',
-                'bulletedList', 'numberedList', '|',
-                'blockQuote', 'insertTable', '|',
-                'code', 'codeBlock'
-            ]
-        })
-        .then(editor => {
-            nxTemplateEditEditor = editor;
-        })
-        .catch(() => {
-            nxTemplateEditEditor = null;
-        });
-}
-
 function previewTemplate(id) {
     const modal = new bootstrap.Modal(document.getElementById('previewModal'));
     modal.show();
@@ -676,8 +686,8 @@ function editTemplate(id) {
             }
             document.getElementById('editTemplateName').value = data.name || '';
             document.getElementById('editTemplateSubject').value = data.subject || '';
-            if (nxTemplateEditEditor) {
-                nxTemplateEditEditor.setData(data.body || '');
+            if (typeof $ === 'function' && $('#editTemplateBody').data('summernote')) {
+                $('#editTemplateBody').summernote('code', data.body || '');
             } else {
                 document.getElementById('editTemplateBody').value = data.body || '';
             }
@@ -692,8 +702,8 @@ function saveTemplateEdit() {
     const id = parseInt(document.getElementById('editTemplateId').value || '0', 10);
     const name = (document.getElementById('editTemplateName').value || '').trim();
     const subject = (document.getElementById('editTemplateSubject').value || '').trim();
-    const bodyRaw = nxTemplateEditEditor
-        ? nxTemplateEditEditor.getData()
+    const bodyRaw = (typeof $ === 'function' && $('#editTemplateBody').data('summernote'))
+        ? ($('#editTemplateBody').summernote('code') || '')
         : (document.getElementById('editTemplateBody').value || '');
     const body = bodyRaw.trim();
 
@@ -727,6 +737,71 @@ function saveTemplateEdit() {
         })
         .catch(err => {
             alert(err.message || 'Şablon güncellenemedi.');
+        });
+}
+
+function openTestTemplateModal(id, name) {
+    document.getElementById('testTemplateId').value = String(id);
+    document.getElementById('testTemplateName').textContent = name || '-';
+    document.getElementById('testTemplateEmail').value = '';
+    document.getElementById('testTemplateVariables').value = '';
+    const modal = new bootstrap.Modal(document.getElementById('testTemplateModal'));
+    modal.show();
+}
+
+function submitTemplateTestMail(event) {
+    event.preventDefault();
+
+    const id = parseInt(document.getElementById('testTemplateId').value || '0', 10);
+    const to = (document.getElementById('testTemplateEmail').value || '').trim();
+    const variablesRaw = (document.getElementById('testTemplateVariables').value || '').trim();
+    const submitBtn = document.getElementById('testTemplateSubmitBtn');
+
+    if (!id || !to) {
+        alert('Şablon ve alıcı email zorunludur.');
+        return;
+    }
+
+    let variables = {};
+    if (variablesRaw !== '') {
+        try {
+            const parsed = JSON.parse(variablesRaw);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('JSON obje formatında olmalıdır.');
+            }
+            variables = parsed;
+        } catch (err) {
+            alert('Değişkenler geçerli JSON formatında olmalı: ' + err.message);
+            return;
+        }
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Gönderiliyor...';
+
+    fetch(`/email-templates/${id}/send-test`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ to, variables })
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || 'Test gönderimi başarısız.');
+            }
+            bootstrap.Modal.getInstance(document.getElementById('testTemplateModal'))?.hide();
+            alert(data.message || 'Test mail gönderildi.');
+        })
+        .catch(err => {
+            alert(err.message || 'Test mail gönderilemedi.');
+        })
+        .finally(() => {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i data-feather="send" class="icon-xs me-1"></i> Test Gönder';
+            feather.replace();
         });
 }
 
@@ -849,7 +924,6 @@ function nxTplClearFilters() {
 
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
-    initTemplateEditEditor();
 
     const searchEl = document.getElementById('nxTplSearch');
     const sortEl = document.getElementById('nxTplSort');
@@ -881,6 +955,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('nxTplToolbarRefresh')?.addEventListener('click', function () { location.reload(); });
     document.getElementById('nxTplHeadRefresh')?.addEventListener('click', function () { location.reload(); });
     document.getElementById('saveTemplateEditBtn')?.addEventListener('click', saveTemplateEdit);
+    document.getElementById('testTemplateForm')?.addEventListener('submit', submitTemplateTestMail);
     nxTplApplyFilter();
     
     // Checkbox değiştiğinde butonu aktifleştir
@@ -911,7 +986,6 @@ document.addEventListener('DOMContentLoaded', function() {
 {% block scripts %}
 <!-- Summernote JS -->
 <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
-<script src="https://cdn.ckeditor.com/ckeditor5/39.0.1/classic/ckeditor.js"></script>
 
 <script>
 $(document).ready(function() {
@@ -938,6 +1012,21 @@ $(document).ready(function() {
                 });
             }
         }
+    });
+
+    $('#editTemplateBody').summernote({
+        height: 300,
+        maxHeight: 500,
+        toolbar: [
+            ['style', ['style']],
+            ['font', ['bold', 'underline', 'clear']],
+            ['color', ['color']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['table', ['table']],
+            ['insert', ['link', 'picture']],
+            ['view', ['codeview']]
+        ],
+        placeholder: 'Mail içeriğinizi buraya yazın...'
     });
     
     // Form gönderilmeden önce Summernote içeriğini textarea'ya senkronize et

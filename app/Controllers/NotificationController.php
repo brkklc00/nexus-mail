@@ -32,27 +32,39 @@ class NotificationController
      */
     public function adminIndex(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
-        // Tüm aktif kullanıcıları getir
-        $users = $this->em->getRepository(User::class)->findBy(['isActive' => true], ['name' => 'ASC']);
-        
-        // Son 50 gönderilen bildirimi getir
-        $qb = $this->em->createQueryBuilder();
-        $qb->select('n', 'u')
-            ->from(\App\Domain\Entities\Notification::class, 'n')
-            ->leftJoin('n.user', 'u')
-            ->orderBy('n.createdAt', 'DESC')
-            ->setMaxResults(50);
-        
-        $sentNotifications = $qb->getQuery()->getResult();
+        $users = [];
+        $sentNotifications = [];
+        $errorMessage = $_SESSION['flash_error'] ?? null;
+
+        try {
+            // Tüm aktif kullanıcıları getir
+            $users = $this->em->getRepository(User::class)->findBy(['isActive' => true], ['name' => 'ASC']);
+
+            // Son 50 gönderilen bildirimi getir
+            $qb = $this->em->createQueryBuilder();
+            $qb->select('n', 'u')
+                ->from(\App\Domain\Entities\Notification::class, 'n')
+                ->leftJoin('n.user', 'u')
+                ->orderBy('n.createdAt', 'DESC')
+                ->setMaxResults(50);
+
+            $sentNotifications = $qb->getQuery()->getResult();
+        } catch (\Throwable $e) {
+            error_log('NotificationController::adminIndex error: ' . $e->getMessage());
+            if (!$errorMessage) {
+                $errorMessage = 'Bildirim sayfası yüklenirken bir hata oluştu. Detaylar loglara yazıldı.';
+            }
+        }
         
         $html = $this->twig->render('admin/notifications/index.twig', [
             'users' => $users,
             'sentNotifications' => $sentNotifications,
             'success' => $_SESSION['flash_success'] ?? null,
+            'error' => $errorMessage,
             '_session' => $_SESSION,
         ]);
 
-        unset($_SESSION['flash_success']);
+        unset($_SESSION['flash_success'], $_SESSION['flash_error']);
         $response->getBody()->write($html);
         return $response;
     }
@@ -63,6 +75,7 @@ class NotificationController
     public function send(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
         $data = $request->getParsedBody();
+        $data = is_array($data) ? $data : [];
         
         $title = $data['title'] ?? '';
         $message = $data['message'] ?? '';
@@ -78,16 +91,21 @@ class NotificationController
         
         $count = 0;
         
-        if ($target === 'all') {
-            // Tüm kullanıcılara gönder
-            $count = $this->notificationService->sendToAll($title, $message, $type);
-        } elseif ($target === 'selected' && !empty($data['user_ids'])) {
-            // Seçili kullanıcılara gönder
-            $userIds = is_array($data['user_ids']) ? $data['user_ids'] : [$data['user_ids']];
-            $count = $this->notificationService->sendToUsers($userIds, $title, $message, $type);
+        try {
+            if ($target === 'all') {
+                // Tüm kullanıcılara gönder
+                $count = $this->notificationService->sendToAll($title, $message, $type);
+            } elseif ($target === 'selected' && !empty($data['user_ids'])) {
+                // Seçili kullanıcılara gönder
+                $userIds = is_array($data['user_ids']) ? $data['user_ids'] : [$data['user_ids']];
+                $count = $this->notificationService->sendToUsers($userIds, $title, $message, $type);
+            }
+
+            $_SESSION['flash_success'] = "{$count} kullanıcıya bildirim gönderildi.";
+        } catch (\Throwable $e) {
+            error_log('NotificationController::send error: ' . $e->getMessage());
+            $_SESSION['flash_error'] = 'Bildirim gönderilemedi. Lütfen sistem loglarını kontrol edin.';
         }
-        
-        $_SESSION['flash_success'] = "{$count} kullanıcıya bildirim gönderildi.";
         
         return $response
             ->withHeader('Location', '/admin/notifications')

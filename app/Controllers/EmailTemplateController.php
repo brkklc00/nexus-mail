@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Application\Services\EmailSmtpSelector;
+use App\Application\Services\EmailSmtpService;
 use App\Domain\Entities\EmailTemplate;
 use App\Domain\Entities\User;
 use Doctrine\ORM\EntityManagerInterface;
@@ -308,6 +310,93 @@ class EmailTemplateController
         ]));
 
         return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    public function sendTest(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $templateId = (int) ($args['id'] ?? 0);
+            $payload = json_decode((string) $request->getBody(), true);
+            if (!is_array($payload)) {
+                $payload = $request->getParsedBody();
+            }
+            $payload = is_array($payload) ? $payload : [];
+
+            $to = trim((string) ($payload['to'] ?? ''));
+            if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+                return $this->json($response, [
+                    'success' => false,
+                    'message' => 'Geçerli bir alıcı email adresi girin.'
+                ], 422);
+            }
+
+            $template = $this->em->find(EmailTemplate::class, $templateId);
+            $currentUser = $this->em->find(User::class, (int) ($_SESSION['user']['id'] ?? 0));
+            if (!$template || !$currentUser || !$this->canUserUseTemplate($template, $currentUser)) {
+                return $this->json($response, [
+                    'success' => false,
+                    'message' => 'Şablon bulunamadı veya bu şablon için yetkiniz yok.'
+                ], 404);
+            }
+
+            $variablesInput = $payload['variables'] ?? [];
+            $variables = is_array($variablesInput) ? $variablesInput : [];
+
+            $subject = $this->renderTemplateText($template->getSubject(), $variables);
+            $body = $template->render($variables);
+
+            $selector = new EmailSmtpSelector($this->em);
+            $smtp = $selector->selectBestSmtp();
+            if (!$smtp) {
+                return $this->json($response, [
+                    'success' => false,
+                    'message' => 'Aktif SMTP hesabı bulunamadı. SMTP ayarlarını kontrol edin.'
+                ], 422);
+            }
+
+            $smtpService = new EmailSmtpService($this->em);
+            $sendResult = $smtpService->sendEmail($smtp, $to, $subject, $body);
+            if (!($sendResult['success'] ?? false)) {
+                $message = (string) ($sendResult['message'] ?? 'Test mail gönderilemedi.');
+                error_log('EmailTemplateController::sendTest smtp error: ' . $message);
+                return $this->json($response, [
+                    'success' => false,
+                    'message' => $message
+                ], 500);
+            }
+
+            return $this->json($response, [
+                'success' => true,
+                'message' => 'Test mail başarıyla gönderildi.'
+            ]);
+        } catch (\Throwable $e) {
+            error_log('EmailTemplateController::sendTest error: ' . $e->getMessage());
+            return $this->json($response, [
+                'success' => false,
+                'message' => 'Test mail gönderimi sırasında bir hata oluştu.'
+            ], 500);
+        }
+    }
+
+    private function canUserUseTemplate(EmailTemplate $template, User $user): bool
+    {
+        if ($template->isGlobal() && $template->isApproved()) {
+            return true;
+        }
+        $owner = $template->getUser();
+        return $owner && $owner->getId() === $user->getId();
+    }
+
+    private function renderTemplateText(string $text, array $variables): string
+    {
+        if ($variables === []) {
+            return $text;
+        }
+        $rendered = $text;
+        foreach ($variables as $key => $value) {
+            $rendered = str_replace('{{' . $key . '}}', (string) $value, $rendered);
+        }
+        return $rendered;
     }
 
     private function json(Response $response, array $payload, int $status = 200): Response

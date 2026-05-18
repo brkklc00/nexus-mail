@@ -67,7 +67,8 @@ class EmailOrderController
         $qb3 = $this->em->createQueryBuilder();
         $templates = $qb3->select('t')
             ->from(\App\Domain\Entities\EmailTemplate::class, 't')
-            ->where('(t.user = :user OR t.isGlobal = true) AND t.isApproved = true')
+            // Kullanıcı kendi şablonlarını (onay beklese de) görebilir; global şablonlar onaylı olmalı
+            ->where('(t.user = :user) OR (t.isGlobal = true AND t.isApproved = true)')
             ->setParameter('user', $user)
             ->orderBy('t.name', 'ASC')
             ->getQuery()
@@ -134,8 +135,13 @@ class EmailOrderController
             $orderTemplate = null;
             if (in_array($sendType, ['phonebook', 'manual']) && $templateId > 0) {
                 $orderTemplate = $this->em->find(EmailTemplate::class, $templateId);
-                if (!$orderTemplate || !$orderTemplate->isApproved()) {
-                    $_SESSION['error'] = 'Geçersiz veya onaylanmamış şablon seçildi.';
+                if (!$orderTemplate) {
+                    $_SESSION['error'] = 'Geçersiz şablon seçildi.';
+                    $_SESSION['flash_icon'] = 'alert-circle';
+                    return $response->withHeader('Location', '/email-orders')->withStatus(302);
+                }
+                if ($orderTemplate->isGlobal() && !$orderTemplate->isApproved()) {
+                    $_SESSION['error'] = 'Seçilen global şablon henüz onaylanmamış.';
                     $_SESSION['flash_icon'] = 'alert-circle';
                     return $response->withHeader('Location', '/email-orders')->withStatus(302);
                 }
@@ -222,8 +228,13 @@ class EmailOrderController
                     return $response->withHeader('Location', '/email-orders')->withStatus(302);
                 }
                 $template = $this->em->find(EmailTemplate::class, $templateId);
-                if (!$template || !$template->isApproved()) {
-                    $_SESSION['error'] = 'Geçersiz veya onaylanmamış şablon seçildi.';
+                if (!$template) {
+                    $_SESSION['error'] = 'Geçersiz şablon seçildi.';
+                    $_SESSION['flash_icon'] = 'alert-circle';
+                    return $response->withHeader('Location', '/email-orders')->withStatus(302);
+                }
+                if ($template->isGlobal() && !$template->isApproved()) {
+                    $_SESSION['error'] = 'Seçilen global şablon henüz onaylanmamış.';
                     $_SESSION['flash_icon'] = 'alert-circle';
                     return $response->withHeader('Location', '/email-orders')->withStatus(302);
                 }

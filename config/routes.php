@@ -528,6 +528,8 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_template', 'delete'));
             $group->get('/{id}/preview', [\App\Controllers\EmailTemplateController::class, 'preview'])->setName('email.templates.preview')
                 ->add(new PermissionMiddleware($em, $twig, 'email_template', 'read'));
+            $group->post('/{id}/send-test', [\App\Controllers\EmailTemplateController::class, 'sendTest'])->setName('email.templates.send-test')
+                ->add(new PermissionMiddleware($em, $twig, 'email_template', 'read'));
         });
 
         // Admin: Email Data Pool (Mail Havuzu)
