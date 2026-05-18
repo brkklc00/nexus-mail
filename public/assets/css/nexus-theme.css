@@ -9969,6 +9969,7 @@ textarea.nx-textarea-ticket--simple {
     border-radius: 12px;
     border: 1px solid rgba(148, 163, 184, 0.35);
     overflow-x: auto;
+    overflow-y: visible;
     -webkit-overflow-scrolling: touch;
     background: #fff;
 }
@@ -10059,6 +10060,24 @@ textarea.nx-textarea-ticket--simple {
 
 .nx-adm-eo-col-actions {
     width: 170px;
+}
+
+.nx-adm-eo-table tbody tr,
+.nx-adm-eo-table tbody td {
+    overflow: visible;
+}
+
+.nx-adm-eo-td-actions {
+    position: relative;
+    overflow: visible !important;
+}
+
+.nx-adm-eo-td-actions .dropdown {
+    position: relative;
+}
+
+.nx-adm-eo-td-actions .dropdown-menu {
+    z-index: 1095 !important;
 }
 
 .nx-adm-eo-user-cell {

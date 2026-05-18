@@ -212,8 +212,6 @@ class EmailDataPoolController
     private function parseImportInput(string $rawInput, bool $requireEmailColumnWhenHeader = false): array
     {
         $rawInput = preg_replace('/^\xEF\xBB\xBF/', '', $rawInput) ?? $rawInput;
-        $lines = preg_split('/\R/u', $rawInput) ?: [];
-        $lines = array_values(array_filter(array_map(static fn ($l) => rtrim((string) $l), $lines), static fn ($l) => trim($l) !== ''));
 
         $stats = [
             'total_rows' => 0,
@@ -222,18 +220,33 @@ class EmailDataPoolController
             'invalid_skipped' => 0,
             'status_skipped' => 0,
         ];
-        if ($lines === []) {
+
+        // Büyük importlarda satırları diziye toplamak bellek patlatır.
+        // Sadece örnek satırlar toplanır, kalan içerik satır satır işlenir.
+        $sampleLines = [];
+        $firstNonEmptyLine = null;
+
+        $token = strtok($rawInput, "\r\n");
+        while ($token !== false) {
+            $line = rtrim((string) $token);
+            if (trim($line) !== '') {
+                if ($firstNonEmptyLine === null) {
+                    $firstNonEmptyLine = $line;
+                }
+                if (count($sampleLines) < 5) {
+                    $sampleLines[] = $line;
+                }
+            }
+            $token = strtok("\r\n");
+        }
+
+        if ($firstNonEmptyLine === null) {
             throw new \RuntimeException('Dosya boş. Lütfen import edilecek satırları kontrol edin.');
         }
 
-        $delimiter = $this->detectDelimiter($lines);
-        $rows = array_map(static fn ($line) => str_getcsv((string) $line, $delimiter), $lines);
-        $rows = array_values(array_filter($rows, static fn ($row) => is_array($row) && count(array_filter($row, static fn ($v) => trim((string) $v) !== '')) > 0));
-        if ($rows === []) {
-            throw new \RuntimeException('Dosya boş. Lütfen import edilecek satırları kontrol edin.');
-        }
-
-        $headerMap = $this->detectHeaderMap($rows[0]);
+        $delimiter = $this->detectDelimiter($sampleLines);
+        $headerRow = str_getcsv($firstNonEmptyLine, $delimiter);
+        $headerMap = $this->detectHeaderMap($headerRow);
         $hasHeader = $headerMap['has_header'];
         $emailIdx = $headerMap['email'];
         $nameIdx = $headerMap['name'];
@@ -243,15 +256,29 @@ class EmailDataPoolController
             throw new \RuntimeException('Mail kolonu bulunamadı. Lütfen Mail Adresi, email veya mail başlıklı kolon kullanın.');
         }
 
-        $startRow = $hasHeader ? 1 : 0;
         $parsed = [];
         $seen = [];
+        $nonEmptyLineIdx = 0;
 
-        for ($i = $startRow; $i < count($rows); $i++) {
-            $row = $rows[$i];
-            if (!is_array($row)) {
+        $token = strtok($rawInput, "\r\n");
+        while ($token !== false) {
+            $line = rtrim((string) $token);
+            $token = strtok("\r\n");
+
+            if (trim($line) === '') {
                 continue;
             }
+            $nonEmptyLineIdx++;
+
+            if ($hasHeader && $nonEmptyLineIdx === 1) {
+                continue;
+            }
+
+            $row = str_getcsv($line, $delimiter);
+            if (!is_array($row) || $row === []) {
+                continue;
+            }
+
             $stats['total_rows']++;
 
             $email = null;
