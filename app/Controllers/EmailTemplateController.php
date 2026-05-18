@@ -104,12 +104,12 @@ class EmailTemplateController
             $template->setCategory(null);
             $template->setTags(null);
             $template->setIsGlobal(false);
-            $template->setIsApproved(false); // Admin onayı bekliyor
+            $template->setIsApproved(true); // Mail-only panelde doğrudan onaylı
 
             $this->em->persist($template);
             $this->em->flush();
 
-            $_SESSION['success'] = 'Şablon oluşturuldu. Admin onayından sonra kullanılabilir olacak.';
+            $_SESSION['success'] = 'Şablon oluşturuldu ve kullanıma hazır.';
             return $response->withHeader('Location', '/email-templates')->withStatus(302);
 
         } catch (\Exception $e) {
