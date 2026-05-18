@@ -111,41 +111,37 @@ final class Version20260518_EnsureRbacTablesForLogin extends AbstractMigration
         ];
 
         foreach ($permissions as $key => $name) {
-            $conn->executeStatement(
+            $this->addSql(
                 'INSERT IGNORE INTO permissions (permission_key, name) VALUES (?, ?)',
                 [$key, $name]
             );
         }
 
-        $readCol = $columnExists('role_permissions', 'canRead') ? 'canRead' : 'can_read';
-        $createCol = $columnExists('role_permissions', 'canCreate') ? 'canCreate' : 'can_create';
-        $updateCol = $columnExists('role_permissions', 'canUpdate') ? 'canUpdate' : 'can_update';
-        $deleteCol = $columnExists('role_permissions', 'canDelete') ? 'canDelete' : 'can_delete';
+        // Eski şemada snake_case, yeni şemada camelCase olabilir.
+        // Tablo yeni oluşturulduysa camelCase kolonları varsayılır.
+        $readCol = $columnExists('role_permissions', 'can_read') ? 'can_read' : 'canRead';
+        $createCol = $columnExists('role_permissions', 'can_create') ? 'can_create' : 'canCreate';
+        $updateCol = $columnExists('role_permissions', 'can_update') ? 'can_update' : 'canUpdate';
+        $deleteCol = $columnExists('role_permissions', 'can_delete') ? 'can_delete' : 'canDelete';
 
-        if ($columnExists('role_permissions', $readCol)
-            && $columnExists('role_permissions', $createCol)
-            && $columnExists('role_permissions', $updateCol)
-            && $columnExists('role_permissions', $deleteCol)
-        ) {
-            $this->addSql("
-                INSERT INTO role_permissions (role_id, permission_id, {$readCol}, {$createCol}, {$updateCol}, {$deleteCol})
-                SELECT r.id, p.id, 1, 1, 1, 1
-                FROM roles r
-                JOIN permissions p
-                WHERE LOWER(r.name) = 'admin'
-                AND NOT EXISTS (
-                    SELECT 1 FROM role_permissions rp
-                    WHERE rp.role_id = r.id AND rp.permission_id = p.id
-                )
-            ");
+        $this->addSql("
+            INSERT INTO role_permissions (role_id, permission_id, {$readCol}, {$createCol}, {$updateCol}, {$deleteCol})
+            SELECT r.id, p.id, 1, 1, 1, 1
+            FROM roles r
+            JOIN permissions p
+            WHERE LOWER(r.name) = 'admin'
+            AND NOT EXISTS (
+                SELECT 1 FROM role_permissions rp
+                WHERE rp.role_id = r.id AND rp.permission_id = p.id
+            )
+        ");
 
-            $this->addSql("
-                UPDATE role_permissions rp
-                JOIN roles r ON r.id = rp.role_id
-                SET rp.{$readCol} = 1, rp.{$createCol} = 1, rp.{$updateCol} = 1, rp.{$deleteCol} = 1
-                WHERE LOWER(r.name) = 'admin'
-            ");
-        }
+        $this->addSql("
+            UPDATE role_permissions rp
+            JOIN roles r ON r.id = rp.role_id
+            SET rp.{$readCol} = 1, rp.{$createCol} = 1, rp.{$updateCol} = 1, rp.{$deleteCol} = 1
+            WHERE LOWER(r.name) = 'admin'
+        ");
 
         if ($tableExists('users')) {
             $this->addSql("
