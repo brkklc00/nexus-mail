@@ -244,7 +244,7 @@ export class ApiClient {
     getWorkerSmtpPoolMax() {
         const v = this.workerRuntime?.smtp_pool_max_connections;
         if (Number.isFinite(v) && v >= 0) {
-            return Math.min(20, v);
+            return Math.min(10000, v);
         }
         return 0;
     }

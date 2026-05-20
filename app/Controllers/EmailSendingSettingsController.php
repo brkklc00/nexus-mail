@@ -100,8 +100,10 @@ class EmailSendingSettingsController
             return $response->withHeader('Location', '/admin/email-sending-settings')->withStatus(302);
         }
 
-        if ($workerPool < 0 || $workerPool > 20) {
-            $_SESSION['error'] = 'SMTP pool bağlantı sayısı 0–20 arasında olmalıdır (0 = kapalı).';
+        if ($workerPool < 0 || $workerPool > EmailSendingConfigService::MAX_SMTP_POOL_CONNECTIONS) {
+            $_SESSION['error'] = 'SMTP pool bağlantı sayısı 0–'
+                . number_format(EmailSendingConfigService::MAX_SMTP_POOL_CONNECTIONS, 0, ',', '.')
+                . ' arasında olmalıdır (0 = kapalı).';
             return $response->withHeader('Location', '/admin/email-sending-settings')->withStatus(302);
         }
 

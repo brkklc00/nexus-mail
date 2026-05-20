@@ -13,6 +13,7 @@ class EmailSendingConfigService
 {
     /** Günlük kota ÷ 86.400 ile gelen hızın üst sınırı (50M/gün ≈ 578,7/sn). */
     public const MAX_RATE_PER_SECOND = 600.0;
+    public const MAX_SMTP_POOL_CONNECTIONS = 10000;
 
     public const RATE_SOURCE_MANUAL = 'manual';
 
@@ -119,7 +120,7 @@ class EmailSendingConfigService
             'worker_batch_gap_ms' => $batchGap,
             'worker_chunk_gap_ms' => $chunkGap,
             'worker_send_concurrency' => $sendConc,
-            'worker_smtp_pool_connections' => min(20, $poolConn),
+            'worker_smtp_pool_connections' => min(self::MAX_SMTP_POOL_CONNECTIONS, $poolConn),
             'worker_fetch_batch_size' => max(100, $fetch),
             'worker_send_batch_size' => $sendBatch,
             'worker_max_smtp_lanes' => $lanes,
@@ -208,7 +209,7 @@ class EmailSendingConfigService
             'worker_batch_gap_ms' => max(0, $workerBatch),
             'worker_chunk_gap_ms' => max(0, $workerChunk),
             'worker_send_concurrency' => max(1, min(50, $workerConc)),
-            'worker_smtp_pool_connections' => max(0, min(20, $workerPool)),
+            'worker_smtp_pool_connections' => max(0, min(self::MAX_SMTP_POOL_CONNECTIONS, $workerPool)),
             'worker_fetch_batch_size' => max(100, min(500000, $fetchSz)),
             'worker_send_batch_size' => max(10, min(5000, $sendSz)),
             'worker_max_smtp_lanes' => max(1, min(50, $maxLanes)),
