@@ -41,6 +41,27 @@
 {% block page_icon %}{% endblock %}
 {% block title_text %}{% endblock %}
 
+{% block styles %}
+<style>
+.nx-pb-tab-help {
+    font-size: 0.72rem;
+    color: #64748b;
+    margin-top: 0.1rem;
+}
+
+.nx-pb-import-box {
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 0.7rem;
+    background: #f8fafc;
+}
+
+.nx-pb-import-box .form-control {
+    background: #fff;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 
     <!-- Success/Error Messages -->
@@ -213,12 +234,14 @@
                                 <i data-feather="plus-circle" class="nx-orders-tab-ic"></i>
                                 <span>Yeni Rehber</span>
                             </a>
+                            <div class="nx-pb-tab-help">Yeni bir alıcı listesi oluşturur.</div>
                         </li>
                         <li class="nav-item" role="presentation">
                             <a class="nav-link" data-bs-toggle="tab" href="#addToExistingTab" role="tab" onclick="refreshIcons()">
                                 <i data-feather="file-plus" class="nx-orders-tab-ic"></i>
                                 <span>Mevcut Rehbere Ekle</span>
                             </a>
+                            <div class="nx-pb-tab-help">Var olan listeye yeni adres ekler.</div>
                         </li>
                     </ul>
 
@@ -244,10 +267,10 @@
                                     <small class="text-muted">Her satıra bir mail adresi yazın</small>
                                 </div>
 
-                                <div class="mb-3">
+                                <div class="mb-3 nx-pb-import-box">
                                     <label for="file_new" class="form-label">Dosyadan İçe Aktar (Opsiyonel)</label>
                                     <input type="file" class="form-control" id="file_new" name="file" accept=".csv,.xls,.xlsx,.txt" onchange="handleFileSelect(this, 'emails_new')">
-                                    <small class="text-muted d-block">CSV, Excel, TXT (max 500 MB - Milyonlarca mail)</small>
+                                    <small class="text-muted d-block">CSV, Excel veya TXT dosyası kullanın (max 500 MB).</small>
                                     <div id="file_progress_new" class="mt-2" style="display: none;">
                                         <div class="progress">
                                             <div id="file_progress_bar_new" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
@@ -284,10 +307,10 @@
                                     <small class="text-muted">Her satıra bir mail adresi yazın</small>
                                 </div>
 
-                                <div class="mb-3">
+                                <div class="mb-3 nx-pb-import-box">
                                     <label for="file_add" class="form-label">Dosyadan İçe Aktar (Opsiyonel)</label>
                                     <input type="file" class="form-control" id="file_add" name="file" accept=".csv,.xls,.xlsx,.txt" onchange="handleFileSelect(this, 'emails_add')">
-                                    <small class="text-muted d-block">CSV, Excel, TXT (max 500 MB - Milyonlarca mail)</small>
+                                    <small class="text-muted d-block">CSV, Excel veya TXT dosyası kullanın (max 500 MB).</small>
                                     <div id="file_progress_add" class="mt-2" style="display: none;">
                                         <div class="progress">
                                             <div id="file_progress_bar_add" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>

@@ -39,35 +39,34 @@
 
                 {% if nx_can_email %}
                 {{ nx_sb.section_label('Mail Yönetimi') }}
-                <li class="nx-sb-group nx-sb-group--tier0" data-nx-sb="email">
-                    <button type="button" class="nx-sb-group__trigger" aria-expanded="false" aria-controls="nxSbPanelEmail">
+                <li class="nx-sb-group nx-sb-group--tier0 nx-sb-group--static nx-sb-group--open" data-nx-sb="email">
+                    <div class="nx-sb-group__trigger nx-sb-group__trigger--static" aria-hidden="true">
                         <i data-feather="mail" class="align-self-center menu-icon"></i>
                         <span class="nx-sb-group__label">Mail Yönetimi</span>
-                        <span class="nx-sb-chevron" aria-hidden="true"><i data-feather="chevron-right"></i></span>
-                    </button>
-                    <div id="nxSbPanelEmail" class="nx-sb-group__panel" role="region" inert>
+                    </div>
+                    <div id="nxSbPanelEmail" class="nx-sb-group__panel" role="region">
                         <ul class="nx-sb-group__list">
                             {% if nx_is_admin or _session.user_permissions.email_order.read|default(false) %}
-                            <li><a href="/email-orders">Yeni Gönderim</a></li>
+                            <li><a href="/email-orders"><i data-feather="send" class="menu-icon"></i><span>Yeni Gönderim</span></a></li>
                             {% endif %}
                             {% if nx_is_admin or _session.user_permissions.admin_email_orders.read|default(false) %}
-                            <li><a href="/admin/email-orders">Gönderimler</a></li>
+                            <li><a href="/admin/email-orders"><i data-feather="inbox" class="menu-icon"></i><span>Gönderimler</span></a></li>
                             {% endif %}
                             {% if nx_is_admin or _session.user_permissions.email_phonebook.read|default(false) %}
-                            <li><a href="/email-phonebooks">Alıcı Listeleri</a></li>
+                            <li><a href="/email-phonebooks"><i data-feather="book-open" class="menu-icon"></i><span>Alıcı Listeleri</span></a></li>
                             {% endif %}
                             {% if nx_is_admin or _session.user_permissions.email_template.read|default(false) %}
-                            <li><a href="/email-templates">Şablonlar</a></li>
+                            <li><a href="/email-templates"><i data-feather="file-text" class="menu-icon"></i><span>Şablonlar</span></a></li>
                             {% endif %}
                             {% if nx_is_admin or _session.user_permissions.email_blacklist.read|default(false) %}
-                            <li><a href="/email-blacklist">Kara Liste</a></li>
+                            <li><a href="/email-blacklist"><i data-feather="shield-off" class="menu-icon"></i><span>Kara Liste</span></a></li>
                             {% endif %}
                             {% if nx_is_admin or _session.user_permissions.email_smtp.read|default(false) %}
-                            <li><a href="/admin/email-smtp">SMTP</a></li>
+                            <li><a href="/admin/email-smtp"><i data-feather="server" class="menu-icon"></i><span>SMTP</span></a></li>
                             {% endif %}
                             {% if nx_is_admin %}
-                            <li><a href="/admin/email-sending-settings">Hız &amp; Limitler</a></li>
-                            <li><a href="/admin/email-data-pool">Mail Havuzu</a></li>
+                            <li><a href="/admin/email-sending-settings"><i data-feather="sliders" class="menu-icon"></i><span>Hız &amp; Limitler</span></a></li>
+                            <li><a href="/admin/email-data-pool"><i data-feather="database" class="menu-icon"></i><span>Mail Havuzu</span></a></li>
                             {% endif %}
                         </ul>
                     </div>

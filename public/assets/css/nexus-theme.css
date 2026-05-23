@@ -3302,6 +3302,15 @@ body.nx-panel > .modal-backdrop {
     box-shadow: inset 3px 0 0 0 #3b82f6 !important;
 }
 
+.left-sidenav.nx-sidebar.nx-sidebar-layout .nx-sidebar-v2 .nx-sb-group--static > .nx-sb-group__trigger {
+    cursor: default;
+    pointer-events: none;
+}
+
+.left-sidenav.nx-sidebar.nx-sidebar-layout .nx-sidebar-v2 .nx-sb-group--static > .nx-sb-group__panel {
+    grid-template-rows: 1fr !important;
+}
+
 .left-sidenav.nx-sidebar.nx-sidebar-layout .nx-sidebar-v2 .nx-sb-group__list > li > a.active::before {
     content: none !important;
     display: none !important;
@@ -3384,6 +3393,14 @@ body.nx-panel > .modal-backdrop {
     transition:
         background 0.14s ease,
         color 0.14s ease;
+}
+
+.left-sidenav.nx-sidebar.nx-sidebar-layout .nx-sidebar-v2 .nx-sb-group__list > li > a .menu-icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 0.45rem;
+    flex-shrink: 0;
+    color: rgba(186, 230, 253, 0.9);
 }
 
 .left-sidenav.nx-sidebar.nx-sidebar-layout .nx-sidebar-v2 .nx-sb-group__list > li > a:hover {
@@ -4768,7 +4785,7 @@ body.nx-panel > .modal-backdrop {
 
 .nx-orders-card-head-main {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.75rem;
     flex: 1 1 auto;
     min-width: 0;
@@ -8494,10 +8511,14 @@ textarea.nx-textarea-ticket--simple {
 .nx-txsms-page .nx-txsms-card-head-main,
 .nx-txsms-page .nx-txsms-history-head-main {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.75rem;
     min-width: 0;
     flex: 1 1 auto;
+}
+
+.nx-email-page .nx-orders-card-head-main > div:last-child {
+    text-align: left;
 }
 
 .nx-orders-shell .nx-orders-card-sub,

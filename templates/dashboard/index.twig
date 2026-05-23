@@ -2,6 +2,115 @@
 
 {% block title %}Dashboard - {{ site_title|default('Nexus Mail') }}{% endblock %}
 
+{% block styles %}
+<style>
+.nx-dash-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+}
+
+.nx-dash-quick-btn {
+    min-height: 42px;
+    border-radius: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.45rem;
+    font-weight: 600;
+    font-size: 0.79rem;
+    padding-inline: 0.75rem;
+}
+
+.nx-dash-quick-btn i,
+.nx-dash-quick-btn svg {
+    width: 15px;
+    height: 15px;
+}
+
+.nx-dash-url-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin-bottom: 0.85rem;
+}
+
+.nx-dash-url-stat {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 0.6rem 0.7rem;
+}
+
+.nx-dash-url-stat-label {
+    display: block;
+    font-size: 0.72rem;
+    color: #64748b;
+}
+
+.nx-dash-url-stat-value {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.nx-dash-url-list-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.55rem 0.65rem;
+    background: #fff;
+}
+
+.nx-dash-url-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #1e3a8a;
+}
+
+.nx-dash-url-click {
+    font-size: 0.74rem;
+    color: #475569;
+    font-weight: 600;
+}
+
+.nx-dash-recent-table thead th {
+    font-size: 0.74rem;
+}
+
+.nx-dash-recent-table tbody td {
+    padding-top: 0.62rem;
+    padding-bottom: 0.62rem;
+    vertical-align: middle;
+}
+
+.nx-dash-order-subject {
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.nx-dash-order-recipient {
+    display: block;
+    margin-top: 0.12rem;
+    font-size: 0.72rem;
+    color: #64748b;
+}
+
+@media (max-width: 991.98px) {
+    .nx-dash-quick-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
 {% block page_title %}
 <div class="row">
     <div class="col-12">
@@ -153,21 +262,16 @@
                 <h5 class="mb-0 text-white fw-semibold">Hızlı İşlemler</h5>
             </div>
             <div class="card-body">
-                <div class="d-grid gap-2">
-                    <a href="/email-orders" class="btn btn-primary btn-sm py-2">Yeni Gönderim</a>
-                    <a href="/email-phonebooks" class="btn btn-outline-primary btn-sm py-2">Alıcı Listeleri</a>
-                    <a href="/email-templates" class="btn btn-outline-primary btn-sm py-2">Şablonlar</a>
-                    <a href="/admin/email-orders" class="btn btn-outline-primary btn-sm py-2">Gönderimler</a>
-                    <a href="/admin/email-smtp" class="btn btn-outline-primary btn-sm py-2">SMTP</a>
-                    <a href="/admin/email-sending-settings" class="btn btn-outline-primary btn-sm py-2">Hız &amp; Limitler</a>
-                    <a href="/admin/email-data-pool" class="btn btn-outline-primary btn-sm py-2">Mail Havuzu</a>
-                    <a href="/email-blacklist" class="btn btn-outline-primary btn-sm py-2">Kara Liste</a>
-                    <a href="/url-shortener" class="btn btn-outline-primary btn-sm py-2">Link Kısaltıcı</a>
-                </div>
-                <hr>
-                <div class="small text-muted">
-                    Kısa URL: <strong>{{ urlStats.total_urls|default(0) }}</strong> link /
-                    <strong>{{ urlStats.total_clicks|default(0)|number_format(0, ',', '.') }}</strong> tıklama
+                <div class="nx-dash-quick-grid">
+                    <a href="/email-orders" class="btn btn-primary btn-sm nx-dash-quick-btn"><i data-feather="send"></i><span>Yeni Gönderim</span></a>
+                    <a href="/email-phonebooks" class="btn btn-outline-primary btn-sm nx-dash-quick-btn"><i data-feather="book-open"></i><span>Alıcı Listeleri</span></a>
+                    <a href="/email-templates" class="btn btn-outline-primary btn-sm nx-dash-quick-btn"><i data-feather="file-text"></i><span>Şablonlar</span></a>
+                    <a href="/admin/email-orders" class="btn btn-outline-primary btn-sm nx-dash-quick-btn"><i data-feather="inbox"></i><span>Gönderimler</span></a>
+                    <a href="/admin/email-smtp" class="btn btn-outline-primary btn-sm nx-dash-quick-btn"><i data-feather="server"></i><span>SMTP</span></a>
+                    <a href="/admin/email-sending-settings" class="btn btn-outline-primary btn-sm nx-dash-quick-btn"><i data-feather="sliders"></i><span>Hız &amp; Limitler</span></a>
+                    <a href="/admin/email-data-pool" class="btn btn-outline-primary btn-sm nx-dash-quick-btn"><i data-feather="database"></i><span>Mail Havuzu</span></a>
+                    <a href="/email-blacklist" class="btn btn-outline-primary btn-sm nx-dash-quick-btn"><i data-feather="shield-off"></i><span>Kara Liste</span></a>
+                    <a href="/url-shortener" class="btn btn-outline-primary btn-sm nx-dash-quick-btn"><i data-feather="link-2"></i><span>Link Kısaltıcı</span></a>
                 </div>
             </div>
         </div>
@@ -191,11 +295,12 @@
                 } only %}
                 {% else %}
                 <div class="table-responsive">
-                    <table class="table table-sm mb-0">
+                    <table class="table table-sm mb-0 nx-dash-recent-table">
                         <thead>
                             <tr>
                                 <th>#</th>
                                 <th>Konu</th>
+                                <th>Alıcı / Liste</th>
                                 <th>Durum</th>
                                 <th>Tarih</th>
                                 <th class="text-end">İşlem</th>
@@ -203,12 +308,35 @@
                         </thead>
                         <tbody>
                             {% for order in recentEmailOrders %}
+                            {% set sv = order.status.value|default('pending') %}
+                            {% set recipientLabel = order.sourceType == 'pool'
+                                ? ('Havuz: ' ~ (order.poolList ? order.poolList.name : ('#' ~ (order.lastPoolId|default('—')))))
+                                : (order.total > 0 ? order.total|number_format(0, ',', '.') ~ ' alıcı' : 'Liste / manuel') %}
                             <tr>
                                 <td>#{{ order.id }}</td>
-                                <td class="text-truncate" style="max-width: 280px;">{{ order.subject }}</td>
-                                <td><span class="badge bg-light text-dark">{{ order.status.value|default('pending') }}</span></td>
-                                <td>{{ order.createdAt|date('d.m.Y') }}</td>
-                                <td class="text-end"><a href="/email-orders/{{ order.id }}" class="btn btn-sm btn-light">Detay</a></td>
+                                <td style="max-width: 260px;">
+                                    <span class="nx-dash-order-subject" title="{{ order.subject|e('html_attr') }}">{{ order.subject }}</span>
+                                </td>
+                                <td style="max-width: 220px;">
+                                    <span class="nx-dash-order-recipient">{{ recipientLabel }}</span>
+                                </td>
+                                <td>
+                                    {% if sv == 'processing' %}
+                                        <span class="badge bg-info-subtle text-info-emphasis">İşleniyor</span>
+                                    {% elseif sv == 'completed' or sv == 'sent' %}
+                                        <span class="badge bg-success-subtle text-success-emphasis">Tamamlandı</span>
+                                    {% elseif sv == 'pending' or sv == 'pending_approval' %}
+                                        <span class="badge bg-warning-subtle text-warning-emphasis">Bekliyor</span>
+                                    {% elseif sv == 'failed' %}
+                                        <span class="badge bg-danger-subtle text-danger-emphasis">Başarısız</span>
+                                    {% elseif sv == 'cancelled' %}
+                                        <span class="badge bg-secondary-subtle text-secondary-emphasis">İptal</span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark">{{ sv }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ order.createdAt|date('d.m.Y H:i') }}</td>
+                                <td class="text-end"><a href="/email-orders/{{ order.id }}" class="btn btn-sm btn-light"><i data-feather="eye" class="icon-xs me-1"></i>Detay</a></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -223,7 +351,7 @@
             <div class="card-header border-0">
                 <h5 class="mb-0 text-white fw-semibold">Kısa URL Performansı</h5>
             </div>
-            <div class="card-body d-flex flex-column justify-content-center">
+            <div class="card-body">
                 {% if recentUrls is empty %}
                 <div class="text-center py-4">
                     <span class="nx-dash-chart-empty-icon"><i data-feather="link-2"></i></span>
@@ -232,10 +360,39 @@
                     <a href="/url-shortener" class="btn btn-outline-primary btn-sm">Link Kısaltıcıya Git</a>
                 </div>
                 {% else %}
-                <ul class="list-unstyled mb-0 small">
+                {% set maxClicks = 0 %}
+                {% for url in recentUrls %}
+                    {% if url.clickCount > maxClicks %}
+                        {% set maxClicks = url.clickCount %}
+                    {% endif %}
+                {% endfor %}
+                <div class="nx-dash-url-summary">
+                    <div class="nx-dash-url-stat">
+                        <span class="nx-dash-url-stat-label">Toplam kısa link</span>
+                        <span class="nx-dash-url-stat-value">{{ urlStats.total_urls|default(0)|number_format(0, ',', '.') }}</span>
+                    </div>
+                    <div class="nx-dash-url-stat">
+                        <span class="nx-dash-url-stat-label">Toplam tıklama</span>
+                        <span class="nx-dash-url-stat-value">{{ urlStats.total_clicks|default(0)|number_format(0, ',', '.') }}</span>
+                    </div>
+                </div>
+                <ul class="list-unstyled mb-0 d-flex flex-column gap-2">
                     {% for url in recentUrls %}
-                    <li class="mb-2">
-                        <strong>{{ url.shortCode }}</strong> · {{ url.clickCount|default(0) }} tıklama
+                    {% set barPct = maxClicks > 0 ? ((url.clickCount|default(0) / maxClicks) * 100) : 0 %}
+                    <li class="nx-dash-url-list-item">
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                            <span class="nx-dash-url-code">{{ url.shortCode }}</span>
+                            <span class="nx-dash-url-click">{{ url.clickCount|default(0)|number_format(0, ',', '.') }} tıklama</span>
+                        </div>
+                        <div class="progress" style="height: 5px;">
+                            <div class="progress-bar bg-primary" style="width: {{ barPct|number_format(1, '.', '') }}%"></div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-1">
+                            <small class="text-muted text-truncate pe-2">{{ url.title ?: url.shortUrl }}</small>
+                            <a href="{{ url.shortUrl }}" target="_blank" rel="noopener" class="text-muted" title="Aç">
+                                <i data-feather="external-link" style="width:12px;height:12px;"></i>
+                            </a>
+                        </div>
                     </li>
                     {% endfor %}
                 </ul>

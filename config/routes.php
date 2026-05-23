@@ -9,7 +9,6 @@ use App\Controllers\RoleController;
 use App\Controllers\SupportTicketController;
 use App\Controllers\SettingsController;
 use App\Controllers\ApiController;
-use App\Controllers\NotificationController;
 use App\Controllers\EmailSmtpController;
 use App\Controllers\EmailDashboardController;
 use App\Controllers\EmailPhoneBookController;
@@ -243,20 +242,6 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'user', 'update'));
         });
 
-        // Admin: Notifications Management
-        $group->group('/admin/notifications', function (RouteCollectorProxy $group) use ($container) {
-            $em = $container->get(EntityManager::class);
-            $twig = $container->get(Environment::class);
-
-            $group->get('', [NotificationController::class, 'adminIndex'])->setName('admin.notifications.index')
-                ->add(new PermissionMiddleware($em, $twig, 'notification', 'read'));
-            $group->post('/send', [NotificationController::class, 'send'])->setName('admin.notifications.send')
-                ->add(new PermissionMiddleware($em, $twig, 'notification', 'create'));
-            $group->get('/{id}', [NotificationController::class, 'view'])->setName('admin.notifications.view')
-                ->add(new PermissionMiddleware($em, $twig, 'notification', 'read'));
-            $group->delete('/{id}', [NotificationController::class, 'delete'])->setName('admin.notifications.delete')
-                ->add(new PermissionMiddleware($em, $twig, 'notification', 'delete'));
-        });
 
         // Admin: Email Orders Management
         $group->group('/admin/email-orders', function (RouteCollectorProxy $group) use ($container) {
@@ -567,14 +552,6 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
         });
 
-        // Notifications (User)
-        $group->group('/notifications', function (RouteCollectorProxy $group) {
-            $group->get('', [NotificationController::class, 'index'])->setName('notifications.index');
-            $group->get('/unread', [NotificationController::class, 'getUnread'])->setName('notifications.unread');
-            $group->post('/{id}/mark-read', [NotificationController::class, 'markAsRead'])->setName('notifications.markAsRead');
-            $group->post('/mark-all-read', [NotificationController::class, 'markAllAsRead'])->setName('notifications.markAllAsRead');
-        });
-
         // Settings
         $group->group('/settings', function (RouteCollectorProxy $group) {
             $group->get('/profile', [SettingsController::class, 'profile'])->setName('settings.profile');
@@ -631,32 +608,62 @@ return function (App $app) {
             $em = $container->get(EntityManager::class);
             $twig = $container->get(Environment::class);
 
-            $group->get('', [\App\Controllers\Admin\SystemMonitorController::class, 'index'])->setName('admin.system-monitor.index')
+            $group->get('', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'index'])->setName('admin.system-monitor.index')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
-            $group->get('/stats', [\App\Controllers\Admin\SystemMonitorController::class, 'stats'])->setName('admin.system-monitor.stats')
+            $group->get('/stats', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'stats'])->setName('admin.system-monitor.stats')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
-            $group->post('/clear-logs', [\App\Controllers\Admin\SystemMonitorController::class, 'clearLogs'])->setName('admin.system-monitor.clear-logs')
+            $group->get('/metrics', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'metrics'])->setName('admin.system-monitor.metrics')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->get('/system-check', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'systemCheck'])->setName('admin.system-monitor.system-check')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->get('/maintenance-status', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'maintenanceStatus'])->setName('admin.system-monitor.maintenance-status')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->post('/maintenance/toggle', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'toggleMaintenance'])->setName('admin.system-monitor.maintenance-toggle')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'update'));
+            $group->get('/logs', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'logs'])->setName('admin.system-monitor.logs')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->get('/logs/{name}/tail', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'logTail'])->setName('admin.system-monitor.log-tail')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->get('/logs/{name}/download', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'downloadLog'])->setName('admin.system-monitor.log-download')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->post('/logs/{name}/clear', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'clearLog'])->setName('admin.system-monitor.log-clear')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'delete'));
-            $group->get('/worker-log/{worker}', [\App\Controllers\Admin\SystemMonitorController::class, 'viewWorkerLog'])->setName('admin.system-monitor.worker-log')
+            $group->post('/logs/clear-all', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'clearAllLogsAction'])->setName('admin.system-monitor.logs-clear-all')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'delete'));
+            $group->post('/clear-logs', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'clearLogs'])->setName('admin.system-monitor.clear-logs')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'delete'));
+            $group->get('/worker-log/{worker}', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'viewWorkerLog'])->setName('admin.system-monitor.worker-log')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
-            $group->get('/download-worker-log/{worker}', [\App\Controllers\Admin\SystemMonitorController::class, 'downloadWorkerLog'])->setName('admin.system-monitor.download-worker-log')
+            $group->get('/download-worker-log/{worker}', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'downloadWorkerLog'])->setName('admin.system-monitor.download-worker-log')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
-            $group->post('/backup/database', [\App\Controllers\Admin\SystemMonitorController::class, 'createDatabaseBackup'])->setName('admin.system-monitor.backup-database');
-            $group->post('/backup/files', [\App\Controllers\Admin\SystemMonitorController::class, 'createFileBackup'])->setName('admin.system-monitor.backup-files');
-            $group->get('/backups', [\App\Controllers\Admin\SystemMonitorController::class, 'listBackups'])->setName('admin.system-monitor.list-backups')
+            $group->post('/backup/database', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'createDatabaseBackup'])->setName('admin.system-monitor.backup-database')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'create'));
+            $group->post('/backup/files', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'createFileBackup'])->setName('admin.system-monitor.backup-files')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'create'));
+            $group->get('/backups', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'listBackups'])->setName('admin.system-monitor.list-backups')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
-            $group->get('/download-backup', [\App\Controllers\Admin\SystemMonitorController::class, 'downloadBackup'])->setName('admin.system-monitor.download-backup')
+            $group->get('/download-backup', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'downloadBackup'])->setName('admin.system-monitor.download-backup')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
-            $group->post('/restore-database', [\App\Controllers\Admin\SystemMonitorController::class, 'restoreDatabaseBackup'])->setName('admin.system-monitor.restore-database');
-            $group->post('/delete-backup', [\App\Controllers\Admin\SystemMonitorController::class, 'deleteBackup'])->setName('admin.system-monitor.delete-backup');
-            $group->get('/files', [\App\Controllers\Admin\SystemMonitorController::class, 'listFiles'])->setName('admin.system-monitor.list-files')
+            $group->post('/restore-database', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'restoreDatabaseBackup'])->setName('admin.system-monitor.restore-database')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'update'));
+            $group->post('/delete-backup', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'deleteBackup'])->setName('admin.system-monitor.delete-backup')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'delete'));
+            $group->get('/files', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'listFiles'])->setName('admin.system-monitor.list-files')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
-            $group->get('/file', [\App\Controllers\Admin\SystemMonitorController::class, 'readFile'])->setName('admin.system-monitor.read-file')
+            $group->get('/file', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'readFile'])->setName('admin.system-monitor.read-file')
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
-            $group->post('/file/save', [\App\Controllers\Admin\SystemMonitorController::class, 'saveFile'])->setName('admin.system-monitor.save-file');
-            $group->post('/file/create', [\App\Controllers\Admin\SystemMonitorController::class, 'createFile'])->setName('admin.system-monitor.create-file');
-            $group->post('/file/delete', [\App\Controllers\Admin\SystemMonitorController::class, 'deleteFile'])->setName('admin.system-monitor.delete-file');
-            $group->post('/file/rename', [\App\Controllers\Admin\SystemMonitorController::class, 'renameFile'])->setName('admin.system-monitor.rename-file');
+            $group->get('/file/download', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'downloadFile'])->setName('admin.system-monitor.download-file')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->post('/file/save', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'saveFile'])->setName('admin.system-monitor.save-file')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'update'));
+            $group->post('/file/create', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'createFile'])->setName('admin.system-monitor.create-file')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'create'));
+            $group->post('/file/upload', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'uploadFile'])->setName('admin.system-monitor.upload-file')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'create'));
+            $group->post('/file/delete', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'deleteFile'])->setName('admin.system-monitor.delete-file')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'delete'));
+            $group->post('/file/rename', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'renameFile'])->setName('admin.system-monitor.rename-file')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'update'));
         });
 
     })->add(AuthMiddleware::class);

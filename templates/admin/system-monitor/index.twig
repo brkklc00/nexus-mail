@@ -1,1501 +1,287 @@
 {% extends "_layouts/main.twig" %}
 
-{% block content %}
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3 mb-0 text-gray-800">
-            <i class="fas fa-server"></i> Sunucu Yönetim Paneli
-        </h1>
-        <button id="refreshBtn" class="btn btn-primary btn-sm">
-            <i class="fas fa-sync-alt"></i> Yenile
-        </button>
-    </div>
+{% block title %}Sunucu Yönetimi - {{ site_title|default('Nexus Mail') }}{% endblock %}
 
-    <!-- Sunucu İstatistikleri -->
-    <div class="row">
-        <!-- CPU -->
-        <div class="col-xl-3 col-md-6 mb-4">
-            <div class="card border-left-primary shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
-                                CPU Kullanımı
-                            </div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800" id="cpu-usage">--%</div>
-                            <div class="text-xs text-gray-600 mt-1" id="cpu-cores">- çekirdek</div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-microchip fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- RAM -->
-        <div class="col-xl-3 col-md-6 mb-4">
-            <div class="card border-left-success shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
-                                RAM Kullanımı
-                            </div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800" id="ram-usage">--%</div>
-                            <div class="text-xs text-gray-600 mt-1" id="ram-info">- / -</div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-memory fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Disk -->
-        <div class="col-xl-3 col-md-6 mb-4">
-            <div class="card border-left-warning shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
-                                Disk Kullanımı
-                            </div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800" id="disk-usage">--%</div>
-                            <div class="text-xs text-gray-600 mt-1" id="disk-info">- / -</div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-hdd fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Veritabanı -->
-        <div class="col-xl-3 col-md-6 mb-4">
-            <div class="card border-left-info shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="row no-gutters align-items-center">
-                        <div class="col mr-2">
-                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
-                                Veritabanı Boyutu
-                            </div>
-                            <div class="h5 mb-0 font-weight-bold text-gray-800" id="db-size">--</div>
-                            <div class="text-xs text-gray-600 mt-1" id="db-tables">- tablo</div>
-                        </div>
-                        <div class="col-auto">
-                            <i class="fas fa-database fa-2x text-gray-300"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Sistem Bilgileri (Yatay) -->
-    <div class="row">
-        <div class="col-lg-12 mb-4">
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-info-circle"></i> Sistem Bilgileri
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-3">
-                            <div class="text-center p-3 border-right">
-                                <small class="text-gray-600 d-block mb-2">Server Uptime</small>
-                                <div class="h5 mb-0 font-weight-bold text-primary" id="server-uptime">--</div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3 border-right">
-                                <small class="text-gray-600 d-block mb-2">Load Average (1/5/15)</small>
-                                <div class="h5 mb-0 font-weight-bold text-success" id="load-average">-- / -- / --</div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3 border-right">
-                                <small class="text-gray-600 d-block mb-2">DB Bağlantıları</small>
-                                <div class="h5 mb-0 font-weight-bold text-info" id="db-connections">--</div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center p-3">
-                                <small class="text-gray-600 d-block mb-2">Disk I/O</small>
-                                <div class="h6 mb-0 font-weight-bold">
-                                    <span class="text-success" id="disk-reads">--</span> / 
-                                    <span class="text-danger" id="disk-writes">--</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Log Yönetimi -->
-    <div class="row">
-        <div class="col-lg-12 mb-4">
-            <div class="card shadow">
-                <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-file-alt"></i> Log Yönetimi
-                    </h6>
-                    <div>
-                        <button class="btn btn-warning btn-sm mr-2" onclick="clearAppLogs()">
-                            <i class="fas fa-broom"></i> Uygulama Logları
-                        </button>
-                        <button class="btn btn-danger btn-sm" onclick="clearAllLogs()">
-                            <i class="fas fa-trash"></i> Tüm Logları Temizle
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="row mb-3">
-                        <div class="col-md-12">
-                            <div class="alert alert-info">
-                                <i class="fas fa-info-circle"></i> 
-                                <strong>Toplam Log Boyutu:</strong> <span id="total-log-size" class="font-weight-bold">--</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <h6 class="font-weight-bold text-primary mb-3">Worker Logları:</h6>
-                    <div id="worker-logs-list" class="row">
-                        <div class="col-12 text-center">
-                            <i class="fas fa-spinner fa-spin"></i> Yükleniyor...
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Network Stats -->
-    <div class="row">
-        <div class="col-lg-12 mb-4">
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-network-wired"></i> Network İstatistikleri
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div id="network-stats" class="row">
-                        <div class="col-12 text-center">
-                            <i class="fas fa-spinner fa-spin"></i> Yükleniyor...
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Dosya Yöneticisi & Kod Editörü -->
-    <div class="row">
-        <div class="col-lg-12 mb-4">
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-folder-open"></i> Dosya Yöneticisi & Kod Editörü
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <!-- Breadcrumb Navigation -->
-                    <nav aria-label="breadcrumb" class="mb-3">
-                        <ol class="breadcrumb mb-0" id="breadcrumb-nav" style="background-color: #f8f9fa;">
-                            <li class="breadcrumb-item"><a href="#" onclick="loadFiles(''); return false;"><i class="fas fa-home"></i> Ana Dizin</a></li>
+{% block page_title %}
+<div class="row">
+    <div class="col-12">
+        <div class="page-title-box nx-page-head pb-0">
+            <div class="d-flex flex-column flex-lg-row align-items-start justify-content-lg-between gap-3">
+                <div>
+                    <div class="page-title-right mb-2">
+                        <ol class="breadcrumb m-0">
+                            <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+                            <li class="breadcrumb-item">Yönetim</li>
+                            <li class="breadcrumb-item active">Sunucu Yönetimi</li>
                         </ol>
-                    </nav>
-
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <div class="input-group-prepend">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
-                                </div>
-                                <input type="text" class="form-control" id="file-search" placeholder="Dosya ara..." onkeyup="filterFiles(this.value)">
-                                <div class="input-group-append">
-                                    <button class="btn btn-outline-secondary" onclick="document.getElementById('file-search').value=''; filterFiles('');" title="Temizle">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6 text-right">
-                            <button class="btn btn-outline-secondary btn-sm" onclick="goUpDirectory()" title="Üst Dizin">
-                                <i class="fas fa-level-up-alt"></i> Üst Dizin
-                            </button>
-                            <button class="btn btn-success btn-sm" onclick="showCreateModal('file')">
-                                <i class="fas fa-file-medical"></i> Yeni Dosya
-                            </button>
-                            <button class="btn btn-info btn-sm" onclick="showCreateModal('dir')">
-                                <i class="fas fa-folder-plus"></i> Yeni Klasör
-                            </button>
-                        </div>
                     </div>
-
-                    <div id="file-browser" class="table-responsive" style="max-height: 500px; overflow-y: auto; border: 1px solid #e3e6f0; border-radius: 5px;">
-                        <div class="text-center py-4">
-                            <i class="fas fa-spinner fa-spin"></i> Yükleniyor...
-                        </div>
-                    </div>
+                    <h4 class="page-title nx-page-title mb-1">Sunucu Yönetimi</h4>
+                    <p class="mb-0 text-white-50">Sistem sağlığını, logları, dosyaları ve yedekleri tek ekrandan yönetin.</p>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Yedekleme Yönetimi -->
-    <div class="row">
-        <div class="col-lg-12 mb-4">
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-database"></i> Yedekleme Yönetimi
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <div class="card border-left-success h-100">
-                                <div class="card-body">
-                                    <h6 class="font-weight-bold text-success mb-3">
-                                        <i class="fas fa-database"></i> Veritabanı Yedekleme
-                                    </h6>
-                                    <p class="text-sm text-muted mb-3">
-                                        Tüm veritabanını yedekler (sıkıştırılmış SQL formatında)
-                                    </p>
-                                    <button class="btn btn-success btn-block" onclick="createDatabaseBackup(event)">
-                                        <i class="fas fa-save"></i> Veritabanı Yedekle
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="card border-left-info h-100">
-                                <div class="card-body">
-                                    <h6 class="font-weight-bold text-info mb-3">
-                                        <i class="fas fa-folder"></i> Dosya Yedekleme
-                                    </h6>
-                                    <p class="text-sm text-muted mb-3">
-                                        Yüklenen dosyaları ve medya içeriklerini yedekler
-                                    </p>
-                                    <button class="btn btn-info btn-block" onclick="createFileBackup(event)">
-                                        <i class="fas fa-save"></i> Dosyaları Yedekle
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Yedek Geçmişi -->
-    <div class="row">
-        <div class="col-lg-12 mb-4">
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-history"></i> Yedek Geçmişi
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <ul class="nav nav-tabs mb-3" id="backupTabs" role="tablist">
-                        <li class="nav-item">
-                            <a class="nav-link active" id="db-backups-tab" href="#db-backups">
-                                <i class="fas fa-database"></i> Veritabanı Yedekleri
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" id="file-backups-tab" href="#file-backups">
-                                <i class="fas fa-folder"></i> Dosya Yedekleri
-                            </a>
-                        </li>
-                    </ul>
-
-                    <div class="tab-content">
-                        <div class="tab-pane fade show active" id="db-backups">
-                            <div id="database-backups-list">
-                                <div class="text-center text-muted py-3">
-                                    <i class="fas fa-spinner fa-spin"></i> Yükleniyor...
-                                </div>
-                            </div>
-                        </div>
-                        <div class="tab-pane fade" id="file-backups">
-                            <div id="file-backups-list">
-                                <div class="text-center text-muted py-3">
-                                    <i class="fas fa-spinner fa-spin"></i> Yükleniyor...
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-sm nx-orders-tool-btn nx-sm-action-btn" id="smRefreshBtn"><i data-feather="refresh-cw" class="icon-xs me-1"></i>Yenile</button>
+                    <button class="btn btn-sm nx-orders-tool-btn nx-sm-action-btn" id="smSystemCheckBtn"><i data-feather="activity" class="icon-xs me-1"></i>Sistem Kontrolü</button>
+                    <button class="btn btn-sm nx-orders-tool-btn nx-sm-action-btn" id="smMaintenanceToggleBtn"><i data-feather="tool" class="icon-xs me-1"></i><span id="smMaintenanceToggleText">Bakım Modu</span></button>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
 
-<!-- Modal: Worker Log Görüntüleyici -->
-<div class="modal fade" id="logViewerModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-xl" role="document">
+{% block styles %}
+<style>
+.nx-sm-page .card { border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+.nx-sm-card-header { background: linear-gradient(125deg, #071a34 0%, #183b63 100%); color: #fff; border-bottom: 1px solid rgba(255,255,255,.08); border-radius: 16px 16px 0 0; padding: .72rem .95rem; }
+.nx-sm-card-title { display: flex; align-items: flex-start; gap: .6rem; margin: 0; font-size: .95rem; font-weight: 700; }
+.nx-sm-ic { width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.12); flex-shrink: 0; }
+.nx-sm-ic svg { width: 16px; height: 16px; }
+.nx-sm-kpi { height: 100%; border-radius: 14px; border: 1px solid #e2e8f0; background: #fff; padding: .8rem; }
+.nx-sm-kpi-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .45rem; }
+.nx-sm-kpi-label { font-size: .76rem; color: #64748b; font-weight: 600; }
+.nx-sm-kpi-value { font-size: 1.2rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
+.nx-sm-kpi-hint { font-size: .72rem; color: #64748b; }
+.nx-sm-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.nx-sm-dot.ok { background: #16a34a; } .nx-sm-dot.warn { background: #f59e0b; } .nx-sm-dot.bad { background: #ef4444; }
+.nx-sm-metric-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .6rem; }
+.nx-sm-metric-item { border: 1px solid #e2e8f0; border-radius: 12px; padding: .55rem .65rem; background: #f8fafc; }
+.nx-sm-metric-label { display: block; font-size: .7rem; color: #64748b; margin-bottom: .2rem; }
+.nx-sm-metric-value { font-size: .82rem; color: #0f172a; font-weight: 700; }
+.nx-sm-table td, .nx-sm-table th { vertical-align: middle; font-size: .8rem; }
+.nx-sm-table td { padding-top: .55rem; padding-bottom: .55rem; }
+.nx-sm-viewer { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: .75rem; background: #020617; color: #e2e8f0; border-radius: 12px; padding: .7rem; max-height: 420px; overflow: auto; white-space: pre-wrap; }
+.nx-sm-file-badge { font-size: .67rem; padding: .22rem .45rem; border-radius: 999px; }
+.nx-sm-empty { text-align: center; padding: 1.5rem 1rem; color: #64748b; }
+.nx-sm-pagination { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .76rem; color: #475569; margin-top: .6rem; }
+.nx-sm-pagination .btn { min-height: 32px; font-size: .75rem; }
+@media (max-width: 991.98px){ .nx-sm-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 575.98px){ .nx-sm-metric-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid nx-sm-page" id="smApp" data-csrf="{{ csrf_token|e('html_attr') }}">
+    <div id="smAlertArea"></div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6 col-lg-4 col-xl">
+            <div class="nx-sm-kpi">
+                <div class="nx-sm-kpi-head"><span class="nx-sm-kpi-label">CPU Kullanımı</span><span class="nx-sm-dot ok" id="smCpuDot"></span></div>
+                <div class="nx-sm-kpi-value" id="smCpuValue">--%</div>
+                <div class="progress mt-2" style="height:6px;"><div class="progress-bar" id="smCpuBar" style="width:0%"></div></div>
+                <div class="nx-sm-kpi-hint mt-1" id="smCpuHint">-</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4 col-xl">
+            <div class="nx-sm-kpi">
+                <div class="nx-sm-kpi-head"><span class="nx-sm-kpi-label">RAM Kullanımı</span><span class="nx-sm-dot ok" id="smRamDot"></span></div>
+                <div class="nx-sm-kpi-value" id="smRamValue">--%</div>
+                <div class="progress mt-2" style="height:6px;"><div class="progress-bar" id="smRamBar" style="width:0%"></div></div>
+                <div class="nx-sm-kpi-hint mt-1" id="smRamHint">-</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4 col-xl">
+            <div class="nx-sm-kpi">
+                <div class="nx-sm-kpi-head"><span class="nx-sm-kpi-label">Disk Kullanımı</span><span class="nx-sm-dot ok" id="smDiskDot"></span></div>
+                <div class="nx-sm-kpi-value" id="smDiskValue">--%</div>
+                <div class="progress mt-2" style="height:6px;"><div class="progress-bar" id="smDiskBar" style="width:0%"></div></div>
+                <div class="nx-sm-kpi-hint mt-1" id="smDiskHint">-</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4 col-xl">
+            <div class="nx-sm-kpi">
+                <div class="nx-sm-kpi-head"><span class="nx-sm-kpi-label">Veritabanı Boyutu</span><span class="nx-sm-dot ok" id="smDbDot"></span></div>
+                <div class="nx-sm-kpi-value" id="smDbValue">--</div>
+                <div class="nx-sm-kpi-hint mt-1" id="smDbHint">-</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4 col-xl">
+            <div class="nx-sm-kpi">
+                <div class="nx-sm-kpi-head"><span class="nx-sm-kpi-label">Sistem Durumu</span><span class="nx-sm-dot ok" id="smStatusDot"></span></div>
+                <div class="nx-sm-kpi-value" id="smStatusValue">Stabil</div>
+                <div class="nx-sm-kpi-hint mt-1" id="smStatusHint">Son yenileme: -</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="nx-sm-card-header"><h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="cpu"></i></span><span>Sistem Bilgileri</span></h5></div>
+        <div class="card-body">
+            <div class="nx-sm-metric-grid" id="smSystemGrid"></div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="nx-sm-card-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="file-text"></i></span><span>Log Yönetimi</span></h5>
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-sm btn-outline-light" id="smLoadAppLogsBtn">Uygulama Logları</button>
+                <button class="btn btn-sm btn-outline-light" id="smLoadWorkerLogsBtn">Worker Logları</button>
+                <button class="btn btn-sm btn-outline-light" id="smLoadErrorLogsBtn">Hata Logları</button>
+                <button class="btn btn-sm btn-danger" id="smClearAllLogsBtn">Tüm Logları Temizle</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover nx-sm-table mb-0">
+                    <thead>
+                        <tr><th>Log Adı</th><th>Boyut</th><th>Son Değişiklik</th><th class="text-end">İşlemler</th></tr>
+                    </thead>
+                    <tbody id="smLogsTableBody"><tr><td colspan="4" class="nx-sm-empty">Loglar yükleniyor...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="nx-sm-card-header"><h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="wifi"></i></span><span>Network İstatistikleri</span></h5></div>
+        <div class="card-body"><div class="row g-2" id="smNetworkList"><div class="col-12 nx-sm-empty">Network verisi yükleniyor...</div></div></div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="nx-sm-card-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="folder"></i></span><span>Dosya Yöneticisi</span></h5>
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-sm btn-outline-light" id="smUpDirBtn">Üst Dizin</button>
+                <button class="btn btn-sm btn-outline-light" id="smCreateFileBtn">Yeni Dosya</button>
+                <button class="btn btn-sm btn-outline-light" id="smCreateDirBtn">Yeni Klasör</button>
+                <button class="btn btn-sm btn-outline-light" id="smUploadBtn">Dosya Yükle</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="d-flex flex-column flex-lg-row gap-2 mb-2">
+                <input class="form-control form-control-sm" id="smFileSearch" placeholder="Dosya ara...">
+                <input class="form-control form-control-sm" id="smPathBreadcrumb" readonly>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover nx-sm-table mb-0">
+                    <thead><tr><th>Ad</th><th>Tür</th><th>Boyut</th><th>Son Değişiklik</th><th class="text-end">İşlemler</th></tr></thead>
+                    <tbody id="smFilesTableBody"><tr><td colspan="5" class="nx-sm-empty">Dosyalar yükleniyor...</td></tr></tbody>
+                </table>
+            </div>
+            <div class="nx-sm-pagination">
+                <span id="smFilesPageInfo">-</span>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" id="smFilesPrevBtn">Önceki</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="smFilesNextBtn">Sonraki</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-lg-6">
+            <div class="card h-100">
+                <div class="nx-sm-card-header"><h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="database"></i></span><span>Veritabanı Yedeği</span></h5></div>
+                <div class="card-body d-flex flex-column gap-2">
+                    <div class="small text-muted">DB Boyutu: <strong id="smDbSizeInline">-</strong></div>
+                    <div class="small text-muted">Son yedek: <strong id="smDbLastBackup">-</strong></div>
+                    <div class="d-flex flex-wrap gap-2 mt-1">
+                        <button class="btn btn-sm btn-success" id="smBackupDbBtn">Veritabanı Yedekle</button>
+                        <button class="btn btn-sm btn-outline-primary" id="smDownloadLastDbBtn">Son Yedeği İndir</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-6">
+            <div class="card h-100">
+                <div class="nx-sm-card-header"><h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="archive"></i></span><span>Dosya Yedeği</span></h5></div>
+                <div class="card-body d-flex flex-column gap-2">
+                    <div class="small text-muted">Proje Boyutu: <strong id="smProjectSizeInline">-</strong></div>
+                    <div class="small text-muted">Son yedek: <strong id="smFileLastBackup">-</strong></div>
+                    <div class="d-flex flex-wrap gap-2 mt-1">
+                        <button class="btn btn-sm btn-primary" id="smBackupFilesBtn">Dosyaları Yedekle</button>
+                        <button class="btn btn-sm btn-outline-primary" id="smDownloadLastFilesBtn">Son Yedeği İndir</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="nx-sm-card-header d-flex justify-content-between align-items-center">
+            <h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="clock"></i></span><span>Yedek Geçmişi</span></h5>
+            <button class="btn btn-sm btn-outline-light" id="smLoadBackupsBtn">Yedek Geçmişini Yükle</button>
+        </div>
+        <div class="card-body">
+            <ul class="nav nav-tabs mb-3">
+                <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#smTabDb" type="button">Veritabanı Yedekleri</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#smTabFiles" type="button">Dosya Yedekleri</button></li>
+            </ul>
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="smTabDb"><div id="smBackupDbTableWrap" class="nx-sm-empty">Yedek geçmişini görmek için "Yedek Geçmişini Yükle" butonunu kullanın.</div></div>
+                <div class="tab-pane fade" id="smTabFiles"><div id="smBackupFilesTableWrap" class="nx-sm-empty">Yedek geçmişini görmek için "Yedek Geçmişini Yükle" butonunu kullanın.</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="smConfirmModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-file-alt"></i> Worker Logları: <span id="log-worker-name"></span>
-                </h5>
-                <button type="button" class="btn-close" aria-label="Kapat" onclick="closeModal(this)" style="background: transparent; border: none; font-size: 1.8rem; font-weight: 700; line-height: 1; color: #fff; opacity: 1; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">
-                    <span aria-hidden="true">&times;</span>
-                </button>
+            <div class="modal-header nx-email-modal-head border-0"><h5 class="modal-title text-white" id="smConfirmTitle">Onay</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><p class="mb-0" id="smConfirmMessage"></p></div>
+            <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">İptal</button><button class="btn btn-danger" id="smConfirmActionBtn">Onayla</button></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="smLogModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2"><i data-feather="file-text" class="icon-xs"></i><span id="smLogModalTitle">Log Görüntüleyici</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div id="log-viewer-content" style="max-height: 500px; overflow-y: auto;">
-                    <div class="text-center py-3">
-                        <i class="fas fa-spinner fa-spin"></i> Yükleniyor...
+                <div class="d-flex flex-column flex-lg-row gap-2 mb-2">
+                    <input class="form-control form-control-sm" id="smLogSearch" placeholder="Log içinde ara...">
+                    <select class="form-select form-select-sm" id="smLogLineSelect" style="max-width:180px;">
+                        <option value="100">Son 100 satır</option>
+                        <option value="500">Son 500 satır</option>
+                    </select>
+                    <div class="form-check form-switch align-self-center ms-1">
+                        <input class="form-check-input" type="checkbox" id="smLogAutoScroll" checked><label class="form-check-label small" for="smLogAutoScroll">Auto-scroll</label>
                     </div>
+                    <button class="btn btn-sm btn-outline-primary" id="smLogReloadBtn">Yenile</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="smLogDownloadBtn">Tamamı indir</button>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal(this)">Kapat</button>
+                <div class="nx-sm-viewer" id="smLogViewer">Yükleniyor...</div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal: Kod Editörü -->
-<div class="modal fade" id="codeEditorModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-xl" role="document" style="max-width: 95%;">
+<div class="modal fade" id="smEditorModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header bg-dark text-white">
-                <h5 class="modal-title">
-                    <i class="fas fa-code"></i> Kod Editörü: <span id="editor-file-name"></span>
-                    <span class="badge badge-info ml-2" id="editor-file-ext"></span>
-                </h5>
-                <button type="button" class="btn-close" aria-label="Kapat" onclick="closeModal(this)" style="background: transparent; border: none; font-size: 1.8rem; font-weight: 700; line-height: 1; color: #fff; opacity: 1; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body p-0">
-                <div class="p-3 bg-light border-bottom">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <small class="text-muted">
-                                <i class="fas fa-info-circle"></i> 
-                                Boyut: <span id="editor-file-size" class="font-weight-bold"></span> | 
-                                Değiştirilme: <span id="editor-file-modified" class="font-weight-bold"></span>
-                            </small>
-                        </div>
-                        <div class="col-md-6 text-right">
-                            <small class="text-muted">
-                                <i class="fas fa-keyboard"></i> 
-                                <span id="editor-line-count">0</span> satır | 
-                                <span id="editor-char-count">0</span> karakter
-                            </small>
-                        </div>
-                    </div>
-                </div>
-                <div id="ace-editor" style="width: 100%; height: 600px;"></div>
-            </div>
-            <div class="modal-footer bg-light">
-                <button type="button" class="btn btn-outline-secondary" onclick="closeModal(this)">
-                    <i class="fas fa-times"></i> İptal
-                </button>
-                <button type="button" class="btn btn-success" onclick="saveFileContent(event)">
-                    <i class="fas fa-save"></i> Kaydet (Ctrl+S)
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Ace Editor CDN -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.5/ace.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.5/ext-language_tools.js"></script>
-
-<!-- Modal: Dosya/Klasör Oluştur -->
-<div class="modal fade" id="createModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="create-modal-title">
-                    <i class="fas fa-file-medical"></i> Yeni Dosya
-                </h5>
-                <button type="button" class="btn-close" aria-label="Kapat" onclick="closeModal(this)" style="background: transparent; border: none; font-size: 1.8rem; font-weight: 700; line-height: 1; color: #fff; opacity: 1; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">
-                    <span aria-hidden="true">&times;</span>
-                </button>
+            <div class="modal-header nx-email-modal-head border-0">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2"><i data-feather="edit-3" class="icon-xs"></i><span id="smEditorTitle">Dosya Düzenle</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label>Dosya/Klasör Adı</label>
-                    <input type="text" class="form-control" id="create-name" placeholder="örn: config.php veya yeni-klasor">
-                </div>
-                <input type="hidden" id="create-type" value="file">
+                <div class="d-flex justify-content-between mb-2"><small class="text-muted" id="smEditorMeta">-</small><div class="form-check"><input class="form-check-input" type="checkbox" id="smBackupBeforeSave" checked><label class="form-check-label small" for="smBackupBeforeSave">Kaydetmeden önce backup al</label></div></div>
+                <textarea class="form-control font-monospace" rows="20" id="smEditorTextarea"></textarea>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal(this)">İptal</button>
-                <button type="button" class="btn btn-primary" onclick="createFileOrFolder()">
-                    <i class="fas fa-plus"></i> Oluştur
-                </button>
-            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button><button class="btn btn-primary" id="smEditorSaveBtn">Kaydet</button></div>
         </div>
     </div>
 </div>
 
-<!-- Modal: Onay İsteği -->
-<div class="modal fade" id="confirmModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
+<div class="modal fade" id="smCreateModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-exclamation-triangle text-warning"></i> Onay Gerekli
-                </h5>
-                <button type="button" class="btn-close" aria-label="Kapat" onclick="closeModal(this)" style="background: transparent; border: none; font-size: 1.8rem; font-weight: 700; line-height: 1; color: #fff; opacity: 1; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p id="confirm-message"></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal(this)">İptal</button>
-                <button type="button" class="btn btn-danger" id="confirm-btn" onclick="executeConfirmedAction()">
-                    <i class="fas fa-check"></i> Onayla
-                </button>
-            </div>
+            <div class="modal-header nx-email-modal-head border-0"><h5 class="modal-title text-white" id="smCreateTitle">Yeni</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><input class="form-control" id="smCreateName" placeholder="Dosya veya klasör adı"></div>
+            <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">İptal</button><button class="btn btn-primary" id="smCreateSaveBtn">Oluştur</button></div>
         </div>
     </div>
 </div>
 
-<!-- Modal: Bildirim/Sonuç -->
-<div class="modal fade" id="notifyModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
-        <div class="modal-content">
-            <div class="modal-header" id="notify-header">
-                <h5 class="modal-title" id="notify-title">
-                    <i class="fas fa-info-circle"></i> Bilgi
-                </h5>
-                <button type="button" class="btn-close" aria-label="Kapat" onclick="closeModal(this)" style="background: transparent; border: none; font-size: 1.8rem; font-weight: 700; line-height: 1; color: #fff; opacity: 1; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p id="notify-message"></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal(this)">Kapat</button>
-            </div>
-        </div>
-    </div>
-</div>
+<input type="file" id="smUploadInput" class="d-none">
+{% endblock %}
 
-<script>
-let refreshInterval;
-
-// Modal kapatma helper fonksiyonu
-function closeModal(btn) {
-    const modal = $(btn).closest('.modal');
-    modal.modal('hide');
-    
-    // Backdrop'u da temizle
-    setTimeout(() => {
-        $('.modal-backdrop').remove();
-        $('body').removeClass('modal-open').css('padding-right', '');
-    }, 300);
-}
-
-function loadStats() {
-    fetch('/admin/system-monitor/stats')
-        .then(response => response.json())
-        .then(data => {
-            updateServerStats(data.server);
-            updateDatabaseStats(data.database);
-            updateDiskStats(data.disk);
-            updateNetworkStats(data.network);
-            updateLogStats(data.logs);
-        })
-        .catch(error => {
-            console.error('Stats yüklenirken hata:', error);
-        });
-}
-
-function loadBackups() {
-    fetch('/admin/system-monitor/backups')
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                updateBackupsList('database', data.backups.database);
-                updateBackupsList('files', data.backups.files);
-            }
-        })
-        .catch(error => {
-            console.error('Yedekler yüklenirken hata:', error);
-        });
-}
-
-function updateBackupsList(type, backups) {
-    const listId = type === 'database' ? 'database-backups-list' : 'file-backups-list';
-    const list = document.getElementById(listId);
-    
-    if (!backups || backups.length === 0) {
-        list.innerHTML = '<div class="text-center text-muted py-3"><i class="fas fa-inbox"></i> Henüz yedek bulunmuyor</div>';
-        return;
-    }
-    
-    let html = '<div class="table-responsive"><table class="table table-sm table-hover">';
-    html += '<thead><tr><th>Dosya Adı</th><th>Boyut</th><th>Tarih</th><th>İşlemler</th></tr></thead><tbody>';
-    
-    backups.forEach(backup => {
-        html += `
-            <tr>
-                <td><i class="fas fa-file-archive"></i> ${backup.name}</td>
-                <td>${backup.size}</td>
-                <td>${backup.date}</td>
-                <td>
-                    <div class="btn-group btn-group-sm">
-        `;
-        
-        // Database yedekleri için geri yükleme butonu ekle
-        if (type === 'database') {
-            html += `
-                        <button class="btn btn-outline-success" onclick="restoreDatabaseBackup('${backup.name}')" title="Geri Yükle">
-                            <i class="fas fa-undo"></i>
-                        </button>
-            `;
-        }
-        
-        html += `
-                        <button class="btn btn-outline-primary" onclick="downloadBackup('${type}', '${backup.name}')" title="İndir">
-                            <i class="fas fa-download"></i>
-                        </button>
-                        <button class="btn btn-outline-danger" onclick="deleteBackup('${type}', '${backup.name}')" title="Sil">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table></div>';
-    list.innerHTML = html;
-}
-
-function updateServerStats(server) {
-    // CPU
-    document.getElementById('cpu-usage').textContent = server.cpu.usage + '%';
-    document.getElementById('cpu-cores').textContent = server.cpu.cores + ' çekirdek';
-    
-    // RAM
-    document.getElementById('ram-usage').textContent = server.memory.usage_percent + '%';
-    document.getElementById('ram-info').textContent = server.memory.used + ' / ' + server.memory.total;
-    
-    // Uptime
-    document.getElementById('server-uptime').textContent = server.uptime.formatted;
-    
-    // Load Average
-    document.getElementById('load-average').textContent = 
-        server.cpu.load['1min'] + ' / ' + 
-        server.cpu.load['5min'] + ' / ' + 
-        server.cpu.load['15min'];
-}
-
-// PM2 stats kaldırıldı
-
-function updateDatabaseStats(database) {
-    if (database.error) return;
-    
-    document.getElementById('db-size').textContent = database.size;
-    document.getElementById('db-tables').textContent = database.tables + ' tablo';
-    document.getElementById('db-connections').textContent = database.connections + ' bağlantı';
-}
-
-function updateDiskStats(disk) {
-    document.getElementById('disk-usage').textContent = disk.usage_percent + '%';
-    document.getElementById('disk-info').textContent = disk.used + ' / ' + disk.total;
-    
-    if (disk.io) {
-        document.getElementById('disk-reads').textContent = disk.io.reads + ' reads';
-        document.getElementById('disk-writes').textContent = disk.io.writes + ' writes';
-    }
-}
-
-function updateNetworkStats(network) {
-    let html = '';
-    
-    if (network && typeof network === 'object' && Object.keys(network).length > 0) {
-        Object.keys(network).forEach(iface => {
-            html += `
-                <div class="col-md-6 col-lg-4 mb-3">
-                    <div class="card border-left-primary h-100">
-                        <div class="card-body py-3">
-                            <h6 class="font-weight-bold text-primary mb-2">
-                                <i class="fas fa-ethernet"></i> ${iface}
-                            </h6>
-                            <div class="text-sm">
-                                <div class="mb-1">
-                                    <i class="fas fa-arrow-down text-success"></i> RX: <strong>${network[iface].rx_bytes}</strong>
-                                </div>
-                                <div>
-                                    <i class="fas fa-arrow-up text-danger"></i> TX: <strong>${network[iface].tx_bytes}</strong>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-    } else {
-        html = `
-            <div class="col-12">
-                <div class="alert alert-info mb-0 text-center">
-                    <i class="fas fa-info-circle"></i> Network bilgisi mevcut değil
-                    <br><small class="text-muted">Linux sunucuda /proc/net/dev dosyası üzerinden network bilgileri görüntülenecektir</small>
-                </div>
-            </div>
-        `;
-    }
-    
-    document.getElementById('network-stats').innerHTML = html;
-}
-
-function formatUptime(seconds) {
-    if (seconds < 60) return seconds + 's';
-    if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
-    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h';
-    return Math.floor(seconds / 86400) + 'd';
-}
-
-// Sayfa yüklendiğinde ve her 5 saniyede bir güncelle
-document.addEventListener('DOMContentLoaded', function() {
-    loadStats();
-    loadBackups();
-    loadFiles('');
-    refreshInterval = setInterval(loadStats, 5000);
-    
-    document.getElementById('refreshBtn').addEventListener('click', function() {
-        loadStats();
-        loadBackups();
-        this.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Yenileniyor...';
-        setTimeout(() => {
-            this.innerHTML = '<i class="fas fa-sync-alt"></i> Yenile';
-        }, 1000);
-    });
-    
-    // Yedek Geçmişi tab'larını initialize et
-    $('#backupTabs a').click(function (e) {
-        e.preventDefault();
-        const targetId = $(this).attr('href');
-        
-        console.log('Backup tab tıklandı:', targetId);
-        
-        // Tüm tab'ları pasif yap
-        $('#backupTabs .nav-link').removeClass('active');
-        $('#backupTabs').parent().find('.tab-pane').removeClass('show active');
-        
-        // Tıklanan tab'ı aktif yap
-        $(this).addClass('active');
-        $(targetId).addClass('show active');
-    });
-    
-    // Modal temizleme event'leri
-    $('#codeEditorModal').on('hidden.bs.modal', function () {
-        if (aceEditor) {
-            aceEditor.setValue('', -1);
-            aceEditor.session.removeListener('change', updateEditorStats);
-        }
-        currentEditingFile = '';
-    });
-    
-    $('#createModal').on('hidden.bs.modal', function () {
-        document.getElementById('create-name').value = '';
-    });
-    
-    // Confirm modal'dan sonra otomatik kapanma
-    $('#confirmModal').on('hidden.bs.modal', function () {
-        confirmedAction = null;
-    });
-});
-
-// Modal Helper Functions
-function showNotify(message, type = 'info') {
-    const modal = $('#notifyModal');
-    const header = modal.find('#notify-header');
-    const title = modal.find('#notify-title');
-    
-    // Renk ve ikon ayarla
-    header.removeClass('bg-success bg-danger bg-warning bg-info');
-    
-    if (type === 'success') {
-        header.addClass('bg-success text-white');
-        title.html('<i class="fas fa-check-circle"></i> Başarılı');
-    } else if (type === 'error') {
-        header.addClass('bg-danger text-white');
-        title.html('<i class="fas fa-times-circle"></i> Hata');
-    } else if (type === 'warning') {
-        header.addClass('bg-warning text-white');
-        title.html('<i class="fas fa-exclamation-triangle"></i> Uyarı');
-    } else {
-        header.addClass('bg-info text-white');
-        title.html('<i class="fas fa-info-circle"></i> Bilgi');
-    }
-    
-    modal.find('#notify-message').html(message);
-    modal.modal('show');
-}
-
-let confirmedAction = null;
-
-function showConfirm(message, callback) {
-    $('#confirm-message').html(message);
-    confirmedAction = callback;
-    $('#confirmModal').modal('show');
-}
-
-function executeConfirmedAction() {
-    if (confirmedAction) {
-        confirmedAction();
-        confirmedAction = null;
-    }
-    $('#confirmModal').modal('hide');
-}
-
-// Dosya Yöneticisi Fonksiyonları
-let currentPath = '';
-let currentEditingFile = '';
-let aceEditor = null;
-let allFiles = []; // Arama için tüm dosyaları tut
-
-function loadFiles(path) {
-    currentPath = path;
-    
-    // Breadcrumb güncelle
-    updateBreadcrumb(path);
-    
-    fetch(`/admin/system-monitor/files?path=${encodeURIComponent(path)}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                allFiles = data.items; // Global'e kaydet
-                displayFiles(data.items);
-            } else {
-                showNotify(data.message, 'error');
-            }
-        })
-        .catch(error => {
-            showNotify('Dosyalar yüklenirken hata: ' + error.message, 'error');
-        });
-}
-
-function updateBreadcrumb(path) {
-    const breadcrumb = document.getElementById('breadcrumb-nav');
-    let html = '<li class="breadcrumb-item"><a href="#" onclick="loadFiles(\'\'); return false;"><i class="fas fa-home"></i> Ana Dizin</a></li>';
-    
-    if (path) {
-        const parts = path.split('/').filter(p => p);
-        let currentPath = '';
-        
-        parts.forEach((part, index) => {
-            currentPath += (currentPath ? '/' : '') + part;
-            const isLast = index === parts.length - 1;
-            
-            if (isLast) {
-                html += `<li class="breadcrumb-item active" aria-current="page">${part}</li>`;
-            } else {
-                const pathToLoad = currentPath;
-                html += `<li class="breadcrumb-item"><a href="#" onclick="loadFiles('${pathToLoad}'); return false;">${part}</a></li>`;
-            }
-        });
-    }
-    
-    breadcrumb.innerHTML = html;
-}
-
-function filterFiles(searchTerm) {
-    if (!searchTerm || searchTerm.trim() === '') {
-        displayFiles(allFiles);
-        return;
-    }
-    
-    const filtered = allFiles.filter(item => 
-        item.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    
-    displayFiles(filtered);
-}
-
-function displayFiles(items) {
-    const browser = document.getElementById('file-browser');
-    
-    if (items.length === 0) {
-        browser.innerHTML = '<div class="text-center text-muted py-4"><i class="fas fa-inbox"></i> Dosya bulunamadı</div>';
-        return;
-    }
-    
-    let html = '<table class="table table-sm table-hover mb-0">';
-    html += '<thead class="bg-light"><tr><th width="40%">İsim</th><th width="15%">Boyut</th><th width="20%">Değiştirilme</th><th width="25%">İşlemler</th></tr></thead><tbody>';
-    
-    items.forEach(item => {
-        const icon = item.is_dir ? 'fa-folder text-warning' : getFileIcon(item.extension);
-        const clickAction = item.is_dir ? `loadFiles('${item.path}')` : `openFile('${item.path}')`;
-        const rowClass = item.is_dir ? 'table-active' : '';
-        
-        html += `
-            <tr class="${rowClass}" data-filename="${item.name.toLowerCase()}">
-                <td style="cursor: pointer;" onclick="${clickAction}">
-                    <i class="fas ${icon}"></i> <strong>${item.name}</strong>
-                </td>
-                <td class="text-muted">${item.is_dir ? '<i class="fas fa-folder-open"></i> Klasör' : item.size_formatted}</td>
-                <td class="text-muted">${item.modified}</td>
-                <td>
-                    <div class="btn-group btn-group-sm">
-        `;
-        
-        if (!item.is_dir) {
-            html += `
-                <button class="btn btn-outline-primary" onclick="openFile('${item.path}')" title="Düzenle">
-                    <i class="fas fa-edit"></i> Düzenle
-                </button>
-            `;
-        }
-        
-        html += `
-                        <button class="btn btn-outline-warning" onclick="renameFilePrompt('${item.path}', '${item.name}')" title="Yeniden Adlandır">
-                            <i class="fas fa-signature"></i>
-                        </button>
-                        <button class="btn btn-outline-danger" onclick="deleteFilePrompt('${item.path}', '${item.name}')" title="Sil">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    browser.innerHTML = html;
-}
-
-function getFileIcon(extension) {
-    const icons = {
-        'php': 'fa-file-code text-primary',
-        'js': 'fa-file-code text-warning',
-        'css': 'fa-file-code text-info',
-        'html': 'fa-file-code text-danger',
-        'json': 'fa-file-code text-success',
-        'xml': 'fa-file-code text-muted',
-        'yml': 'fa-file-code text-secondary',
-        'yaml': 'fa-file-code text-secondary',
-        'sql': 'fa-database text-primary',
-        'env': 'fa-cog text-danger',
-        'txt': 'fa-file-alt text-muted',
-        'md': 'fa-file-alt text-info',
-        'log': 'fa-file-alt text-warning',
-        'jpg': 'fa-file-image text-success',
-        'jpeg': 'fa-file-image text-success',
-        'png': 'fa-file-image text-success',
-        'gif': 'fa-file-image text-success',
-        'pdf': 'fa-file-pdf text-danger',
-        'zip': 'fa-file-archive text-warning',
-        'tar': 'fa-file-archive text-warning',
-        'gz': 'fa-file-archive text-warning',
-    };
-    
-    return icons[extension] || 'fa-file text-muted';
-}
-
-function goUpDirectory() {
-    if (!currentPath) return;
-    
-    const parts = currentPath.split('/').filter(p => p);
-    parts.pop();
-    const newPath = parts.join('/');
-    loadFiles(newPath);
-}
-
-function openFile(path) {
-    currentEditingFile = path;
-    const fileName = path.split('/').pop();
-    const extension = fileName.split('.').pop().toLowerCase();
-    
-    document.getElementById('editor-file-name').textContent = fileName;
-    document.getElementById('editor-file-ext').textContent = '.' + extension;
-    
-    // Ace Editor'ı initialize et (henüz yoksa)
-    if (!aceEditor) {
-        aceEditor = ace.edit("ace-editor");
-        aceEditor.setTheme("ace/theme/monokai");
-        aceEditor.setOptions({
-            enableBasicAutocompletion: true,
-            enableLiveAutocompletion: true,
-            fontSize: "14px",
-            showPrintMargin: false,
-            enableSnippets: true
-        });
-        
-        // Ctrl+S ile kaydet
-        aceEditor.commands.addCommand({
-            name: 'save',
-            bindKey: {win: 'Ctrl-S', mac: 'Command-S'},
-            exec: function(editor) {
-                saveFileContent();
-            }
-        });
-    }
-    
-    aceEditor.setValue('// Yükleniyor...', -1);
-    
-    $('#codeEditorModal').modal('show');
-    
-    fetch(`/admin/system-monitor/file?path=${encodeURIComponent(path)}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Syntax mode'u ayarla
-                const mode = getAceMode(extension);
-                aceEditor.session.setMode(mode);
-                
-                // İçeriği yükle
-                aceEditor.setValue(data.content, -1);
-                aceEditor.clearSelection();
-                
-                // Meta bilgileri güncelle
-                document.getElementById('editor-file-size').textContent = data.size;
-                document.getElementById('editor-file-modified').textContent = data.modified;
-                
-                // Satır ve karakter sayısı
-                updateEditorStats();
-                aceEditor.session.on('change', updateEditorStats);
-                
-                // Focus
-                aceEditor.focus();
-            } else {
-                showNotify(data.message, 'error');
-                $('#codeEditorModal').modal('hide');
-            }
-        })
-        .catch(error => {
-            showNotify('Dosya yüklenirken hata: ' + error.message, 'error');
-            $('#codeEditorModal').modal('hide');
-        });
-}
-
-function getAceMode(extension) {
-    const modes = {
-        'php': 'ace/mode/php',
-        'js': 'ace/mode/javascript',
-        'json': 'ace/mode/json',
-        'css': 'ace/mode/css',
-        'scss': 'ace/mode/scss',
-        'html': 'ace/mode/html',
-        'xml': 'ace/mode/xml',
-        'sql': 'ace/mode/sql',
-        'md': 'ace/mode/markdown',
-        'yml': 'ace/mode/yaml',
-        'yaml': 'ace/mode/yaml',
-        'sh': 'ace/mode/sh',
-        'txt': 'ace/mode/text',
-        'log': 'ace/mode/text',
-        'env': 'ace/mode/sh',
-        'twig': 'ace/mode/twig'
-    };
-    
-    return modes[extension] || 'ace/mode/text';
-}
-
-function updateEditorStats() {
-    if (aceEditor) {
-        const lineCount = aceEditor.session.getLength();
-        const content = aceEditor.getValue();
-        const charCount = content.length;
-        
-        document.getElementById('editor-line-count').textContent = lineCount;
-        document.getElementById('editor-char-count').textContent = charCount;
-    }
-}
-
-function saveFileContent(event) {
-    const content = aceEditor ? aceEditor.getValue() : document.getElementById('code-editor').value;
-    const btn = event ? event.target : document.querySelector('#codeEditorModal .btn-success');
-    
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Kaydediliyor...';
-    }
-    
-    const formData = new FormData();
-    formData.append('path', currentEditingFile);
-    formData.append('content', content);
-    
-    fetch('/admin/system-monitor/file/save', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        return response.text().then(text => {
-            try {
-                const data = JSON.parse(text);
-                return { success: response.ok, data: data };
-            } catch (e) {
-                console.error('Response is not JSON:', text);
-                throw new Error('Sunucu hatası: JSON yanıt bekleniyordu ancak HTML döndü.');
-            }
-        });
-    })
-    .then(result => {
-        const data = result.data;
-        if (data.success) {
-            showNotify('<strong>Kaydedildi!</strong><br>' + data.message + '<br><small>Yeni boyut: ' + data.size + '</small>', 'success');
-            
-            // Stats güncelle
-            updateEditorStats();
-            
-            setTimeout(() => {
-                $('#codeEditorModal').modal('hide');
-                loadFiles(currentPath);
-            }, 1000);
-        } else {
-            showNotify('<strong>Hata!</strong><br>' + data.message, 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Save error:', error);
-        showNotify('<strong>Kaydetme Hatası!</strong><br>' + error.message, 'error');
-    })
-    .finally(() => {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-save"></i> Kaydet (Ctrl+S)';
-        }
-    });
-}
-
-function showCreateModal(type) {
-    document.getElementById('create-type').value = type;
-    document.getElementById('create-name').value = '';
-    
-    const title = type === 'file' ? 'Yeni Dosya' : 'Yeni Klasör';
-    const icon = type === 'file' ? 'fa-file-medical' : 'fa-folder-plus';
-    
-    document.getElementById('create-modal-title').innerHTML = `<i class="fas ${icon}"></i> ${title}`;
-    $('#createModal').modal('show');
-}
-
-function createFileOrFolder() {
-    const name = document.getElementById('create-name').value.trim();
-    const type = document.getElementById('create-type').value;
-    
-    if (!name) {
-        showNotify('Lütfen bir isim girin', 'warning');
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('path', currentPath);
-    formData.append('name', name);
-    formData.append('type', type);
-    
-    fetch('/admin/system-monitor/file/create', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.text())
-    .then(text => {
-        try {
-            const data = JSON.parse(text);
-            if (data.success) {
-                showNotify(data.message, 'success');
-                $('#createModal').modal('hide');
-                loadFiles(currentPath);
-            } else {
-                showNotify(data.message, 'error');
-            }
-        } catch (e) {
-            console.error('Response:', text);
-            showNotify('Sunucu hatası. Lütfen izinlerinizi kontrol edin.', 'error');
-        }
-    })
-    .catch(error => {
-        showNotify('Oluşturma hatası: ' + error.message, 'error');
-    });
-}
-
-function deleteFilePrompt(path, name) {
-    showConfirm(
-        `<strong>${name}</strong> silinecek. Bu işlem geri alınamaz!<br><small class="text-muted">Yol: ${path}</small>`,
-        () => deleteFile(path)
-    );
-}
-
-function deleteFile(path) {
-    const formData = new FormData();
-    formData.append('path', path);
-    
-    fetch('/admin/system-monitor/file/delete', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.text())
-    .then(text => {
-        try {
-            const data = JSON.parse(text);
-            if (data.success) {
-                showNotify(data.message, 'success');
-                loadFiles(currentPath);
-            } else {
-                showNotify(data.message, 'error');
-            }
-        } catch (e) {
-            console.error('Response:', text);
-            showNotify('Sunucu hatası. Lütfen izinlerinizi kontrol edin.', 'error');
-        }
-    })
-    .catch(error => {
-        showNotify('Silme hatası: ' + error.message, 'error');
-    });
-}
-
-function renameFilePrompt(path, currentName) {
-    const newName = prompt('Yeni isim:', currentName);
-    if (!newName || newName === currentName) return;
-    
-    const formData = new FormData();
-    formData.append('path', path);
-    formData.append('new_name', newName);
-    
-    fetch('/admin/system-monitor/file/rename', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.text())
-    .then(text => {
-        try {
-            const data = JSON.parse(text);
-            if (data.success) {
-                showNotify(data.message, 'success');
-                loadFiles(currentPath);
-            } else {
-                showNotify(data.message, 'error');
-            }
-        } catch (e) {
-            console.error('Response:', text);
-            showNotify('Sunucu hatası. Lütfen izinlerinizi kontrol edin.', 'error');
-        }
-    })
-    .catch(error => {
-        showNotify('Yeniden adlandırma hatası: ' + error.message, 'error');
-    });
-}
-
-function updateLogStats(logs) {
-    document.getElementById('total-log-size').textContent = logs.total;
-    
-    let html = '';
-    Object.keys(logs.workers).forEach(worker => {
-        const log = logs.workers[worker];
-        const sizeClass = log.size_bytes > 10485760 ? 'border-danger' : 'border-left-primary';
-        const textClass = log.size_bytes > 10485760 ? 'text-danger' : 'text-muted';
-        
-        html += `
-            <div class="col-md-6 col-lg-4 mb-3">
-                <div class="card ${sizeClass} h-100">
-                    <div class="card-body py-3">
-                        <h6 class="font-weight-bold text-primary mb-2">
-                            <i class="fas fa-server"></i> ${worker}
-                        </h6>
-                        <div class="mb-2">
-                            <small class="text-gray-600">Boyut:</small>
-                            <div class="font-weight-bold ${textClass}">${log.size}</div>
-                        </div>
-                        <div class="btn-group btn-group-sm w-100">
-                            <button class="btn btn-outline-primary" onclick="viewWorkerLog('${worker}')" title="Görüntüle">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <button class="btn btn-outline-info" onclick="downloadWorkerLog('${worker}')" title="İndir">
-                                <i class="fas fa-download"></i>
-                            </button>
-                            <button class="btn btn-outline-danger" onclick="clearWorkerLog('${worker}')" title="Temizle">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    
-    document.getElementById('worker-logs-list').innerHTML = html;
-}
-
-function clearWorkerLog(workerName) {
-    showConfirm(
-        `<strong>${workerName}</strong> worker logları temizlenecek. Devam edilsin mi?`,
-        () => clearLog('worker', workerName)
-    );
-}
-
-// clearPM2Logs kaldırıldı
-
-function clearAppLogs() {
-    showConfirm(
-        'Uygulama logları temizlenecek. Devam edilsin mi?',
-        () => clearLog('app')
-    );
-}
-
-function clearAllLogs() {
-    showConfirm(
-        '<strong class="text-danger">TÜM LOGLAR TEMİZLENECEK!</strong><br>Bu işlem geri alınamaz. Emin misiniz?',
-        () => clearLog('all')
-    );
-}
-
-function clearLog(type, worker = null) {
-    const formData = new FormData();
-    formData.append('type', type);
-    if (worker) formData.append('worker', worker);
-    
-    fetch('/admin/system-monitor/clear-logs', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showNotify(data.message, 'success');
-            loadStats(); // Refresh
-        } else {
-            showNotify(data.message, 'error');
-        }
-    })
-    .catch(error => {
-        showNotify('Hata: ' + error.message, 'error');
-    });
-}
-
-function viewWorkerLog(workerName) {
-    document.getElementById('log-worker-name').textContent = workerName;
-    document.getElementById('log-viewer-content').innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Yükleniyor...</div>';
-    
-    $('#logViewerModal').modal('show');
-    
-    fetch(`/admin/system-monitor/worker-log/${workerName}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                let html = '';
-                
-                if (Object.keys(data.logs).length === 0) {
-                    html = '<div class="alert alert-info">Bu worker için log dosyası bulunamadı</div>';
-                } else {
-                    Object.keys(data.logs).forEach(logFile => {
-                        const logContent = data.logs[logFile];
-                        html += `
-                            <div class="mb-3">
-                                <h6 class="font-weight-bold text-primary">
-                                    <i class="fas fa-file"></i> ${logFile}
-                                </h6>
-                                <pre class="bg-dark text-white p-3" style="font-size: 12px; max-height: 400px; overflow-y: auto;">${escapeHtml(logContent)}</pre>
-                            </div>
-                        `;
-                    });
-                }
-                
-                document.getElementById('log-viewer-content').innerHTML = html;
-            } else {
-                document.getElementById('log-viewer-content').innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
-            }
-        })
-        .catch(error => {
-            document.getElementById('log-viewer-content').innerHTML = `<div class="alert alert-danger">Hata: ${error.message}</div>`;
-        });
-}
-
-function downloadWorkerLog(workerName) {
-    window.location.href = `/admin/system-monitor/download-worker-log/${workerName}`;
-}
-
-function createDatabaseBackup(event) {
-    const btn = event ? event.target : null;
-    
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Yedekleniyor...';
-    }
-    
-    console.log('Database backup başlatılıyor...');
-    
-    fetch('/admin/system-monitor/backup/database', {
-        method: 'POST',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-    .then(response => {
-        console.log('Response status:', response.status);
-        return response.text();
-    })
-    .then(text => {
-        console.log('Response text:', text);
-        try {
-            const data = JSON.parse(text);
-            if (data.success) {
-                showNotify(
-                    `<strong>${data.message}</strong><br><small>Dosya: ${data.file}<br>Boyut: ${data.size}</small>`,
-                    'success'
-                );
-                loadBackups();
-            } else {
-                showNotify('<strong>Hata!</strong><br>' + data.message, 'error');
-            }
-        } catch (e) {
-            console.error('JSON Parse hatası:', e);
-            console.error('Response:', text);
-            showNotify('<strong>Sunucu Hatası!</strong><br>JSON yanıt alınamadı. Lütfen console\'u kontrol edin.', 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Fetch hatası:', error);
-        showNotify('<strong>Bağlantı Hatası!</strong><br>' + error.message, 'error');
-    })
-    .finally(() => {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-save"></i> Veritabanı Yedekle';
-        }
-    });
-}
-
-function createFileBackup(event) {
-    const btn = event ? event.target : null;
-    
-    showConfirm(
-        'Dosyalar yedeklenecek. Bu işlem dosya boyutuna bağlı olarak uzun sürebilir.<br>Devam edilsin mi?',
-        () => {
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Yedekleniyor...';
-            }
-            
-            fetch('/admin/system-monitor/backup/files', {
-                method: 'POST'
-            })
-            .then(response => response.text())
-            .then(text => {
-                try {
-                    const data = JSON.parse(text);
-                    if (data.success) {
-                        showNotify(
-                            `${data.message}<br><small>Dosya: ${data.file}<br>Boyut: ${data.size}</small>`,
-                            'success'
-                        );
-                        loadBackups();
-                    } else {
-                        showNotify(data.message, 'error');
-                    }
-                } catch (e) {
-                    console.error('Response:', text);
-                    showNotify('Sunucu hatası. Lütfen izinlerinizi kontrol edin ve tekrar giriş yapın.', 'error');
-                }
-            })
-            .catch(error => {
-                showNotify('Hata: ' + error.message, 'error');
-            })
-            .finally(() => {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-save"></i> Dosyaları Yedekle';
-                }
-            });
-        }
-    );
-}
-
-function downloadBackup(type, fileName) {
-    window.location.href = `/admin/system-monitor/download-backup?type=${type}&file=${encodeURIComponent(fileName)}`;
-}
-
-function restoreDatabaseBackup(fileName) {
-    showConfirm(
-        `<strong class="text-danger">DİKKAT!</strong><br>
-        <strong>${fileName}</strong> yedek dosyası geri yüklenecek.<br>
-        <strong class="text-danger">Mevcut veritabanı tamamen silinecek!</strong><br>
-        Bu işlem geri alınamaz. Devam etmek istediğinize emin misiniz?`,
-        () => {
-            const formData = new FormData();
-            formData.append('file', fileName);
-            
-            // Loading göster
-            showNotify('<i class="fas fa-spinner fa-spin"></i> Veritabanı geri yükleniyor...<br><small>Bu işlem birkaç dakika sürebilir, lütfen bekleyin...</small>', 'info');
-            
-            fetch('/admin/system-monitor/restore-database', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showNotify('<strong>Başarılı!</strong><br>' + data.message + '<br><small>Sayfa 3 saniye içinde yenilenecek...</small>', 'success');
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 3000);
-                } else {
-                    showNotify('<strong>Hata!</strong><br>' + data.message, 'error');
-                }
-            })
-            .catch(error => {
-                showNotify('<strong>Hata!</strong><br>' + error.message, 'error');
-            });
-        }
-    );
-}
-
-function deleteBackup(type, fileName) {
-    showConfirm(
-        `<strong>${fileName}</strong> dosyası silinecek.<br>Bu işlem geri alınamaz. Emin misiniz?`,
-        () => {
-            const formData = new FormData();
-            formData.append('type', type);
-            formData.append('file', fileName);
-            
-            fetch('/admin/system-monitor/delete-backup', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showNotify(data.message, 'success');
-                    loadBackups();
-                } else {
-                    showNotify(data.message, 'error');
-                }
-            })
-            .catch(error => {
-                showNotify('Hata: ' + error.message, 'error');
-            });
-        }
-    );
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Sayfa kapatıldığında interval'i temizle
-window.addEventListener('beforeunload', function() {
-    if (refreshInterval) {
-        clearInterval(refreshInterval);
-    }
-});
-</script>
+{% block scripts %}
+<script src="/assets/js/system-monitor.js"></script>
 {% endblock %}
 

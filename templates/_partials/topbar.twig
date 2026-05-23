@@ -2,16 +2,6 @@
     <nav class="navbar-custom">
         <ul class="list-unstyled topbar-nav float-end mb-0">
             
-            {# Bildirimler — panel body portal + fixed (nx-notification-panel.js) #}
-            <li class="nx-noti-wrap">
-                <button type="button" class="nav-link arrow-none waves-light waves-effect nx-noti-bell" id="notificationBell" aria-label="Bildirimler" aria-expanded="false" aria-haspopup="dialog" aria-controls="nxNotiPanel">
-                    <span class="nx-noti-bell-inner">
-                        <i data-feather="bell" class="align-self-center topbar-icon"></i>
-                        <span class="badge bg-danger rounded-pill noti-icon-badge nx-noti-badge" id="unreadCount" style="display: none;">0</span>
-                    </span>
-                </button>
-            </li>
-            
             {# Kullanıcı Menüsü #}
             <li class="dropdown">
                 <a class="nav-link dropdown-toggle waves-effect waves-light nav-user nx-user-toggle" id="nxUserDropdownToggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" href="#" role="button" aria-haspopup="true" aria-expanded="false">
@@ -92,7 +82,7 @@
             });
         });
 
-        /* Üstteki doğrudan yönetim linkleri (Bildirim, Sunucu vb.) */
+        /* Üstteki doğrudan yönetim linkleri (Sunucu vb.) */
         menu.querySelectorAll('a.nx-dd-item[href]:not(.nx-dd-nested)').forEach(function (a) {
             if (a.closest('.nx-dd-accordion')) return;
             a.addEventListener('click', function (e) {

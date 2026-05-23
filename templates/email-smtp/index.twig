@@ -73,10 +73,10 @@
 {% endblock %}
 
 {% block content %}
-{% set inactive_smtp = stats.total_smtp > stats.active_smtp ? (stats.total_smtp - stats.active_smtp) : 0 %}
-{% set warming_count = smtps|filter(s => s.totalSent < 100)|length %}
-{% set healthy_count = smtps|filter(s => s.isActive and s.successRate >= 92 and s.totalFailed < 40)|length %}
-{% set risk_count = smtps|filter(s => s.totalSent >= 15 and s.successRate < 85)|length %}
+{% set inactive_smtp = stats.passive_smtp|default(stats.total_smtp > stats.active_smtp ? (stats.total_smtp - stats.active_smtp) : 0) %}
+{% set warming_count = stats.warming_smtp|default(0) %}
+{% set healthy_count = stats.healthy_smtp|default(0) %}
+{% set risk_count = stats.risk_smtp|default(0) %}
 {% set planDailyLimit = sending_config.daily_limit %}
 {% set totalDailySent = global_totals.daily_sent|default(0) %}
 {% set global_usage_pct = planDailyLimit > 0 ? (totalDailySent / planDailyLimit * 100) : 0 %}
@@ -350,9 +350,10 @@
                                         {% set provider_key = 'other' %}
                                         {% set provider_label = 'Özel' %}
                                     {% endif %}
-                                    {% set warm = smtp.totalSent < 100 %}
-                                    {% set healthy = smtp.isActive and smtp.successRate >= 92 and smtp.totalFailed < 40 %}
-                                    {% set risk = smtp.totalSent >= 15 and smtp.successRate < 85 %}
+                                    {% set has_conn_error = smtp.lastError is not empty %}
+                                    {% set warm = smtp.isActive and smtp.totalSent < 100 %}
+                                    {% set risk = smtp.isActive and (has_conn_error or (smtp.totalSent >= 15 and smtp.successRate < 85)) %}
+                                    {% set healthy = smtp.isActive and (not warm) and (not risk) and (not has_conn_error) and smtp.successRate >= 85 %}
                                     {% set acct_limit = smtp.dailyLimit > 0 ? smtp.dailyLimit : planDailyLimit %}
                                     {% set acct_pct = acct_limit > 0 ? (smtp.dailySent / acct_limit * 100) : 0 %}
                                     {% set throttled_row = global_usage_pct >= 88 or acct_pct >= 90 %}
@@ -455,9 +456,10 @@
                             {% set provider_key = 'other' %}
                             {% set provider_label = 'Özel' %}
                         {% endif %}
-                        {% set warm = smtp.totalSent < 100 %}
-                        {% set healthy = smtp.isActive and smtp.successRate >= 92 and smtp.totalFailed < 40 %}
-                        {% set risk = smtp.totalSent >= 15 and smtp.successRate < 85 %}
+                        {% set has_conn_error = smtp.lastError is not empty %}
+                        {% set warm = smtp.isActive and smtp.totalSent < 100 %}
+                        {% set risk = smtp.isActive and (has_conn_error or (smtp.totalSent >= 15 and smtp.successRate < 85)) %}
+                        {% set healthy = smtp.isActive and (not warm) and (not risk) and (not has_conn_error) and smtp.successRate >= 85 %}
                         {% set acct_limit = smtp.dailyLimit > 0 ? smtp.dailyLimit : planDailyLimit %}
                         {% set acct_pct = acct_limit > 0 ? (smtp.dailySent / acct_limit * 100) : 0 %}
                         {% set throttled_row = global_usage_pct >= 88 or acct_pct >= 90 %}

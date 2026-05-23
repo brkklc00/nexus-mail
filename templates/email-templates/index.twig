@@ -188,17 +188,17 @@
     }
 
     .nx-email-page .nx-tpl-col-id {
-        width: 70px;
-        max-width: 70px;
+        width: 56px;
+        max-width: 56px;
     }
 
     .nx-email-page .nx-tpl-col-name {
-        width: 24%;
+        width: 19%;
     }
 
     .nx-email-page .nx-tpl-col-subject {
-        width: 44%;
-        min-width: 280px;
+        width: 49%;
+        min-width: 320px;
     }
 
     .nx-email-page .nx-tpl-col-created {
@@ -207,8 +207,8 @@
     }
 
     .nx-email-page .nx-tpl-col-actions {
-        width: 150px;
-        min-width: 150px;
+        width: 168px;
+        min-width: 168px;
     }
 
     .nx-email-page .nx-tpl-name {
@@ -226,6 +226,29 @@
         -webkit-line-clamp: 2;
         line-clamp: 2;
         -webkit-box-orient: vertical;
+    }
+
+    .nx-email-page .nx-tpl-actions-inline {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: nowrap;
+        gap: 0.3rem;
+        white-space: nowrap;
+    }
+
+    .nx-email-page .nx-tpl-actions-inline .nx-orders-icon-btn {
+        width: 30px;
+        height: 30px;
+    }
+
+    .nx-email-page .note-toolbar {
+        padding: 0.45rem 0.5rem !important;
+    }
+
+    .nx-email-page .note-toolbar .note-btn-group {
+        margin-right: 0.3rem !important;
+        margin-bottom: 0.25rem !important;
     }
 
     .nx-email-page .nx-tpl-created {
@@ -409,6 +432,7 @@
                                     <td><span class="nx-tpl-subject" title="{{ template.subject|e('html_attr') }}">{{ template.subject }}</span></td>
                                     <td><span class="nx-tpl-created">{{ template.createdAt|date('d.m.Y H:i') }}</span></td>
                                     <td class="text-end">
+                                        <div class="nx-tpl-actions-inline">
                                         <button type="button" class="btn nx-orders-icon-btn" onclick="previewTemplate({{ template.id }})" title="Görüntüle">
                                             <i data-feather="eye" class="icon-xs"></i>
                                         </button>
@@ -423,6 +447,7 @@
                                             <i data-feather="trash-2" class="icon-xs"></i>
                                         </button>
                                         {% endif %}
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}

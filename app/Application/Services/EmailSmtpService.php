@@ -720,9 +720,53 @@ class EmailSmtpService
             ->getQuery()
             ->getSingleScalarResult() ?? 100;
 
+        $allAccounts = $this->em->getRepository(EmailSmtpAccount::class)->findAll();
+        $healthySmtp = 0;
+        $warmingSmtp = 0;
+        $riskSmtp = 0;
+        $passiveSmtp = 0;
+
+        foreach ($allAccounts as $smtp) {
+            if (!$smtp instanceof EmailSmtpAccount) {
+                continue;
+            }
+
+            $isActive = $smtp->isActive();
+            $isWarm = $isActive && $smtp->getTotalSent() < 100;
+            $hasConnectionError = trim((string) ($smtp->getLastError() ?? '')) !== '';
+            $isRisk = $isActive && (
+                $hasConnectionError
+                || ($smtp->getTotalSent() >= 15 && $smtp->getSuccessRate() < 85.0)
+            );
+            $isHealthy = $isActive && !$isWarm && !$isRisk && !$hasConnectionError && $smtp->getSuccessRate() >= 85.0;
+
+            if (!$isActive) {
+                ++$passiveSmtp;
+                continue;
+            }
+
+            if ($isWarm) {
+                ++$warmingSmtp;
+                continue;
+            }
+
+            if ($isRisk) {
+                ++$riskSmtp;
+                continue;
+            }
+
+            if ($isHealthy) {
+                ++$healthySmtp;
+            }
+        }
+
         return [
             'total_smtp' => (int) $totalSmtp,
             'active_smtp' => (int) $activeSmtp,
+            'passive_smtp' => (int) $passiveSmtp,
+            'healthy_smtp' => (int) $healthySmtp,
+            'warming_smtp' => (int) $warmingSmtp,
+            'risk_smtp' => (int) $riskSmtp,
             'today_sent' => (int) $todaySent,
             'total_sent' => (int) $totalSent,
             'avg_success_rate' => round((float) $avgSuccessRate, 2)

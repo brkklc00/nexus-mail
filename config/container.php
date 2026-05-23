@@ -236,11 +236,11 @@ return array_merge($settings, [
         );
     }),
 
-    \App\Controllers\NotificationController::class => factory(function (ContainerInterface $c) {
-        return new \App\Controllers\NotificationController(
-            $c->get(EntityManager::class),
+    \App\Controllers\Admin\SystemMonitorManagerController::class => factory(function (ContainerInterface $c) {
+        return new \App\Controllers\Admin\SystemMonitorManagerController(
             $c->get(TwigEnvironment::class),
-            $c->get(\App\Application\Services\NotificationService::class)
+            $c->get(EntityManager::class),
+            $c->get(AuditLoggerService::class)
         );
     }),
 

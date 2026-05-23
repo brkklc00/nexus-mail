@@ -702,7 +702,6 @@ class RoleController
             'Destek Talepleri' => ['icon' => 'help-circle', 'permission' => 'support_ticket', 'action' => 'read', 'url' => '/tickets'],
             
             // Yönetim Menüsü
-            'Bildirim Gönder' => ['icon' => 'bell', 'permission' => 'notification', 'action' => 'read', 'url' => '/admin/notifications'],
             'Tüm Email Siparişleri' => ['icon' => 'shopping-cart', 'permission' => 'admin_email_orders', 'action' => 'read', 'url' => '/admin/email-orders'],
             'Tüm Email Rehberleri' => ['icon' => 'book', 'permission' => 'admin_email_phonebooks', 'action' => 'read', 'url' => '/admin/email-phonebooks'],
             'Tüm Email Kara Listeler' => ['icon' => 'slash', 'permission' => 'admin_email_blacklists', 'action' => 'read', 'url' => '/admin/email-blacklists'],

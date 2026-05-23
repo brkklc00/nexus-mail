@@ -59,13 +59,15 @@ class EmailSmtpController
             $qb->andWhere('s.isActive = false');
         } elseif ($status === 'healthy') {
             $qb->andWhere('s.isActive = true')
-                ->andWhere('s.successRate >= 92')
-                ->andWhere('s.totalFailed < 40');
+                ->andWhere('s.totalSent >= 100')
+                ->andWhere('s.successRate >= 85')
+                ->andWhere('(s.lastError IS NULL OR s.lastError = \'\')');
         } elseif ($status === 'risk') {
-            $qb->andWhere('s.totalSent >= 15')
-                ->andWhere('s.successRate < 85');
+            $qb->andWhere('s.isActive = true')
+                ->andWhere('(s.lastError IS NOT NULL AND s.lastError <> \'\') OR (s.totalSent >= 15 AND s.successRate < 85)');
         } elseif ($status === 'warming') {
-            $qb->andWhere('s.totalSent < 100');
+            $qb->andWhere('s.isActive = true')
+                ->andWhere('s.totalSent < 100');
         } elseif ($status === 'throttled') {
             $qb->andWhere('s.dailySent >= (s.dailyLimit * 0.9)');
         }

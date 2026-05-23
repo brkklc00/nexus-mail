@@ -79,8 +79,6 @@
     
 </div>
 
-{% include '_partials/notification-panel-portal.twig' %}
-
 {# Dastone JS #}
 <script src="/assets/js/jquery.min.js"></script>
 <script src="/assets/js/bootstrap.bundle.min.js"></script>
@@ -89,7 +87,6 @@
 <script src="/assets/js/waves.js"></script>
 <script src="/assets/js/feather.min.js"></script>
 <script src="/assets/js/app.js"></script>
-<script src="/assets/js/nx-notification-panel.js"></script>
 {% if use_nexus_theme is defined ? use_nexus_theme : true %}
 <script src="/assets/js/nx-mobile-nav.js"></script>
 {% endif %}
@@ -100,7 +97,6 @@
     function nxMountModalsToBody() {
         if (!document.body.classList.contains('nx-panel')) return;
         document.querySelectorAll('div.modal').forEach(function (el) {
-            if (el.closest('#nxNotiPanel')) return;
             if (el.parentNode !== document.body) {
                 document.body.appendChild(el);
             }
@@ -117,203 +113,6 @@
 {# iziToast for notifications #}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/izitoast/1.4.0/css/iziToast.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/izitoast/1.4.0/js/iziToast.min.js"></script>
-
-<script>
-function nxEscapeHtml(str) {
-    if (str == null) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-function nxNotiTypeMeta(type) {
-    var icon = 'bell';
-    var tone = 'primary';
-    switch (type) {
-        case 'success':
-            icon = 'check-circle';
-            tone = 'success';
-            break;
-        case 'warning':
-            icon = 'alert-triangle';
-            tone = 'warning';
-            break;
-        case 'danger':
-            icon = 'alert-circle';
-            tone = 'danger';
-            break;
-        case 'info':
-            icon = 'info';
-            tone = 'info';
-            break;
-        default:
-            icon = 'bell';
-            tone = 'primary';
-    }
-    return { icon: icon, tone: tone };
-}
-
-function nxNotiReplaceFeather(container) {
-    if (typeof feather === 'undefined' || !container) return;
-    try {
-        container.querySelectorAll('[data-feather]').forEach(function (el) {
-            var name = el.getAttribute('data-feather');
-            if (!name || !feather.icons[name]) {
-                el.setAttribute('data-feather', 'bell');
-            }
-        });
-        feather.replace();
-    } catch (e) {
-        console.warn('Feather icons error:', e);
-    }
-}
-
-function loadNotifications() {
-    var notificationList = document.getElementById('notificationList');
-    var unreadCount = document.getElementById('unreadCount');
-    var headBadge = document.getElementById('nxNotiHeadBadge');
-    var markAllBtn = document.getElementById('nxNotiMarkAll');
-    if (!notificationList) return;
-
-    fetch('/notifications/unread')
-        .then(function (response) {
-            return response.json();
-        })
-        .then(function (data) {
-            if (data.count > 0) {
-                if (unreadCount) {
-                    unreadCount.textContent = data.count;
-                    unreadCount.style.display = 'inline-block';
-                }
-                if (headBadge) {
-                    headBadge.textContent = data.count + ' yeni';
-                    headBadge.hidden = false;
-                }
-                if (markAllBtn) {
-                    markAllBtn.hidden = false;
-                }
-
-                var html = '';
-                data.notifications.forEach(function (notification) {
-                    var meta = nxNotiTypeMeta(notification.type);
-                    var rawMsg = notification.message || '';
-                    var shortMsg = rawMsg.length > 96 ? rawMsg.substring(0, 96) + '…' : rawMsg;
-                    html +=
-                        '<a href="/notifications" class="nx-noti-item nx-noti-item--unread">' +
-                        '<span class="nx-noti-item-dot" aria-hidden="true"></span>' +
-                        '<span class="nx-noti-item-icon nx-noti-item-icon--' +
-                        meta.tone +
-                        '">' +
-                        '<i data-feather="' +
-                        meta.icon +
-                        '" width="16" height="16" aria-hidden="true"></i>' +
-                        '</span>' +
-                        '<span class="nx-noti-item-main">' +
-                        '<span class="nx-noti-item-title">' +
-                        nxEscapeHtml(notification.title) +
-                        '</span>' +
-                        '<span class="nx-noti-item-msg">' +
-                        nxEscapeHtml(shortMsg) +
-                        '</span>' +
-                        '<time class="nx-noti-item-time">' +
-                        nxEscapeHtml(notification.createdAt) +
-                        '</time>' +
-                        '</span>' +
-                        '</a>';
-                });
-
-                notificationList.innerHTML = html;
-                setTimeout(function () {
-                    nxNotiReplaceFeather(notificationList);
-                }, 50);
-            } else {
-                if (unreadCount) {
-                    unreadCount.style.display = 'none';
-                }
-                if (headBadge) {
-                    headBadge.textContent = '';
-                    headBadge.hidden = true;
-                }
-                if (markAllBtn) {
-                    markAllBtn.hidden = true;
-                }
-                notificationList.innerHTML =
-                    '<div class="nx-noti-empty">' +
-                    '<i data-feather="bell-off" width="28" height="28" aria-hidden="true"></i>' +
-                    '<p class="nx-noti-empty-title">Henüz bildiriminiz yok</p>' +
-                    '<p class="nx-noti-empty-hint">Yeni bildirimler burada görünecek.</p>' +
-                    '</div>';
-                setTimeout(function () {
-                    nxNotiReplaceFeather(notificationList);
-                }, 50);
-            }
-        })
-        .catch(function (error) {
-            console.error('Bildirimler yüklenemedi:', error);
-            if (unreadCount) {
-                unreadCount.style.display = 'none';
-            }
-            if (headBadge) {
-                headBadge.hidden = true;
-            }
-            if (markAllBtn) {
-                markAllBtn.hidden = true;
-            }
-            notificationList.innerHTML =
-                '<div class="nx-noti-empty nx-noti-empty--error">' +
-                '<i data-feather="wifi-off" width="28" height="28" aria-hidden="true"></i>' +
-                '<p class="nx-noti-empty-title">Bildirimler yüklenemedi</p>' +
-                '</div>';
-            setTimeout(function () {
-                nxNotiReplaceFeather(notificationList);
-            }, 50);
-        });
-}
-
-function nxMarkAllNotificationsRead(ev) {
-    if (ev) {
-        ev.preventDefault();
-        ev.stopPropagation();
-    }
-    fetch('/notifications/mark-all-read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-    })
-        .then(function (r) {
-            return r.json();
-        })
-        .then(function (data) {
-            if (data.success) {
-                loadNotifications();
-            }
-        })
-        .catch(function () {});
-}
-
-document.addEventListener('DOMContentLoaded', function () {
-    loadNotifications();
-    setInterval(loadNotifications, 30000);
-    var markAllBtn = document.getElementById('nxNotiMarkAll');
-    if (markAllBtn) {
-        markAllBtn.addEventListener('click', nxMarkAllNotificationsRead);
-    }
-    if (typeof window.nxNotiRefreshIfOpen === 'function') {
-        var _nxOldLoad = loadNotifications;
-        loadNotifications = function () {
-            _nxOldLoad();
-            setTimeout(function () {
-                if (typeof window.nxNotiRefreshIfOpen === 'function') {
-                    window.nxNotiRefreshIfOpen();
-                }
-            }, 80);
-        };
-    }
-});
-
-</script>
 
 {% block scripts %}{% endblock %}
 
