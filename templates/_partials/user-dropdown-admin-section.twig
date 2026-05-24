@@ -5,9 +5,13 @@
 <h6 class="dropdown-header nx-dd-section text-uppercase small fw-bold mb-0">Yönetim</h6>
 
 {% if _session.is_admin|default(false) or _session.user_permissions.system_monitor.read|default(false) %}
-<a class="dropdown-item nx-dd-item" href="/admin/system-monitor">
+<a class="dropdown-item nx-dd-item" href="/admin/server-management">
     <i data-feather="server" class="nx-dd-icon"></i>
     <span>Sunucu Yönetimi</span>
+</a>
+<a class="dropdown-item nx-dd-item" href="/admin/worker-terminal">
+    <i data-feather="terminal" class="nx-dd-icon"></i>
+    <span>Worker Terminali</span>
 </a>
 {% endif %}
 

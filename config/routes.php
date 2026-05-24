@@ -674,5 +674,26 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'update'));
         });
 
+        $group->get('/admin/server-management', [\App\Controllers\Admin\SystemMonitorManagerController::class, 'index'])->setName('admin.server-management.index')
+            ->add(new PermissionMiddleware($container->get(EntityManager::class), $container->get(Environment::class), 'system_monitor', 'read'));
+
+        $group->group('/admin/worker-terminal', function (RouteCollectorProxy $group) use ($container) {
+            $em = $container->get(EntityManager::class);
+            $twig = $container->get(Environment::class);
+
+            $group->get('', [\App\Controllers\Admin\WorkerTerminalController::class, 'index'])->setName('admin.worker-terminal.index')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->get('/status', [\App\Controllers\Admin\WorkerTerminalController::class, 'status'])->setName('admin.worker-terminal.status')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->get('/logs', [\App\Controllers\Admin\WorkerTerminalController::class, 'logs'])->setName('admin.worker-terminal.logs')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->get('/stream', [\App\Controllers\Admin\WorkerTerminalController::class, 'stream'])->setName('admin.worker-terminal.stream')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'read'));
+            $group->post('/action', [\App\Controllers\Admin\WorkerTerminalController::class, 'action'])->setName('admin.worker-terminal.action')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'update'));
+            $group->post('/command', [\App\Controllers\Admin\WorkerTerminalController::class, 'command'])->setName('admin.worker-terminal.command')
+                ->add(new PermissionMiddleware($em, $twig, 'system_monitor', 'update'));
+        });
+
     })->add(AuthMiddleware::class);
 };

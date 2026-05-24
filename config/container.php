@@ -244,6 +244,18 @@ return array_merge($settings, [
         );
     }),
 
+    \App\Service\WorkerTerminalService::class => factory(function (ContainerInterface $c) {
+        return new \App\Service\WorkerTerminalService();
+    }),
+
+    \App\Controllers\Admin\WorkerTerminalController::class => factory(function (ContainerInterface $c) {
+        return new \App\Controllers\Admin\WorkerTerminalController(
+            $c->get(TwigEnvironment::class),
+            $c->get(\App\Service\WorkerTerminalService::class),
+            $c->get(AuditLoggerService::class)
+        );
+    }),
+
     \App\Controllers\ApiController::class => factory(function (ContainerInterface $c) {
         $settings = $c->get('settings');
         return new \App\Controllers\ApiController(

@@ -1,0 +1,200 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Worker Terminali - {{ site_title|default('Nexus Mail') }}{% endblock %}
+{% block title_text %}Worker Terminali{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
+    <li class="breadcrumb-item"><a href="/admin/server-management">Yonetim</a></li>
+    <li class="breadcrumb-item active">Worker Terminali</li>
+{% endblock %}
+
+{% block page_lead %}
+    <p class="mb-0 nx-wt-lead">Email worker durumunu canli izleyin, loglari takip edin ve guvenli komutlari calistirin.</p>
+{% endblock %}
+
+{% block content %}
+<div class="nx-wt-page" id="workerTerminalPage" data-csrf="{{ csrf_token|e('html_attr') }}">
+    <div class="d-flex flex-wrap gap-2 justify-content-end mb-3">
+        <button type="button" class="btn nx-wt-action-btn" id="wtRefreshBtn">
+            <i data-feather="refresh-cw" class="icon-xs me-1"></i> Yenile
+        </button>
+        <button type="button" class="btn nx-wt-action-btn nx-wt-action-btn-primary wt-action-btn" data-action="restart">
+            <i data-feather="rotate-cw" class="icon-xs me-1"></i> Worker Restart
+        </button>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card nx-wt-kpi-card">
+                <div class="card-body">
+                    <small class="text-muted d-block">Durum</small>
+                    <div class="d-flex align-items-center gap-2 mt-1">
+                        <span id="wtStatusBadge" class="badge bg-secondary">-</span>
+                        <strong id="wtStatusText">-</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card nx-wt-kpi-card">
+                <div class="card-body">
+                    <small class="text-muted d-block">Restart Sayisi</small>
+                    <strong class="fs-5" id="wtRestartCount">0</strong>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card nx-wt-kpi-card">
+                <div class="card-body">
+                    <small class="text-muted d-block">CPU / RAM</small>
+                    <strong class="fs-6" id="wtCpuRam">0% / 0 MB</strong>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="card nx-wt-kpi-card">
+                <div class="card-body">
+                    <small class="text-muted d-block">Uptime</small>
+                    <strong class="fs-6" id="wtUptime">-</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12 col-xl-8">
+            <div class="card nx-wt-card">
+                <div class="card-header nx-wt-card-header d-flex flex-wrap justify-content-between gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <h5 class="mb-0 text-white d-flex align-items-center gap-2">
+                            <i data-feather="terminal" class="icon-sm"></i> Canli Worker Loglari
+                        </h5>
+                        <span class="badge bg-light text-dark" id="wtConnectionBadge">Baglanti bekleniyor</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-light wt-log-tab active" data-type="combined">Tum Loglar</button>
+                            <button type="button" class="btn btn-outline-light wt-log-tab" data-type="out">Normal Log</button>
+                            <button type="button" class="btn btn-outline-light wt-log-tab" data-type="error">Hata Logu</button>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-light" id="wtAutoScrollBtn">Auto-scroll Acik</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" id="wtPauseBtn">Durdur</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" id="wtClearBtn">Temizle</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" id="wtCopyBtn">Kopyala</button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div id="wtTerminal" class="nx-wt-terminal"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-4">
+            <div class="card nx-wt-card h-100">
+                <div class="card-header nx-wt-card-header">
+                    <h5 class="mb-0 text-white d-flex align-items-center gap-2">
+                        <i data-feather="server" class="icon-sm"></i> Hazir Komutlar
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="nx-wt-command-group">
+                        <div class="nx-wt-command-title">Worker Yonetimi</div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-primary wt-action-btn" data-action="status">Status Goster</button>
+                            <button class="btn btn-outline-primary wt-action-btn" data-action="restart">Worker Restart</button>
+                            <button class="btn btn-outline-primary wt-action-btn" data-action="stop">Worker Stop</button>
+                            <button class="btn btn-outline-primary wt-action-btn" data-action="start">Worker Start</button>
+                            <button class="btn btn-outline-primary wt-action-btn" data-action="reset">Restart Sayacini Sifirla</button>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="nx-wt-command-group">
+                        <div class="nx-wt-command-title">Log</div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-secondary wt-action-btn" data-action="logs">Son 100 Log</button>
+                            <button class="btn btn-outline-secondary wt-action-btn" data-action="error_logs">Son 100 Hata Logu</button>
+                            <button class="btn btn-outline-secondary wt-action-btn" data-action="flush_logs">Loglari Temizle</button>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="nx-wt-command-group">
+                        <div class="nx-wt-command-title">Sistem</div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-dark wt-action-btn" data-action="pm2_status">PM2 Status</button>
+                            <button class="btn btn-outline-dark wt-action-btn" data-action="pm2_save">PM2 Save</button>
+                            <button class="btn btn-outline-dark wt-action-btn" data-action="health">Health Check</button>
+                            <button class="btn btn-outline-dark wt-action-btn" data-action="queue_health">Queue Health</button>
+                            <button class="btn btn-outline-dark wt-action-btn" data-action="disk">Disk Durumu</button>
+                            <button class="btn btn-outline-dark wt-action-btn" data-action="memory">RAM Durumu</button>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-light mt-3 mb-0">
+                        <strong>Son Aksiyon:</strong>
+                        <div id="wtLastAction" class="small text-muted mt-1">Henuz komut calistirilmadi.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card nx-wt-card mt-3">
+        <div class="card-header nx-wt-card-header">
+            <h5 class="mb-0 text-white d-flex align-items-center gap-2">
+                <i data-feather="shield" class="icon-sm"></i> Guvenli Komut Calistir
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-2 align-items-center">
+                <div class="col-12 col-lg-9">
+                    <input type="text" class="form-control" id="wtManualCommand" placeholder="Ornek: pm2 status">
+                </div>
+                <div class="col-12 col-lg-3 d-grid">
+                    <button type="button" class="btn btn-primary" id="wtRunCommandBtn">
+                        <i data-feather="play" class="icon-xs me-1"></i> Calistir
+                    </button>
+                </div>
+            </div>
+            <small class="text-muted d-block mt-2">Sadece izinli komutlar calistirilir, digerleri engellenir.</small>
+        </div>
+    </div>
+</div>
+
+<script id="wtInitialStatusData" type="application/json">{{ initial_status|json_encode(constant('JSON_UNESCAPED_UNICODE'))|raw }}</script>
+{% endblock %}
+
+{% block styles %}
+<style>
+.nx-wt-page .nx-wt-lead { color: #64748b; font-weight: 500; }
+.nx-wt-kpi-card { border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 6px 18px rgba(15,23,42,.05); }
+.nx-wt-card { border: 1px solid #dbe2ef; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 22px rgba(15,23,42,.06); }
+.nx-wt-card-header { background: linear-gradient(130deg, #0b1730 0%, #1f3f67 100%); border-bottom: 1px solid rgba(255,255,255,.14); }
+.nx-wt-action-btn { border: 1px solid #cbd5e1; background: #fff; color: #1e3a8a; font-weight: 600; }
+.nx-wt-action-btn-primary { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+.nx-wt-terminal {
+    background: #020617;
+    color: #cbd5e1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: .78rem;
+    line-height: 1.4;
+    min-height: 420px;
+    max-height: 650px;
+    overflow-y: auto;
+    padding: 1rem;
+    white-space: pre-wrap;
+}
+.nx-wt-log-line { margin-bottom: .22rem; }
+.nx-wt-log-line--error { color: #fca5a5; }
+.nx-wt-log-line--success { color: #86efac; }
+.nx-wt-log-line--normal { color: #d1d5db; }
+.nx-wt-command-title { font-size: .78rem; color: #334155; text-transform: uppercase; font-weight: 700; margin-bottom: .6rem; letter-spacing: .03em; }
+@media (max-width: 1199px) {
+    .nx-wt-terminal { max-height: 560px; }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="/assets/js/worker-terminal.js"></script>
+{% endblock %}
+
