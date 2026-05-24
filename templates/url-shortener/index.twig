@@ -345,7 +345,7 @@
             </script>
 
             {% if moreUrlLinks is not empty %}
-            <div class="nx-url-list-toolbar-row">
+            <div class="nx-url-list-toolbar-row mb-0 pb-0">
                 <div class="url-toolbar nx-url-toolbar nx-url-toolbar--list">
                     <input type="search" class="form-control nx-url-toolbar-input" id="mus-search" placeholder="Harici linklerde ara…" autocomplete="off">
                     <select class="form-select nx-url-toolbar-select" id="mus-filter-domain">
@@ -369,7 +369,7 @@
                 <h5 class="fw-bold mb-2" style="color:#0f172a;">Henüz MoreURL bağlantısı yok.</h5>
             </div>
             {% else %}
-            <div class="table-responsive">
+            <div class="table-responsive d-none d-md-block nx-url-table-wrap url-table-wrapper">
                 <table class="table align-middle mb-0 nx-url-table">
                     <thead>
                         <tr>
@@ -383,6 +383,15 @@
                     </thead>
                     <tbody id="more-urls-table-body"></tbody>
                 </table>
+            </div>
+            <div class="border-top bg-white px-3 py-3" id="mus-pagination-wrap">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <small class="text-muted" id="mus-page-info">Sayfa 1 / 1</small>
+                    <div class="d-inline-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="mus-prev-btn">Önceki</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="mus-next-btn">Sonraki</button>
+                    </div>
+                </div>
             </div>
             <div id="mus-filter-empty" class="text-center py-5 px-3 text-muted d-none">
                 <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width:56px;height:56px;background:#f1f5f9;">
@@ -524,6 +533,8 @@
         }
     };
     let MORE_URLS_PAGE_DATA = parseMoreUrlsData();
+    let MORE_URLS_PAGE = 1;
+    const MORE_URLS_PER_PAGE = 10;
     let deleteId = null;
     let editId = null;
 
@@ -963,6 +974,10 @@
         const tbody = document.getElementById('more-urls-table-body');
         if (!tbody) return;
         const emptyEl = document.getElementById('mus-filter-empty');
+        const paginationWrap = document.getElementById('mus-pagination-wrap');
+        const pageInfoEl = document.getElementById('mus-page-info');
+        const prevBtn = document.getElementById('mus-prev-btn');
+        const nextBtn = document.getElementById('mus-next-btn');
         const q = document.getElementById('mus-search')?.value || '';
         const domain = document.getElementById('mus-filter-domain')?.value || '';
         const mode = document.getElementById('mus-sort')?.value || 'new';
@@ -977,9 +992,31 @@
         if (!list.length) {
             tbody.innerHTML = '';
             emptyEl?.classList.remove('d-none');
+            paginationWrap?.classList.add('d-none');
+            if (pageInfoEl) pageInfoEl.textContent = 'Sayfa 1 / 1';
+            if (prevBtn) prevBtn.disabled = true;
+            if (nextBtn) nextBtn.disabled = true;
         } else {
             emptyEl?.classList.add('d-none');
-            tbody.innerHTML = list.map(renderMoreRow).join('');
+            paginationWrap?.classList.remove('d-none');
+
+            const totalPages = Math.max(1, Math.ceil(list.length / MORE_URLS_PER_PAGE));
+            if (MORE_URLS_PAGE > totalPages) {
+                MORE_URLS_PAGE = totalPages;
+            }
+            if (MORE_URLS_PAGE < 1) {
+                MORE_URLS_PAGE = 1;
+            }
+
+            const start = (MORE_URLS_PAGE - 1) * MORE_URLS_PER_PAGE;
+            const pageItems = list.slice(start, start + MORE_URLS_PER_PAGE);
+            tbody.innerHTML = pageItems.map(renderMoreRow).join('');
+
+            if (pageInfoEl) {
+                pageInfoEl.textContent = `Sayfa ${MORE_URLS_PAGE} / ${totalPages} · Toplam ${list.length} kayıt`;
+            }
+            if (prevBtn) prevBtn.disabled = MORE_URLS_PAGE <= 1;
+            if (nextBtn) nextBtn.disabled = MORE_URLS_PAGE >= totalPages;
         }
         if (typeof feather !== 'undefined') feather.replace();
     }
@@ -1177,15 +1214,38 @@
         const d = document.getElementById('mus-filter-domain');
         const so = document.getElementById('mus-sort');
         const r = document.getElementById('mus-refresh');
+        const prevBtn = document.getElementById('mus-prev-btn');
+        const nextBtn = document.getElementById('mus-next-btn');
         let t;
         if (s) {
             s.addEventListener('input', () => {
                 clearTimeout(t);
-                t = setTimeout(() => refreshMoreTable(), 200);
+                t = setTimeout(() => {
+                    MORE_URLS_PAGE = 1;
+                    refreshMoreTable();
+                }, 200);
             });
         }
-        [d, so].forEach((el) => el && el.addEventListener('change', refreshMoreTable));
-        if (r) r.addEventListener('click', () => refreshMoreTable());
+        [d, so].forEach((el) => el && el.addEventListener('change', () => {
+            MORE_URLS_PAGE = 1;
+            refreshMoreTable();
+        }));
+        if (r) r.addEventListener('click', () => {
+            MORE_URLS_PAGE = 1;
+            refreshMoreTable();
+        });
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                MORE_URLS_PAGE = Math.max(1, MORE_URLS_PAGE - 1);
+                refreshMoreTable();
+            });
+        }
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                MORE_URLS_PAGE = MORE_URLS_PAGE + 1;
+                refreshMoreTable();
+            });
+        }
     }
 
     function flashPageMessages() {

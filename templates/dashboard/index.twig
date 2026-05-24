@@ -103,6 +103,12 @@
     color: #64748b;
 }
 
+.nx-dash-badge-cancelled {
+    background: #eef2ff !important;
+    border: 1px solid #c7d2fe !important;
+    color: #3730a3 !important;
+}
+
 @media (max-width: 991.98px) {
     .nx-dash-quick-grid {
         grid-template-columns: 1fr;
@@ -330,7 +336,7 @@
                                     {% elseif sv == 'failed' %}
                                         <span class="badge bg-danger-subtle text-danger-emphasis">Başarısız</span>
                                     {% elseif sv == 'cancelled' %}
-                                        <span class="badge bg-secondary-subtle text-secondary-emphasis">İptal</span>
+                                        <span class="badge nx-dash-badge-cancelled">İptal</span>
                                     {% else %}
                                         <span class="badge bg-light text-dark">{{ sv }}</span>
                                     {% endif %}

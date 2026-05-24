@@ -16,9 +16,9 @@
                         </ol>
                     </div>
                     <h4 class="page-title nx-page-title mb-1 text-white">Sunucu Yönetimi</h4>
-                    <p class="mb-0 text-white-50">Sistem sağlığını, logları, dosyaları ve yedekleri tek ekrandan yönetin.</p>
+                    <p class="mb-0 nx-sm-page-lead">Sistem sağlığını, logları, dosyaları ve yedekleri tek ekrandan yönetin.</p>
                 </div>
-                <div class="d-flex flex-wrap gap-2">
+                <div class="d-flex flex-wrap gap-2 nx-sm-page-actions">
                     <button class="btn btn-sm nx-orders-tool-btn nx-sm-action-btn" id="smRefreshBtn"><i data-feather="refresh-cw" class="icon-xs me-1"></i>Yenile</button>
                     <button class="btn btn-sm nx-orders-tool-btn nx-sm-action-btn" id="smSystemCheckBtn"><i data-feather="activity" class="icon-xs me-1"></i>Sistem Kontrolü</button>
                     <button class="btn btn-sm nx-orders-tool-btn nx-sm-action-btn" id="smMaintenanceToggleBtn"><i data-feather="tool" class="icon-xs me-1"></i><span id="smMaintenanceToggleText">Bakım Modu</span></button>
@@ -32,9 +32,27 @@
 {% block styles %}
 <style>
 .nx-sm-page { color: #0f172a; }
+.nx-sm-page-lead { color: #64748b !important; font-weight: 500; }
+.nx-sm-page-actions .nx-sm-action-btn {
+    color: #1e3a8a !important;
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.nx-sm-page-actions .nx-sm-action-btn i,
+.nx-sm-page-actions .nx-sm-action-btn svg {
+    color: #2563eb !important;
+    opacity: 1 !important;
+}
+.nx-sm-page-actions .nx-sm-action-btn:hover {
+    background: #eff6ff !important;
+    border-color: #93c5fd !important;
+    color: #1e40af !important;
+}
 .nx-sm-page .card { border-radius: 16px; border: 1px solid #e5eaf3; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); overflow: hidden; }
-.nx-sm-card-header { background: linear-gradient(125deg, #071a34 0%, #183b63 100%); color: #fff; border-bottom: 1px solid rgba(255,255,255,.08); border-radius: 16px 16px 0 0; padding: .72rem .95rem; }
-.nx-sm-card-title { display: flex; align-items: flex-start; gap: .6rem; margin: 0; font-size: .95rem; font-weight: 700; }
+.nx-sm-card-header { background: linear-gradient(125deg, #071a34 0%, #183b63 100%); color: #fff; border-bottom: 1px solid rgba(255,255,255,.08); border-radius: 16px 16px 0 0; padding: .72rem .95rem; min-height: 64px; }
+.nx-sm-card-title { display: flex; align-items: center; gap: .6rem; margin: 0; font-size: 1rem; font-weight: 700; line-height: 1.2; color: #f8fafc !important; }
+.nx-sm-card-title span { color: #f8fafc !important; opacity: 1 !important; }
 .nx-sm-ic { width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.12); flex-shrink: 0; }
 .nx-sm-ic svg, .nx-sm-card-header [data-feather] { width: 16px; height: 16px; color: #dbeafe; opacity: 1; }
 .nx-sm-card-header .btn { border-color: rgba(255,255,255,.35); color: #e2e8f0; background: rgba(255,255,255,.04); }
@@ -57,6 +75,12 @@
 .nx-sm-table tbody tr:hover td { background: #f8fbff; }
 .nx-sm-viewer { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: .75rem; background: #020617; color: #e2e8f0; border-radius: 12px; padding: .7rem; max-height: 420px; overflow: auto; white-space: pre-wrap; }
 .nx-sm-file-badge { font-size: .67rem; padding: .22rem .45rem; border-radius: 999px; }
+.nx-sm-badge-folder { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.nx-sm-badge-file { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+.nx-sm-badge-config { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.nx-sm-badge-log { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+.nx-sm-badge-migration { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+.nx-sm-badge-asset { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
 .nx-sm-empty { text-align: center; padding: 1.5rem 1rem; color: #64748b; }
 .nx-sm-pagination { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .76rem; color: #475569; margin-top: .6rem; }
 .nx-sm-pagination .btn { min-height: 32px; font-size: .75rem; }

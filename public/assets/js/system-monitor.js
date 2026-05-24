@@ -269,14 +269,14 @@
 
     function typeBadge(type) {
         const map = {
-            folder: 'bg-primary-subtle text-primary-emphasis',
-            file: 'bg-light text-dark',
-            config: 'bg-warning-subtle text-warning-emphasis',
-            log: 'bg-danger-subtle text-danger-emphasis',
-            migration: 'bg-info-subtle text-info-emphasis',
-            asset: 'bg-success-subtle text-success-emphasis'
+            folder: 'nx-sm-badge-folder',
+            file: 'nx-sm-badge-file',
+            config: 'nx-sm-badge-config',
+            log: 'nx-sm-badge-log',
+            migration: 'nx-sm-badge-migration',
+            asset: 'nx-sm-badge-asset'
         };
-        return map[type] || 'bg-light text-dark';
+        return map[type] || 'nx-sm-badge-file';
     }
 
     function renderFiles(res) {
