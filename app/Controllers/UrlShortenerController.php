@@ -105,19 +105,22 @@ class UrlShortenerController
         $moreUrlLinks = [];
         $moreUrlDomains = [];
         $moreUrlError = null;
+        try {
+            $moreLinksResponse = $this->moreUrlClient->listLinks(1, 20, 'date');
+            if ($moreLinksResponse['ok']) {
+                $moreUrlLinks = $moreLinksResponse['data']['urls'] ?? [];
+            } else {
+                $moreUrlError = $moreLinksResponse['message'] ?: 'MoreURL bağlantısı kurulamadı.';
+            }
 
-        $moreLinksResponse = $this->moreUrlClient->listLinks(1, 20, 'date');
-        if ($moreLinksResponse['ok']) {
-            $moreUrlLinks = $moreLinksResponse['data']['urls'] ?? [];
-        } else {
-            $moreUrlError = $moreLinksResponse['message'] ?: 'MoreURL bağlantısı kurulamadı.';
-        }
-
-        $domainResponse = $this->moreUrlClient->listDomains(1, 100);
-        if ($domainResponse['ok']) {
-            $moreUrlDomains = $domainResponse['data']['domains'] ?? [];
-        } elseif ($moreUrlError === null) {
-            $moreUrlError = $domainResponse['message'] ?: 'Domain listesi alınamadı.';
+            $domainResponse = $this->moreUrlClient->listDomains(1, 100);
+            if ($domainResponse['ok']) {
+                $moreUrlDomains = $domainResponse['data']['domains'] ?? [];
+            } elseif ($moreUrlError === null) {
+                $moreUrlError = $domainResponse['message'] ?: 'Domain listesi alınamadı.';
+            }
+        } catch (\Throwable $e) {
+            $moreUrlError = 'MoreURL bağlantısı kurulamadı. API servisini kontrol edin.';
         }
 
         $html = $this->twig->render('url-shortener/index.twig', [

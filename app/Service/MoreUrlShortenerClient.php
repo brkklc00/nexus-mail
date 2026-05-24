@@ -45,9 +45,9 @@ class MoreUrlShortenerClient
         }
 
         if ($q !== null && trim($q) !== '') {
-            $needle = mb_strtolower(trim($q));
+            $needle = $this->toLower(trim($q));
             $urls = array_values(array_filter($urls, static function (array $url) use ($needle): bool {
-                $haystack = mb_strtolower(
+                $haystack = strtolower(
                     ($url['title'] ?? '') . ' ' .
                     ($url['description'] ?? '') . ' ' .
                     ($url['shorturl'] ?? '') . ' ' .
@@ -218,6 +218,10 @@ class MoreUrlShortenerClient
 
     private function request(string $method, string $path, ?array $payload = null, array $query = []): array
     {
+        if (!function_exists('curl_init')) {
+            return ['ok' => false, 'message' => 'MoreURL API için cURL eklentisi bulunamadı.', 'data' => []];
+        }
+
         $url = rtrim(self::API_BASE, '/') . $path;
         if ($query !== []) {
             $url .= '?' . http_build_query($query);
@@ -253,11 +257,15 @@ class MoreUrlShortenerClient
             $options[CURLOPT_POSTFIELDS] = json_encode($payload, JSON_UNESCAPED_UNICODE);
         }
 
-        curl_setopt_array($ch, $options);
-        $result = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
-        curl_close($ch);
+        try {
+            curl_setopt_array($ch, $options);
+            $result = curl_exec($ch);
+            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'MoreURL API isteği sırasında hata oluştu.', 'data' => []];
+        }
 
         if ($result === false || $curlError !== '') {
             return ['ok' => false, 'message' => 'MoreURL API erişilemiyor.', 'data' => []];
@@ -282,6 +290,14 @@ class MoreUrlShortenerClient
         }
 
         return ['ok' => true, 'message' => '', 'data' => $decoded];
+    }
+
+    private function toLower(string $value): string
+    {
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($value);
+        }
+        return strtolower($value);
     }
 
     private function normalizeDomainUrl(string $domain): string
