@@ -336,6 +336,33 @@
                 MoreURL bağlantısı kurulamadı. API servisini veya API anahtarını kontrol edin.
             </div>
             {% endif %}
+            <script type="application/json" id="more-urls-data">
+[
+{% for mUrl in moreUrlLinks|default([]) %}
+{"id":{{ mUrl.id|default(0) }},"title":{{ (mUrl.title|default(''))|json_encode|raw }},"description":{{ (mUrl.description|default(''))|json_encode|raw }},"longurl":{{ (mUrl.longurl|default(''))|json_encode|raw }},"shorturl":{{ (mUrl.shorturl|default(''))|json_encode|raw }},"clicks":{{ mUrl.clicks|default(0) }},"date":{{ (mUrl.date|default(''))|json_encode|raw }},"alias":{{ (mUrl.alias|default(''))|json_encode|raw }}}{% if not loop.last %},{% endif %}
+{% endfor %}
+]
+            </script>
+
+            {% if moreUrlLinks is not empty %}
+            <div class="nx-url-list-toolbar-row">
+                <div class="url-toolbar nx-url-toolbar nx-url-toolbar--list">
+                    <input type="search" class="form-control nx-url-toolbar-input" id="mus-search" placeholder="Harici linklerde ara…" autocomplete="off">
+                    <select class="form-select nx-url-toolbar-select" id="mus-filter-domain">
+                        <option value="">Tüm domainler</option>
+                    </select>
+                    <select class="form-select nx-url-toolbar-select" id="mus-sort">
+                        <option value="new">En yeni</option>
+                        <option value="old">En eski</option>
+                        <option value="clicks">En çok tıklanan</option>
+                    </select>
+                    <button type="button" class="btn nx-url-toolbar-refresh nx-url-toolbar-refresh--light" id="mus-refresh" title="Listeyi yenile" aria-label="Yenile">
+                        <i data-feather="refresh-cw" class="nx-url-toolbar-refresh-ic"></i>
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+
             {% if moreUrlLinks is empty %}
             <div class="text-center nx-url-empty py-5 px-3">
                 <div class="nx-url-empty-ic"><i data-feather="link"></i></div>
@@ -354,32 +381,15 @@
                             <th class="text-end">İşlem</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {% for mUrl in moreUrlLinks %}
-                        <tr>
-                            <td>
-                                <div class="fw-semibold text-dark">{{ mUrl.title|default('Başlıksız') }}</div>
-                                {% if mUrl.description %}
-                                <div class="small text-muted text-truncate" style="max-width:320px;">{{ mUrl.description }}</div>
-                                {% endif %}
-                            </td>
-                            <td><a href="{{ mUrl.longurl }}" target="_blank" rel="noopener" class="small text-break">{{ mUrl.longurl }}</a></td>
-                            <td><a href="{{ mUrl.shorturl }}" target="_blank" rel="noopener" class="small">{{ mUrl.shorturl }}</a></td>
-                            <td><span class="badge bg-primary-subtle text-primary-emphasis">{{ mUrl.clicks|default(0) }}</span></td>
-                            <td class="small text-muted">{{ mUrl.date|default('-') }}</td>
-                            <td class="text-end">
-                                <div class="d-inline-flex gap-1">
-                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="copyUrl('{{ mUrl.shorturl|e('js') }}')">Kopyala</button>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="showMoreUrlDetail({{ mUrl.id }})">Detay</button>
-                                    <form method="POST" action="/url-shortener/more-url/{{ mUrl.id }}/delete" class="d-inline" onsubmit="return confirm('Bu harici link silinsin mi?');">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Sil</button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
+                    <tbody id="more-urls-table-body"></tbody>
                 </table>
+            </div>
+            <div id="mus-filter-empty" class="text-center py-5 px-3 text-muted d-none">
+                <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width:56px;height:56px;background:#f1f5f9;">
+                    <i data-feather="search" style="width:22px;height:22px;color:#64748b;"></i>
+                </div>
+                <p class="fw-semibold text-secondary mb-1">Harici link bulunamadı</p>
+                <p class="small mb-0">Arama veya filtreyi değiştirip tekrar deneyin.</p>
             </div>
             {% endif %}
         </div>
@@ -503,6 +513,17 @@
     };
 
     let URLS_PAGE_DATA = parseUrlsData();
+    const parseMoreUrlsData = () => {
+        const el = document.getElementById('more-urls-data');
+        if (!el) return [];
+        try {
+            return JSON.parse(el.textContent.trim() || '[]');
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
+    };
+    let MORE_URLS_PAGE_DATA = parseMoreUrlsData();
     let deleteId = null;
     let editId = null;
 
@@ -770,6 +791,17 @@
         });
     }
 
+    function filterMoreUrls(list, q, domain) {
+        const qq = (q || '').trim().toLowerCase();
+        return list.filter((u) => {
+            const dom = hostFromShort(u.shorturl);
+            if (domain && dom !== domain) return false;
+            if (!qq) return true;
+            const hay = `${u.title || ''} ${u.description || ''} ${u.longurl || ''} ${u.shorturl || ''}`.toLowerCase();
+            return hay.includes(qq);
+        });
+    }
+
     function renderRow(u) {
         const titleDisplay = u.title ? escHtml(u.title) : 'Başlıksız bağlantı';
         const shortJs = escJsStr(u.shortUrl);
@@ -854,6 +886,32 @@
 </div>`;
     }
 
+    function renderMoreRow(u) {
+        const titleDisplay = u.title ? escHtml(u.title) : 'Başlıksız';
+        const desc = u.description ? `<div class="small text-muted text-truncate" style="max-width:320px;">${escHtml(u.description)}</div>` : '';
+        const shortJs = escJsStr(u.shorturl || '');
+        const dateHtml = formatDateCompactHtml(u.date || '');
+        const clicks = Number(u.clicks || 0).toLocaleString('tr-TR');
+        const clickClass = Number(u.clicks || 0) === 0 ? 'nx-url-click-badge nx-url-click-badge--zero' : 'nx-url-click-badge nx-url-click-badge--active';
+        return `
+<tr>
+    <td><div class="fw-semibold text-dark">${titleDisplay}</div>${desc}</td>
+    <td><a href="${escAttr(u.longurl || '#')}" target="_blank" rel="noopener" class="small text-break">${escHtml(u.longurl || '-')}</a></td>
+    <td><a href="${escAttr(u.shorturl || '#')}" target="_blank" rel="noopener" class="small text-break">${escHtml(displayShortUrl(u.shorturl || '', 44))}</a></td>
+    <td><span class="${clickClass}" style="color:#0f172a !important;">${clicks}</span></td>
+    <td class="small text-muted">${dateHtml}</td>
+    <td class="text-end">
+        <div class="d-inline-flex gap-1">
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="copyUrl(${shortJs})">Kopyala</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="showMoreUrlDetail(${Number(u.id || 0)})">Detay</button>
+            <form method="POST" action="/url-shortener/more-url/${Number(u.id || 0)}/delete" class="d-inline" onsubmit="return confirm('Bu harici link silinsin mi?');">
+                <button type="submit" class="btn btn-sm btn-outline-danger">Sil</button>
+            </form>
+        </div>
+    </td>
+</tr>`;
+    }
+
     function refreshTable() {
         const tbody = document.getElementById('urls-table-body');
         const mobile = document.getElementById('us-mobile-list');
@@ -882,6 +940,46 @@
             if (mobile) mobile.classList.remove('d-none');
             tbody.innerHTML = list.map(renderRow).join('');
             if (mobile) mobile.innerHTML = list.map(renderMobileCard).join('');
+        }
+        if (typeof feather !== 'undefined') feather.replace();
+    }
+
+    function populateMoreDomainFilter() {
+        const sel = document.getElementById('mus-filter-domain');
+        if (!sel) return;
+        const hosts = [...new Set(MORE_URLS_PAGE_DATA.map((x) => hostFromShort(x.shorturl)).filter(Boolean))].sort();
+        const keep = sel.value;
+        while (sel.options.length > 1) sel.remove(1);
+        hosts.forEach((h) => {
+            const o = document.createElement('option');
+            o.value = h;
+            o.textContent = h;
+            sel.appendChild(o);
+        });
+        if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+    }
+
+    function refreshMoreTable() {
+        const tbody = document.getElementById('more-urls-table-body');
+        if (!tbody) return;
+        const emptyEl = document.getElementById('mus-filter-empty');
+        const q = document.getElementById('mus-search')?.value || '';
+        const domain = document.getElementById('mus-filter-domain')?.value || '';
+        const mode = document.getElementById('mus-sort')?.value || 'new';
+
+        let list = filterMoreUrls(MORE_URLS_PAGE_DATA, q, domain);
+        list = sortUrls(list.map((x) => ({
+            createdAt: x.date || '',
+            clickCount: Number(x.clicks || 0),
+            ...x
+        })), mode).map((x) => ({ ...x, clicks: x.clickCount, date: x.createdAt }));
+
+        if (!list.length) {
+            tbody.innerHTML = '';
+            emptyEl?.classList.remove('d-none');
+        } else {
+            emptyEl?.classList.add('d-none');
+            tbody.innerHTML = list.map(renderMoreRow).join('');
         }
         if (typeof feather !== 'undefined') feather.replace();
     }
@@ -1074,6 +1172,22 @@
         if (hr) hr.addEventListener('click', () => window.location.reload());
     }
 
+    function wireMoreToolbar() {
+        const s = document.getElementById('mus-search');
+        const d = document.getElementById('mus-filter-domain');
+        const so = document.getElementById('mus-sort');
+        const r = document.getElementById('mus-refresh');
+        let t;
+        if (s) {
+            s.addEventListener('input', () => {
+                clearTimeout(t);
+                t = setTimeout(() => refreshMoreTable(), 200);
+            });
+        }
+        [d, so].forEach((el) => el && el.addEventListener('change', refreshMoreTable));
+        if (r) r.addEventListener('click', () => refreshMoreTable());
+    }
+
     function flashPageMessages() {
         const s = document.getElementById('us-page-success');
         const e = document.getElementById('us-page-error');
@@ -1204,11 +1318,14 @@
         });
 
         populateDomainFilter();
+        populateMoreDomainFilter();
         updateDerivedStats();
         toggleShortenerSource();
         refreshTable();
+        refreshMoreTable();
         refreshTopKpiFromPageData();
         wireToolbar();
+        wireMoreToolbar();
         flashPageMessages();
 
         setInterval(updateClickCountsPoll, 30000);

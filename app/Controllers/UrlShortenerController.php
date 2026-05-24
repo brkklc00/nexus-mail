@@ -106,11 +106,35 @@ class UrlShortenerController
         $moreUrlDomains = [];
         $moreUrlError = null;
         try {
-            $moreLinksResponse = $this->moreUrlClient->listLinks(1, 20, 'date');
-            if ($moreLinksResponse['ok']) {
-                $moreUrlLinks = $moreLinksResponse['data']['urls'] ?? [];
-            } else {
-                $moreUrlError = $moreLinksResponse['message'] ?: 'MoreURL bağlantısı kurulamadı.';
+            $morePage = 1;
+            $morePerPage = 100;
+            $moreMaxPages = 10;
+            $moreMerged = [];
+            $moreLoadOk = true;
+
+            while ($morePage <= $moreMaxPages) {
+                $moreLinksResponse = $this->moreUrlClient->listLinks($morePage, $morePerPage, 'date');
+                if (!$moreLinksResponse['ok']) {
+                    if ($morePage === 1) {
+                        $moreLoadOk = false;
+                        $moreUrlError = $moreLinksResponse['message'] ?: 'MoreURL bağlantısı kurulamadı.';
+                    }
+                    break;
+                }
+
+                $batch = $moreLinksResponse['data']['urls'] ?? [];
+                if (!empty($batch)) {
+                    $moreMerged = array_merge($moreMerged, $batch);
+                }
+
+                if (count($batch) < $morePerPage) {
+                    break;
+                }
+                $morePage++;
+            }
+
+            if ($moreLoadOk) {
+                $moreUrlLinks = $moreMerged;
             }
 
             $domainResponse = $this->moreUrlClient->listDomains(1, 100);
