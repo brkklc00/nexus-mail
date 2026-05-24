@@ -59,7 +59,6 @@ class SystemMonitorManagerController
             'server' => $this->getServerStats(),
             'database' => $this->getDatabaseStats(),
             'disk' => $this->getDiskStats(),
-            'network' => $this->getNetworkStats(),
             'system' => $this->getSystemInfoGrid(),
         ];
 

@@ -478,6 +478,10 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'url_shortener', 'read'));
             $group->get('/update-clicks', [\App\Controllers\UrlShortenerController::class, 'updateClickCounts'])->setName('url-shortener.update-clicks')
                 ->add(new PermissionMiddleware($em, $twig, 'url_shortener', 'read'));
+            $group->get('/more-url/refresh', [\App\Controllers\UrlShortenerController::class, 'refreshMoreUrlDomains'])->setName('url-shortener.more-url.refresh')
+                ->add(new PermissionMiddleware($em, $twig, 'url_shortener', 'read'));
+            $group->get('/more-url/{id}', [\App\Controllers\UrlShortenerController::class, 'moreUrlDetail'])->setName('url-shortener.more-url.detail')
+                ->add(new PermissionMiddleware($em, $twig, 'url_shortener', 'read'));
 
             // Dynamic routes sonra
             $group->get('/{id}/details', [\App\Controllers\UrlShortenerController::class, 'getDetails'])->setName('url-shortener.details')
@@ -489,6 +493,10 @@ return function (App $app) {
             $group->post('/{id}/update', [\App\Controllers\UrlShortenerController::class, 'update'])->setName('url-shortener.update')
                 ->add(new PermissionMiddleware($em, $twig, 'url_shortener', 'create'));
             $group->post('/{id}/delete', [\App\Controllers\UrlShortenerController::class, 'delete'])->setName('url-shortener.delete')
+                ->add(new PermissionMiddleware($em, $twig, 'url_shortener', 'delete'));
+            $group->post('/more-url/create', [\App\Controllers\UrlShortenerController::class, 'createMoreUrl'])->setName('url-shortener.more-url.create')
+                ->add(new PermissionMiddleware($em, $twig, 'url_shortener', 'create'));
+            $group->post('/more-url/{id}/delete', [\App\Controllers\UrlShortenerController::class, 'deleteMoreUrl'])->setName('url-shortener.more-url.delete')
                 ->add(new PermissionMiddleware($em, $twig, 'url_shortener', 'delete'));
         });
 

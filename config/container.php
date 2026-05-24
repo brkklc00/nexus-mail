@@ -256,6 +256,10 @@ return array_merge($settings, [
     }),
 
     // Services
+    \App\Service\MoreUrlShortenerClient::class => factory(function (ContainerInterface $c) {
+        return new \App\Service\MoreUrlShortenerClient();
+    }),
+
     \App\Application\Services\NotificationService::class => factory(function (ContainerInterface $c) {
         return new \App\Application\Services\NotificationService(
             $c->get(EntityManager::class)
@@ -391,7 +395,8 @@ return array_merge($settings, [
         return new \App\Controllers\UrlShortenerController(
             $c->get(EntityManager::class),
             $c->get(TwigEnvironment::class),
-            $c->get('settings')
+            $c->get('settings'),
+            $c->get(\App\Service\MoreUrlShortenerClient::class)
         );
     }),
 

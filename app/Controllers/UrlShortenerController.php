@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Service\MoreUrlShortenerClient;
 use App\Domain\Entities\ShortenedUrl;
 use App\Domain\Entities\User;
 use Doctrine\ORM\EntityManager;
@@ -15,6 +16,7 @@ class UrlShortenerController
 {
     private EntityManager $em;
     private Environment $twig;
+    private MoreUrlShortenerClient $moreUrlClient;
     private array $availableDomains = [
         'shrt-link.com',
         'clicky.cx',
@@ -44,10 +46,11 @@ class UrlShortenerController
         return $apiKeys[$domain] ?? $apiKeys['shrt-link.com'];
     }
 
-    public function __construct(EntityManager $em, Environment $twig, array $settings)
+    public function __construct(EntityManager $em, Environment $twig, array $settings, MoreUrlShortenerClient $moreUrlClient)
     {
         $this->em = $em;
         $this->twig = $twig;
+        $this->moreUrlClient = $moreUrlClient;
     }
 
     public function index(Request $request, Response $response): Response
@@ -99,6 +102,24 @@ class UrlShortenerController
             ->getQuery()
             ->getSingleResult();
 
+        $moreUrlLinks = [];
+        $moreUrlDomains = [];
+        $moreUrlError = null;
+
+        $moreLinksResponse = $this->moreUrlClient->listLinks(1, 20, 'date');
+        if ($moreLinksResponse['ok']) {
+            $moreUrlLinks = $moreLinksResponse['data']['urls'] ?? [];
+        } else {
+            $moreUrlError = $moreLinksResponse['message'] ?: 'MoreURL bağlantısı kurulamadı.';
+        }
+
+        $domainResponse = $this->moreUrlClient->listDomains(1, 100);
+        if ($domainResponse['ok']) {
+            $moreUrlDomains = $domainResponse['data']['domains'] ?? [];
+        } elseif ($moreUrlError === null) {
+            $moreUrlError = $domainResponse['message'] ?: 'Domain listesi alınamadı.';
+        }
+
         $html = $this->twig->render('url-shortener/index.twig', [
             'urls' => $urls,
             'total' => $total,
@@ -107,11 +128,17 @@ class UrlShortenerController
             'perPage' => $perPage,
             'stats' => $stats,
             'domains' => $this->availableDomains,
+            'moreUrlLinks' => $moreUrlLinks,
+            'moreUrlDomains' => $moreUrlDomains,
+            'moreUrlError' => $moreUrlError,
             'success' => $_SESSION['success'] ?? null,
             'error' => $_SESSION['error'] ?? null,
+            'moreUrlSuccess' => $_SESSION['more_url_success'] ?? null,
+            'moreUrlErrorFlash' => $_SESSION['more_url_error'] ?? null,
+            'moreUrlCreated' => $_SESSION['more_url_created'] ?? null,
         ]);
 
-        unset($_SESSION['success'], $_SESSION['error']);
+        unset($_SESSION['success'], $_SESSION['error'], $_SESSION['more_url_success'], $_SESSION['more_url_error'], $_SESSION['more_url_created']);
 
         $response->getBody()->write($html);
         return $response;
@@ -179,6 +206,129 @@ class UrlShortenerController
         }
 
         return $response->withHeader('Location', '/url-shortener')->withStatus(302);
+    }
+
+    public function createMoreUrl(Request $request, Response $response): Response
+    {
+        $userId = $_SESSION['user']['id'] ?? $_SESSION['user_id'] ?? null;
+        $user = $this->em->find(User::class, $userId);
+        if (!$user) {
+            return $response->withStatus(403);
+        }
+
+        $data = (array) ($request->getParsedBody() ?? []);
+        $longUrl = trim((string) ($data['long_url'] ?? $data['url'] ?? ''));
+        $domain = trim((string) ($data['more_domain'] ?? $data['domain'] ?? ''));
+        $custom = trim((string) ($data['more_custom_alias'] ?? $data['custom_alias'] ?? ''));
+        $title = trim((string) ($data['more_title'] ?? $data['title'] ?? ''));
+        $description = trim((string) ($data['more_description'] ?? $data['description'] ?? ''));
+        $status = trim((string) ($data['more_status'] ?? $data['status'] ?? 'private'));
+        $type = trim((string) ($data['more_type'] ?? $data['type'] ?? 'direct'));
+
+        if ($longUrl === '' || !filter_var($longUrl, FILTER_VALIDATE_URL)) {
+            $_SESSION['more_url_error'] = 'Geçerli bir uzun URL giriniz.';
+            return $response->withHeader('Location', '/url-shortener')->withStatus(302);
+        }
+
+        if ($custom !== '' && !preg_match('/^[a-zA-Z0-9_-]+$/', $custom)) {
+            $_SESSION['more_url_error'] = 'Özel alias sadece harf, rakam, - ve _ içerebilir.';
+            return $response->withHeader('Location', '/url-shortener')->withStatus(302);
+        }
+
+        $allowedStatus = ['private', 'public'];
+        $allowedTypes = ['direct', 'frame', 'splash'];
+        if (!in_array($status, $allowedStatus, true)) {
+            $status = 'private';
+        }
+        if (!in_array($type, $allowedTypes, true)) {
+            $type = 'direct';
+        }
+
+        $payload = [
+            'url' => $longUrl,
+            'status' => $status,
+            'type' => $type,
+        ];
+        if ($domain !== '') {
+            $payload['domain'] = $domain;
+        }
+        if ($custom !== '') {
+            $payload['custom'] = $custom;
+        }
+        if ($title !== '') {
+            $payload['metatitle'] = $title;
+        }
+        if ($description !== '') {
+            $payload['description'] = $description;
+        }
+
+        $create = $this->moreUrlClient->createLink($payload);
+        if (!$create['ok']) {
+            $_SESSION['more_url_error'] = $create['message'] ?: 'MoreURL kısa link oluşturulamadı.';
+            return $response->withHeader('Location', '/url-shortener')->withStatus(302);
+        }
+
+        $created = $create['data']['url'] ?? [];
+        $_SESSION['more_url_success'] = 'MoreURL kısa link oluşturuldu.';
+        $_SESSION['more_url_created'] = $created['shorturl'] ?? null;
+
+        return $response->withHeader('Location', '/url-shortener')->withStatus(302);
+    }
+
+    public function deleteMoreUrl(Request $request, Response $response, array $args): Response
+    {
+        $userId = $_SESSION['user']['id'] ?? $_SESSION['user_id'] ?? null;
+        $user = $this->em->find(User::class, $userId);
+        if (!$user) {
+            return $response->withStatus(403);
+        }
+
+        $id = (int) ($args['id'] ?? 0);
+        if ($id <= 0) {
+            $_SESSION['more_url_error'] = 'Geçersiz MoreURL ID.';
+            return $response->withHeader('Location', '/url-shortener')->withStatus(302);
+        }
+
+        $result = $this->moreUrlClient->deleteLink($id);
+        if (!$result['ok']) {
+            $_SESSION['more_url_error'] = $result['message'] ?: 'MoreURL link silinemedi.';
+        } else {
+            $_SESSION['more_url_success'] = 'MoreURL link silindi.';
+        }
+
+        return $response->withHeader('Location', '/url-shortener')->withStatus(302);
+    }
+
+    public function moreUrlDetail(Request $request, Response $response, array $args): Response
+    {
+        $userId = $_SESSION['user']['id'] ?? $_SESSION['user_id'] ?? null;
+        $user = $this->em->find(User::class, $userId);
+        if (!$user) {
+            $response->getBody()->write(json_encode(['ok' => false, 'message' => 'Yetkisiz']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+        }
+
+        $id = (int) ($args['id'] ?? 0);
+        $detail = $this->moreUrlClient->getLink($id);
+
+        $response->getBody()->write(json_encode($detail));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    public function refreshMoreUrlDomains(Request $request, Response $response): Response
+    {
+        $userId = $_SESSION['user']['id'] ?? $_SESSION['user_id'] ?? null;
+        $user = $this->em->find(User::class, $userId);
+        if (!$user) {
+            $response->getBody()->write(json_encode(['ok' => false, 'message' => 'Yetkisiz']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+        }
+
+        $this->moreUrlClient->clearDomainCache();
+        $domains = $this->moreUrlClient->listDomains(1, 100);
+
+        $response->getBody()->write(json_encode($domains));
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     public function update(Request $request, Response $response, array $args): Response

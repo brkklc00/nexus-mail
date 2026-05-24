@@ -39,11 +39,12 @@
 
                 {% if nx_can_email %}
                 {{ nx_sb.section_label('Mail Yönetimi') }}
-                <li class="nx-sb-group nx-sb-group--tier0 nx-sb-group--static nx-sb-group--open" data-nx-sb="email">
-                    <div class="nx-sb-group__trigger nx-sb-group__trigger--static" aria-hidden="true">
+                <li class="nx-sb-group nx-sb-group--tier0 nx-sb-group--open" data-nx-sb="email">
+                    <button type="button" class="nx-sb-group__trigger" aria-expanded="true" aria-controls="nxSbPanelEmail">
                         <i data-feather="mail" class="align-self-center menu-icon"></i>
                         <span class="nx-sb-group__label">Mail Yönetimi</span>
-                    </div>
+                        <span class="nx-sb-chevron" aria-hidden="true"><i data-feather="chevron-right"></i></span>
+                    </button>
                     <div id="nxSbPanelEmail" class="nx-sb-group__panel" role="region">
                         <ul class="nx-sb-group__list">
                             {% if nx_is_admin or _session.user_permissions.email_order.read|default(false) %}

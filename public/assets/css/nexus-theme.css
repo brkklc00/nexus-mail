@@ -10923,3 +10923,88 @@ textarea.nx-textarea-ticket--simple {
         margin: 0 -0.5rem;
     }
 }
+
+/* ===== Mail-only button and loading visibility fixes ===== */
+.btn[disabled],
+.btn:disabled,
+button[disabled],
+button:disabled,
+.btn.disabled,
+.is-loading,
+.loading,
+.btn-loading,
+[aria-busy="true"] {
+    opacity: 1 !important;
+}
+
+.btn:disabled,
+.btn.disabled,
+fieldset:disabled .btn,
+button:disabled,
+button[disabled],
+.btn.is-loading,
+.btn.loading,
+.btn.btn-loading,
+.btn[aria-busy="true"] {
+    background: #e2e8f0 !important;
+    border-color: #cbd5e1 !important;
+    color: #64748b !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+
+.btn:disabled i,
+.btn:disabled svg,
+.btn.disabled i,
+.btn.disabled svg,
+button:disabled i,
+button:disabled svg,
+.btn.is-loading i,
+.btn.is-loading svg,
+.btn.loading i,
+.btn.loading svg,
+.btn.btn-loading i,
+.btn.btn-loading svg,
+.btn[aria-busy="true"] i,
+.btn[aria-busy="true"] svg {
+    color: #64748b !important;
+    opacity: 1 !important;
+}
+
+.btn-outline-primary {
+    color: #1d4ed8;
+    border-color: #2563eb;
+    background: #fff;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+    background: #eff6ff;
+    color: #1e40af;
+    border-color: #2563eb;
+}
+
+.btn-outline-danger {
+    color: #e11d48;
+    border-color: #e11d48;
+    background: #fff;
+}
+
+.btn-outline-warning {
+    color: #b45309;
+    border-color: #f59e0b;
+    background: #fffdf5;
+}
+
+.btn-warning {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #92400e;
+}
+
+/* Mail Yönetimi alt linkleri her sayfada tıklanabilir olsun */
+.left-sidenav.nx-sidebar.nx-sidebar-layout .nx-sidebar-v2 .nx-sb-group__panel,
+.left-sidenav.nx-sidebar.nx-sidebar-layout .nx-sidebar-v2 .nx-sb-group__list,
+.left-sidenav.nx-sidebar.nx-sidebar-layout .nx-sidebar-v2 .nx-sb-group__list > li > a {
+    pointer-events: auto !important;
+}

@@ -15,7 +15,7 @@
                             <li class="breadcrumb-item active">Sunucu Yönetimi</li>
                         </ol>
                     </div>
-                    <h4 class="page-title nx-page-title mb-1">Sunucu Yönetimi</h4>
+                    <h4 class="page-title nx-page-title mb-1 text-white">Sunucu Yönetimi</h4>
                     <p class="mb-0 text-white-50">Sistem sağlığını, logları, dosyaları ve yedekleri tek ekrandan yönetin.</p>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
@@ -31,11 +31,14 @@
 
 {% block styles %}
 <style>
-.nx-sm-page .card { border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+.nx-sm-page { color: #0f172a; }
+.nx-sm-page .card { border-radius: 16px; border: 1px solid #e5eaf3; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); overflow: hidden; }
 .nx-sm-card-header { background: linear-gradient(125deg, #071a34 0%, #183b63 100%); color: #fff; border-bottom: 1px solid rgba(255,255,255,.08); border-radius: 16px 16px 0 0; padding: .72rem .95rem; }
 .nx-sm-card-title { display: flex; align-items: flex-start; gap: .6rem; margin: 0; font-size: .95rem; font-weight: 700; }
 .nx-sm-ic { width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.12); flex-shrink: 0; }
-.nx-sm-ic svg { width: 16px; height: 16px; }
+.nx-sm-ic svg, .nx-sm-card-header [data-feather] { width: 16px; height: 16px; color: #dbeafe; opacity: 1; }
+.nx-sm-card-header .btn { border-color: rgba(255,255,255,.35); color: #e2e8f0; background: rgba(255,255,255,.04); }
+.nx-sm-card-header .btn:hover { color: #fff; border-color: rgba(255,255,255,.6); background: rgba(255,255,255,.12); }
 .nx-sm-kpi { height: 100%; border-radius: 14px; border: 1px solid #e2e8f0; background: #fff; padding: .8rem; }
 .nx-sm-kpi-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .45rem; }
 .nx-sm-kpi-label { font-size: .76rem; color: #64748b; font-weight: 600; }
@@ -49,18 +52,29 @@
 .nx-sm-metric-value { font-size: .82rem; color: #0f172a; font-weight: 700; }
 .nx-sm-table td, .nx-sm-table th { vertical-align: middle; font-size: .8rem; }
 .nx-sm-table td { padding-top: .55rem; padding-bottom: .55rem; }
+.nx-sm-table thead th { background: linear-gradient(125deg, #0f2745 0%, #102a4a 100%); color: #f8fafc; border-color: rgba(255,255,255,.12); font-weight: 600; }
+.nx-sm-table tbody td { background: #fff; color: #0f172a; border-color: #e5eaf3; }
+.nx-sm-table tbody tr:hover td { background: #f8fbff; }
 .nx-sm-viewer { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: .75rem; background: #020617; color: #e2e8f0; border-radius: 12px; padding: .7rem; max-height: 420px; overflow: auto; white-space: pre-wrap; }
 .nx-sm-file-badge { font-size: .67rem; padding: .22rem .45rem; border-radius: 999px; }
 .nx-sm-empty { text-align: center; padding: 1.5rem 1rem; color: #64748b; }
 .nx-sm-pagination { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .76rem; color: #475569; margin-top: .6rem; }
 .nx-sm-pagination .btn { min-height: 32px; font-size: .75rem; }
+.nx-sm-page .form-control, .nx-sm-page .form-select { border-color: #d5deea; color: #0f172a; background: #fff; }
+.nx-sm-page .form-control::placeholder { color: #64748b; opacity: 1; }
+.nx-sm-page .nav-tabs .nav-link { color: #334155; border-color: #e2e8f0; }
+.nx-sm-page .nav-tabs .nav-link.active { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe #bfdbfe #eff6ff; font-weight: 600; }
+.nx-sm-file-folder { color: #d97706; }
+.nx-sm-file-name { color: #0f172a; font-weight: 600; }
+.nx-sm-action-btn { color: #fff !important; border-color: rgba(255,255,255,.2) !important; }
+.nx-sm-action-btn i, .nx-sm-action-btn svg { color: #dbeafe; opacity: 1; }
 @media (max-width: 991.98px){ .nx-sm-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 575.98px){ .nx-sm-metric-grid { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid nx-sm-page" id="smApp" data-csrf="{{ csrf_token|e('html_attr') }}">
+<div class="nx-sm-page" id="smApp" data-csrf="{{ csrf_token|e('html_attr') }}">
     <div id="smAlertArea"></div>
 
     <div class="row g-3 mb-3">
@@ -131,11 +145,6 @@
                 </table>
             </div>
         </div>
-    </div>
-
-    <div class="card mb-3">
-        <div class="nx-sm-card-header"><h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="wifi"></i></span><span>Network İstatistikleri</span></h5></div>
-        <div class="card-body"><div class="row g-2" id="smNetworkList"><div class="col-12 nx-sm-empty">Network verisi yükleniyor...</div></div></div>
     </div>
 
     <div class="card mb-3">

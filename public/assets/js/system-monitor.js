@@ -37,6 +37,28 @@
         });
     }
 
+    function setBusy(button, busy, busyText) {
+        if (!button) return;
+        if (busy) {
+            if (!button.dataset.originalHtml) {
+                button.dataset.originalHtml = button.innerHTML;
+            }
+            button.disabled = true;
+            button.classList.add('is-loading');
+            button.setAttribute('aria-busy', 'true');
+            const label = busyText || 'İşleniyor...';
+            button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' + escapeHtml(label);
+            return;
+        }
+        if (button.dataset.originalHtml) {
+            button.innerHTML = button.dataset.originalHtml;
+            delete button.dataset.originalHtml;
+        }
+        button.disabled = false;
+        button.classList.remove('is-loading');
+        button.removeAttribute('aria-busy');
+    }
+
     function toast(message, type) {
         const map = { success: 'success', error: 'danger', warning: 'warning', info: 'info' };
         const cls = map[type || 'info'] || 'info';
@@ -79,7 +101,6 @@
         const server = payload.server || {};
         const disk = payload.disk || {};
         const db = payload.database || {};
-        const network = payload.network || [];
         const grid = payload.system || [];
 
         const cpuUsage = Number(server.cpu && server.cpu.usage || 0);
@@ -123,19 +144,6 @@
             gridWrap.appendChild(card);
         });
 
-        const netWrap = document.getElementById('smNetworkList');
-        if (!network.length) {
-            netWrap.innerHTML = '<div class="col-12 nx-sm-empty">Network verisi bulunamadı.</div>';
-        } else {
-            netWrap.innerHTML = network.map(function (n) {
-                return '<div class="col-12 col-md-6 col-xl-4"><div class="border rounded-3 p-2 h-100">' +
-                    '<div class="d-flex justify-content-between align-items-center mb-1"><strong>' + escapeHtml(n.interface) + '</strong><small class="text-muted">' + escapeHtml(n.updated_at || '-') + '</small></div>' +
-                    '<div class="small text-muted mb-1">RX: <strong class="text-success">' + escapeHtml(n.rx_human || '-') + '</strong></div>' +
-                    '<div class="small text-muted">TX: <strong class="text-primary">' + escapeHtml(n.tx_human || '-') + '</strong></div>' +
-                    '</div></div>';
-            }).join('');
-        }
-
         state.maintenance = !!payload.maintenance_mode;
         updateMaintenanceButton();
     }
@@ -175,7 +183,7 @@
                 '<td class="text-end">' +
                 '<div class="d-inline-flex gap-1">' +
                 '<button class="btn btn-sm btn-outline-primary sm-log-view-btn" data-name="' + escapeHtmlAttr(log.name) + '"><i data-feather="eye" class="icon-xs me-1"></i>Görüntüle</button>' +
-                '<button class="btn btn-sm btn-outline-secondary sm-log-download-btn" data-name="' + escapeHtmlAttr(log.name) + '"><i data-feather="download" class="icon-xs me-1"></i>İndir</button>' +
+                '<button class="btn btn-sm btn-outline-info sm-log-download-btn" data-name="' + escapeHtmlAttr(log.name) + '"><i data-feather="download" class="icon-xs me-1"></i>İndir</button>' +
                 '<button class="btn btn-sm btn-outline-danger sm-log-clear-btn" data-name="' + escapeHtmlAttr(log.name) + '"><i data-feather="trash-2" class="icon-xs me-1"></i>Temizle</button>' +
                 '</div></td></tr>';
         }).join('');
@@ -280,7 +288,7 @@
             tbody.innerHTML = state.files.map(function (f) {
                 const safeBadge = f.is_sensitive ? '<span class="badge bg-danger-subtle text-danger-emphasis ms-1">Hassas</span>' : '';
                 return '<tr>' +
-                    '<td><strong>' + escapeHtml(f.name) + '</strong>' + safeBadge + '</td>' +
+                    '<td>' + (f.is_dir ? '<i data-feather="folder" class="icon-xs me-1 nx-sm-file-folder"></i>' : '<i data-feather="file-text" class="icon-xs me-1 text-primary"></i>') + '<span class="nx-sm-file-name">' + escapeHtml(f.name) + '</span>' + safeBadge + '</td>' +
                     '<td><span class="badge nx-sm-file-badge ' + typeBadge(f.type_badge) + '">' + escapeHtml(fileTypeLabel(f.type_badge)) + '</span></td>' +
                     '<td>' + escapeHtml(f.size_formatted || '-') + '</td>' +
                     '<td>' + escapeHtml(f.modified || '-') + '</td>' +
@@ -301,6 +309,7 @@
         document.getElementById('smFilesPageInfo').textContent = 'Sayfa ' + page + ' / ' + totalPages + ' · Toplam ' + total + ' kayıt';
         document.getElementById('smFilesPrevBtn').disabled = page <= 1;
         document.getElementById('smFilesNextBtn').disabled = page >= totalPages;
+        if (typeof feather !== 'undefined') feather.replace();
     }
 
     function fileTypeLabel(type) {
@@ -420,10 +429,17 @@
 
     function createBackup(kind) {
         const endpoint = kind === 'database' ? '/admin/system-monitor/backup/database' : '/admin/system-monitor/backup/files';
+        const buttonId = kind === 'database' ? 'smBackupDbBtn' : 'smBackupFilesBtn';
+        const button = document.getElementById(buttonId);
+        setBusy(button, true, kind === 'database' ? 'Yedekleniyor...' : 'Arşivleniyor...');
         api(endpoint, { method: 'POST' }).then(function (res) {
             toast(res.message || 'Yedek oluşturuldu', 'success');
             loadBackups();
-        }).catch(function (err) { toast(err.message, 'error'); });
+        }).catch(function (err) {
+            toast(err.message, 'error');
+        }).finally(function () {
+            setBusy(button, false);
+        });
     }
 
     function deleteBackup(type, name) {
@@ -483,7 +499,13 @@
     function escapeHtmlAttr(v) { return escapeHtml(v); }
 
     function bindEvents() {
-        document.getElementById('smRefreshBtn').addEventListener('click', function () { loadMetrics(); });
+        document.getElementById('smRefreshBtn').addEventListener('click', function () {
+            const btn = this;
+            setBusy(btn, true, 'Yenileniyor...');
+            loadMetrics().finally(function () {
+                setBusy(btn, false);
+            });
+        });
         document.getElementById('smSystemCheckBtn').addEventListener('click', runSystemCheck);
         document.getElementById('smMaintenanceToggleBtn').addEventListener('click', function () {
             showConfirm('Bakım Modu', 'Bakım modu durumu değiştirilecek. Devam edilsin mi?', 'btn-warning', toggleMaintenance);
@@ -612,7 +634,13 @@
         document.getElementById('smBackupFilesBtn').addEventListener('click', function () {
             showConfirm('Dosya Yedeği', 'Dosya yedeği oluşturulacak. İşlem birkaç dakika sürebilir.', 'btn-primary', function () { createBackup('files'); });
         });
-        document.getElementById('smLoadBackupsBtn').addEventListener('click', loadBackups);
+        document.getElementById('smLoadBackupsBtn').addEventListener('click', function () {
+            const btn = this;
+            setBusy(btn, true, 'Yükleniyor...');
+            Promise.resolve(loadBackups()).finally(function () {
+                setBusy(btn, false);
+            });
+        });
         document.getElementById('smDownloadLastDbBtn').addEventListener('click', function () {
             const last = state.backups.database[0];
             if (!last) return toast('İndirilecek veritabanı yedeği yok', 'warning');
