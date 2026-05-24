@@ -65,15 +65,15 @@
     <div class="row g-3">
         <div class="col-12 col-xl-8">
             <div class="card nx-wt-card">
-                <div class="card-header nx-wt-card-header d-flex flex-wrap justify-content-between gap-2">
-                    <div class="d-flex align-items-center gap-2">
+                <div class="card-header nx-wt-card-header nx-wt-log-header d-flex flex-wrap justify-content-between gap-2">
+                    <div class="d-flex align-items-center gap-2 nx-wt-log-header-left">
                         <h5 class="mb-0 text-white d-flex align-items-center gap-2">
                             <i data-feather="terminal" class="icon-sm"></i> Canli Worker Loglari
                         </h5>
                         <span class="badge bg-light text-dark" id="wtConnectionBadge">Baglanti bekleniyor</span>
                     </div>
-                    <div class="d-flex flex-wrap gap-2">
-                        <div class="btn-group btn-group-sm" role="group">
+                    <div class="d-flex flex-wrap gap-2 nx-wt-log-toolbar">
+                        <div class="btn-group btn-group-sm nx-wt-log-tabs" role="group">
                             <button type="button" class="btn btn-outline-light wt-log-tab active" data-type="combined">Tum Loglar</button>
                             <button type="button" class="btn btn-outline-light wt-log-tab" data-type="out">Normal Log</button>
                             <button type="button" class="btn btn-outline-light wt-log-tab" data-type="error">Hata Logu</button>
@@ -171,6 +171,18 @@
 .nx-wt-card-header { background: linear-gradient(130deg, #0b1730 0%, #1f3f67 100%); border-bottom: 1px solid rgba(255,255,255,.14); }
 .nx-wt-action-btn { border: 1px solid #cbd5e1; background: #fff; color: #1e3a8a; font-weight: 600; }
 .nx-wt-action-btn-primary { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+.nx-wt-log-header { row-gap: .75rem !important; padding-top: .9rem; padding-bottom: .9rem; }
+.nx-wt-log-header-left { min-height: 38px; }
+.nx-wt-log-toolbar { align-items: center; row-gap: .6rem; column-gap: .55rem; }
+.nx-wt-log-toolbar .btn,
+.nx-wt-log-toolbar .btn-group .btn {
+    min-height: 38px;
+    padding: .44rem .82rem;
+    font-size: .79rem;
+    border-radius: 10px;
+    line-height: 1.1;
+}
+.nx-wt-log-tabs .btn { min-width: 96px; }
 .nx-wt-terminal {
     background: #020617;
     color: #cbd5e1;
@@ -190,6 +202,19 @@
 .nx-wt-command-title { font-size: .78rem; color: #334155; text-transform: uppercase; font-weight: 700; margin-bottom: .6rem; letter-spacing: .03em; }
 @media (max-width: 1199px) {
     .nx-wt-terminal { max-height: 560px; }
+}
+@media (max-width: 991.98px) {
+    .nx-wt-log-header { padding-bottom: 1rem; }
+    .nx-wt-log-toolbar {
+        flex-wrap: nowrap !important;
+        overflow-x: auto;
+        padding-bottom: .2rem;
+        width: 100%;
+    }
+    .nx-wt-log-toolbar::-webkit-scrollbar { height: 6px; }
+    .nx-wt-log-toolbar::-webkit-scrollbar-thumb { background: rgba(148,163,184,.55); border-radius: 999px; }
+    .nx-wt-log-toolbar .btn,
+    .nx-wt-log-toolbar .btn-group { flex: 0 0 auto; }
 }
 </style>
 {% endblock %}

@@ -24,6 +24,10 @@
     let eventSource = null;
     let currentLogType = 'combined';
     let reconnectTimer = null;
+    let connectWatchdog = null;
+    let pollTimer = null;
+    let reconnectAttempts = 0;
+    let isPolling = false;
 
     function toast(type, message) {
         if (window.iziToast && typeof window.iziToast[type] === 'function') {
@@ -127,7 +131,7 @@
         }
     }
 
-    async function loadLogs(type) {
+    async function loadLogs(type, silent) {
         try {
             const data = await requestJson('/admin/worker-terminal/logs?type=' + encodeURIComponent(type) + '&lines=150');
             clearTerminal();
@@ -136,16 +140,61 @@
                 if (line.trim() !== '') appendLine(line);
             });
         } catch (err) {
-            toast('error', err.message);
+            if (!silent) {
+                toast('error', err.message);
+            }
         }
     }
 
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+        isPolling = false;
+    }
+
+    function startPolling() {
+        if (isPolling) return;
+        stopPolling();
+        isPolling = true;
+        setConnection('Polling modu aktif', true);
+        loadLogs(currentLogType, true);
+        pollTimer = setInterval(() => {
+            loadLogs(currentLogType, true);
+        }, 3000);
+    }
+
+    function scheduleReconnect() {
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+        }
+        reconnectAttempts += 1;
+        if (reconnectAttempts >= 2) {
+            startPolling();
+        } else {
+            setConnection('Yeniden baglaniyor...', false);
+        }
+        reconnectTimer = setTimeout(connectSse, 3000);
+    }
+
     function connectSse() {
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        if (connectWatchdog) {
+            clearTimeout(connectWatchdog);
+            connectWatchdog = null;
+        }
         if (eventSource) {
             eventSource.close();
         }
         setConnection('Baglaniyor...', false);
         eventSource = new EventSource('/admin/worker-terminal/stream?type=' + encodeURIComponent(currentLogType));
+        connectWatchdog = setTimeout(() => {
+            startPolling();
+        }, 4000);
 
         eventSource.addEventListener('log', (event) => {
             try {
@@ -155,23 +204,31 @@
         });
 
         eventSource.addEventListener('done', () => {
-            setConnection('Yeniden baglaniyor...', false);
             if (eventSource) {
                 eventSource.close();
             }
-            reconnectTimer = setTimeout(connectSse, 3000);
+            scheduleReconnect();
         });
 
         eventSource.onopen = function () {
+            reconnectAttempts = 0;
+            if (connectWatchdog) {
+                clearTimeout(connectWatchdog);
+                connectWatchdog = null;
+            }
+            stopPolling();
             setConnection('Canli baglanti aktif', true);
         };
 
         eventSource.onerror = function () {
-            setConnection('Baglanti kesildi, tekrar denenecek', false);
+            if (connectWatchdog) {
+                clearTimeout(connectWatchdog);
+                connectWatchdog = null;
+            }
             if (eventSource) {
                 eventSource.close();
             }
-            reconnectTimer = setTimeout(connectSse, 3000);
+            scheduleReconnect();
         };
     }
 
@@ -230,7 +287,7 @@
     function bindEvents() {
         refreshBtn?.addEventListener('click', () => {
             loadStatus();
-            loadLogs(currentLogType);
+            loadLogs(currentLogType, false);
         });
 
         pauseBtn?.addEventListener('click', () => {
@@ -268,7 +325,8 @@
                 document.querySelectorAll('.wt-log-tab').forEach((x) => x.classList.remove('active'));
                 btn.classList.add('active');
                 currentLogType = btn.getAttribute('data-type') || 'combined';
-                loadLogs(currentLogType);
+                loadLogs(currentLogType, false);
+                connectSse();
             });
         });
 
@@ -291,7 +349,7 @@
 
     bindEvents();
     bootstrapInitialStatus();
-    loadLogs(currentLogType);
+    loadLogs(currentLogType, false);
     connectSse();
     loadStatus();
     setInterval(loadStatus, 5000);
