@@ -285,6 +285,14 @@ return [
         'api' => [
             'token' => $_ENV['API_TOKEN'] ?? 'nexus_secure_api_token_2025_' . md5('nexus'),
         ],
+        'external_api' => [
+            'base_url' => $_ENV['EXTERNAL_API_BASE_URL'] ?? 'https://hub-nexus.com',
+            'key' => $_ENV['EXTERNAL_API_KEY'] ?? '',
+            'key_name' => $_ENV['EXTERNAL_API_KEY_NAME'] ?? 'partner_site',
+            'rate_limit' => (int) ($_ENV['EXTERNAL_API_RATE_LIMIT'] ?? 120),
+            'rate_window' => (int) ($_ENV['EXTERNAL_API_RATE_WINDOW'] ?? 60),
+            'timeout_seconds' => 10,
+        ],
         'database' => [
             'driver' => $_ENV['DB_DRIVER'] ?? 'pdo_mysql',
             'host' => $_ENV['DB_HOST'] ?? 'localhost',

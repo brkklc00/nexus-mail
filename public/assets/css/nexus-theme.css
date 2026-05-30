@@ -148,21 +148,26 @@ body.nx-panel .page-content .row {
         transition: transform 0.28s ease, opacity 0.22s ease;
     }
 
-    body.nx-panel.nx-desktop-sidebar-collapsed .left-sidenav.nx-sidebar.nx-sidebar-layout {
+    body.nx-panel.nx-desktop-sidebar-collapsed .left-sidenav.nx-sidebar.nx-sidebar-layout,
+    body.nx-panel.sidebar-collapsed .left-sidenav.nx-sidebar.nx-sidebar-layout {
         transform: translate3d(-100%, 0, 0) !important;
         opacity: 0 !important;
         pointer-events: none !important;
         box-shadow: none !important;
     }
 
-    body.nx-panel.nx-desktop-sidebar-collapsed .page-wrapper {
+    body.nx-panel.nx-desktop-sidebar-collapsed .page-wrapper,
+    body.nx-panel.sidebar-collapsed .page-wrapper {
         margin-left: 0 !important;
+        width: 100% !important;
     }
 
     body.nx-panel.nx-desktop-sidebar-collapsed .page-content > .container-fluid,
+    body.nx-panel.sidebar-collapsed .page-content > .container-fluid,
     body.nx-panel.enlarge-menu .page-content > .container-fluid,
     body.nx-panel.enlarge-menu-all .page-content > .container-fluid,
     body.nx-panel.nx-desktop-sidebar-collapsed .page-content > .footer.nx-footer .container-fluid,
+    body.nx-panel.sidebar-collapsed .page-content > .footer.nx-footer .container-fluid,
     body.nx-panel.enlarge-menu .page-content > .footer.nx-footer .container-fluid,
     body.nx-panel.enlarge-menu-all .page-content > .footer.nx-footer .container-fluid {
         max-width: none !important;
@@ -172,18 +177,23 @@ body.nx-panel .page-content .row {
     }
 
     body.nx-panel.nx-desktop-sidebar-collapsed .nx-dash-shell,
+    body.nx-panel.sidebar-collapsed .nx-dash-shell,
     body.nx-panel.enlarge-menu .nx-dash-shell,
     body.nx-panel.enlarge-menu-all .nx-dash-shell,
     body.nx-panel.nx-desktop-sidebar-collapsed .nx-orders-shell,
+    body.nx-panel.sidebar-collapsed .nx-orders-shell,
     body.nx-panel.enlarge-menu .nx-orders-shell,
     body.nx-panel.enlarge-menu-all .nx-orders-shell,
     body.nx-panel.nx-desktop-sidebar-collapsed .nx-txsms-shell,
+    body.nx-panel.sidebar-collapsed .nx-txsms-shell,
     body.nx-panel.enlarge-menu .nx-txsms-shell,
     body.nx-panel.enlarge-menu-all .nx-txsms-shell,
     body.nx-panel.nx-desktop-sidebar-collapsed .nx-url-shell,
+    body.nx-panel.sidebar-collapsed .nx-url-shell,
     body.nx-panel.enlarge-menu .nx-url-shell,
     body.nx-panel.enlarge-menu-all .nx-url-shell,
-    body.nx-panel.nx-desktop-sidebar-collapsed .nx-tickets-page {
+    body.nx-panel.nx-desktop-sidebar-collapsed .nx-tickets-page,
+    body.nx-panel.sidebar-collapsed .nx-tickets-page {
         max-width: none !important;
         width: 100% !important;
         margin-left: 0 !important;

@@ -7,7 +7,9 @@
 
     var BODY_OPEN = 'nx-mobile-sidebar-open';
     var BODY_DESKTOP_COLLAPSED = 'nx-desktop-sidebar-collapsed';
+    var BODY_SIDEBAR_COLLAPSED = 'sidebar-collapsed';
     var STORAGE_DESKTOP_COLLAPSED = 'nxDesktopSidebarCollapsed';
+    var STORAGE_SIDEBAR_COLLAPSED = 'sidebarCollapsed';
     var MQ = '(max-width: 991.98px)';
     var MQ_DESKTOP = '(min-width: 992px)';
     var mobileMenuOpen = false;
@@ -30,7 +32,9 @@
 
     function getStoredDesktopCollapsed() {
         try {
-            return window.localStorage.getItem(STORAGE_DESKTOP_COLLAPSED) === '1';
+            var legacy = window.localStorage.getItem(STORAGE_DESKTOP_COLLAPSED) === '1';
+            var generic = window.localStorage.getItem(STORAGE_SIDEBAR_COLLAPSED) === '1';
+            return generic || legacy;
         } catch (e) {
             return false;
         }
@@ -39,6 +43,7 @@
     function setStoredDesktopCollapsed(collapsed) {
         try {
             window.localStorage.setItem(STORAGE_DESKTOP_COLLAPSED, collapsed ? '1' : '0');
+            window.localStorage.setItem(STORAGE_SIDEBAR_COLLAPSED, collapsed ? '1' : '0');
         } catch (e) {
             /* ignore storage errors */
         }
@@ -50,6 +55,8 @@
         }
         stripLegacyEnlargeClasses();
         document.body.classList.toggle(BODY_DESKTOP_COLLAPSED, !!collapsed);
+        document.body.classList.toggle(BODY_SIDEBAR_COLLAPSED, !!collapsed);
+        setMenuButtonsExpanded(!collapsed);
         setStoredDesktopCollapsed(!!collapsed);
     }
 

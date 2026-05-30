@@ -252,6 +252,12 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->get('/{id}/details', [\App\Controllers\Admin\EmailOrderController::class, 'getDetails'])->setName('admin.email-orders.details')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->get('/{id}/approval-data', [\App\Controllers\Admin\EmailOrderController::class, 'approvalData'])->setName('admin.email-orders.approval-data')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->get('/external-users', [\App\Controllers\Admin\EmailOrderController::class, 'externalUsers'])->setName('admin.email-orders.external-users')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->get('/external-users/{id}', [\App\Controllers\Admin\EmailOrderController::class, 'externalUserShow'])->setName('admin.email-orders.external-user-show')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->post('/{id}/approve', [\App\Controllers\Admin\EmailOrderController::class, 'approve'])->setName('admin.email-orders.approve')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/update-template', [\App\Controllers\Admin\EmailOrderController::class, 'updateTemplate'])->setName('admin.email-orders.update-template')

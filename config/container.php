@@ -9,6 +9,7 @@ use App\Application\Services\EmailSmtpSelector;
 use App\Application\Services\AlibabaDirectMailReportService;
 use App\Application\Services\TransactionalEmailService;
 use App\Application\Services\DomainConfigService;
+use App\Services\ExternalMailBalanceApiService;
 use App\Infrastructure\Security\PasswordHasher;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
@@ -423,8 +424,14 @@ return array_merge($settings, [
     \App\Controllers\Admin\EmailOrderController::class => factory(function (ContainerInterface $c) {
         return new \App\Controllers\Admin\EmailOrderController(
             $c->get(EntityManager::class),
-            $c->get(TwigEnvironment::class)
+            $c->get(TwigEnvironment::class),
+            $c->get(ExternalMailBalanceApiService::class)
         );
+    }),
+
+    ExternalMailBalanceApiService::class => factory(function (ContainerInterface $c) {
+        $settings = $c->get('settings');
+        return new ExternalMailBalanceApiService($settings);
     }),
 
     \App\Controllers\Admin\EmailPhonebookController::class => factory(function (ContainerInterface $c) {

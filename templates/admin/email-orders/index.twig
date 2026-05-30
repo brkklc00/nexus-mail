@@ -346,23 +346,59 @@
     </div>
 </div>
 
-<!-- Havuz listesi ile onay modal -->
-<div class="modal fade nx-adm-eo-modal-root" id="poolApproveModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+<!-- Gönderim Onayı Modal -->
+<div class="modal fade nx-adm-eo-modal-root" id="approvalModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content nx-adm-eo-modal">
             <div class="modal-header nx-adm-eo-modal-head border-0">
-                <h5 class="modal-title text-white mb-0">Havuz siparişi onayı</h5>
+                <h5 class="modal-title text-white mb-0">Gönderim Onayı</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
             </div>
             <div class="modal-body bg-white p-3 p-md-4">
-                <input type="hidden" id="poolApproveOrderId" value="">
-                <p class="text-muted small mb-2">Mail adresleri hangi veri listesinden çekilsin?</p>
-                <label class="form-label">Veri listesi</label>
-                <select class="form-select" id="poolApproveListSelect"></select>
+                <input type="hidden" id="approvalOrderId" value="">
+                <input type="hidden" id="approvalOrderTotal" value="0">
+                <input type="hidden" id="approvalIsPoolOrder" value="0">
+                <div id="approvalAlertWrap" class="mb-3"></div>
+
+                <div class="card border mb-3">
+                    <div class="card-body py-2">
+                        <div class="small text-muted mb-1">Sipariş özeti</div>
+                        <div id="approvalSummaryLoading" class="small text-muted">Veri listeleri yükleniyor...</div>
+                        <div id="approvalSummaryContent" class="small d-none"></div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold mb-1">Müşteri seç</label>
+                    <div class="d-flex gap-2 mb-2">
+                        <input type="search" class="form-control" id="approvalCustomerSearch" placeholder="ID, ad veya e-posta ile ara">
+                        <button type="button" class="btn btn-outline-secondary" id="approvalCustomerSearchBtn">Ara</button>
+                    </div>
+                    <div id="approvalCustomersLoading" class="small text-muted mb-2">Müşteriler yükleniyor...</div>
+                    <select class="form-select" id="approvalCustomerSelect"></select>
+                    <div class="d-flex justify-content-between mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="approvalUsersPrevBtn">Önceki</button>
+                        <small id="approvalUsersPageInfo" class="text-muted"></small>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="approvalUsersNextBtn">Sonraki</button>
+                    </div>
+                </div>
+
+                <div class="card border mb-3">
+                    <div class="card-body py-2">
+                        <div class="small text-muted mb-1">Bakiye özeti</div>
+                        <div id="approvalBalanceSummary" class="small text-muted">Müşteri seçilmedi.</div>
+                    </div>
+                </div>
+
+                <div class="mb-0">
+                    <label class="form-label fw-semibold mb-1">Veri listesi</label>
+                    <select class="form-select" id="approvalDataListSelect"></select>
+                    <small class="text-muted d-block mt-1">Sadece liste özeti ve aktif kayıt sayısı yüklenir.</small>
+                </div>
             </div>
             <div class="modal-footer border-top bg-light">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">İptal</button>
-                <button type="button" class="btn btn-success" id="poolApproveConfirmBtn">Onayla ve başlat</button>
+                <button type="button" class="btn btn-success" id="approvalConfirmBtn" disabled>Onayla ve Başlat</button>
             </div>
         </div>
     </div>
@@ -415,6 +451,17 @@
 <script>
 let searchTimer;
 const defaultPerPage = '{{ per_page|default(50) }}';
+const approvalState = {
+    modal: null,
+    orderId: null,
+    orderTotal: 0,
+    isPoolOrder: false,
+    selectedCustomer: null,
+    usersPage: 1,
+    usersTotalPages: 1,
+    usersQuery: '',
+    lists: []
+};
 
 function handleSearch() {
     clearTimeout(searchTimer);
@@ -572,70 +619,214 @@ function saveOrderTemplate() {
 }
 
 function approveOrder(orderId, isPoolOrder) {
-    if (isPoolOrder) {
-        openPoolApproveModal(orderId);
-        return;
+    approvalState.orderId = orderId;
+    approvalState.isPoolOrder = !!isPoolOrder;
+    approvalState.orderTotal = 0;
+    approvalState.selectedCustomer = null;
+    approvalState.usersPage = 1;
+    approvalState.usersTotalPages = 1;
+    approvalState.usersQuery = '';
+    approvalState.lists = [];
+
+    document.getElementById('approvalOrderId').value = String(orderId);
+    document.getElementById('approvalOrderTotal').value = '0';
+    document.getElementById('approvalIsPoolOrder').value = isPoolOrder ? '1' : '0';
+    document.getElementById('approvalCustomerSearch').value = '';
+    document.getElementById('approvalSummaryLoading').classList.remove('d-none');
+    document.getElementById('approvalSummaryContent').classList.add('d-none');
+    document.getElementById('approvalSummaryContent').innerHTML = '';
+    document.getElementById('approvalCustomersLoading').textContent = 'Müşteriler yükleniyor...';
+    document.getElementById('approvalAlertWrap').innerHTML = '';
+    document.getElementById('approvalBalanceSummary').textContent = 'Müşteri seçilmedi.';
+    document.getElementById('approvalDataListSelect').innerHTML = '<option value="">Veri listeleri yükleniyor...</option>';
+    document.getElementById('approvalCustomerSelect').innerHTML = '<option value="">Müşteriler yükleniyor...</option>';
+    document.getElementById('approvalConfirmBtn').disabled = true;
+    document.getElementById('approvalConfirmBtn').innerHTML = 'Onayla ve Başlat';
+
+    if (!approvalState.modal) {
+        approvalState.modal = new bootstrap.Modal(document.getElementById('approvalModal'));
     }
-    if (!confirm('Bu kampanyayı onaylayıp başlatmak istediğinize emin misiniz? Bakiye kesilecek ve worker tarafından işlenecek.')) return;
-    submitApprove(orderId, null);
+    approvalState.modal.show();
+
+    loadApprovalData(orderId);
+    loadExternalUsers(1, '');
 }
 
-function openPoolApproveModal(orderId) {
-    document.getElementById('poolApproveOrderId').value = orderId;
-    const select = document.getElementById('poolApproveListSelect');
-    select.innerHTML = '<option value="">Yükleniyor...</option>';
-    fetch(`/admin/email-orders/${orderId}/details?section=summary&include_pool_lists=1`)
+function renderApprovalAlert(message, type = 'danger') {
+    document.getElementById('approvalAlertWrap').innerHTML = message
+        ? `<div class="alert alert-${type} py-2 mb-0">${message}</div>`
+        : '';
+}
+
+function loadApprovalData(orderId) {
+    fetch(`/admin/email-orders/${orderId}/approval-data`)
         .then(r => r.json())
         .then(data => {
-            if (!data.success || !data.pool_lists || data.pool_lists.length === 0) {
-                select.innerHTML = '';
-                alert('Havuz listesi yüklenemedi. Önce Mail Havuzu sayfasında liste oluşturun.');
+            if (!data.success) {
+                renderApprovalAlert(data.message || 'Onay verileri alınamadı.');
                 return;
             }
-            select.innerHTML = '';
-            const defId = data.default_pool_list_id;
-            data.pool_lists.forEach(function (row) {
-                const opt = document.createElement('option');
-                opt.value = row.id;
-                opt.textContent = row.name + ' (' + row.active_count.toLocaleString() + ' aktif)';
-                if (row.id === defId) opt.selected = true;
-                select.appendChild(opt);
-            });
-            new bootstrap.Modal(document.getElementById('poolApproveModal')).show();
+
+            approvalState.orderTotal = Number(data.order_total || 0);
+            approvalState.isPoolOrder = !!data.is_pool_order;
+            approvalState.lists = Array.isArray(data.available_data_lists) ? data.available_data_lists : [];
+            document.getElementById('approvalOrderTotal').value = String(approvalState.orderTotal);
+
+            const summaryHtml = `
+                <div><strong>Sipariş ID:</strong> #${data.order_id}</div>
+                <div><strong>Konu / Template:</strong> ${data.order_subject || '-'}${data.selected_template_name ? ` / ${data.selected_template_name}` : ''}</div>
+                <div><strong>Gönderim adedi:</strong> ${approvalState.orderTotal.toLocaleString('tr-TR')}</div>
+                <div><strong>Durum:</strong> ${data.order_status || '-'}</div>
+            `;
+            document.getElementById('approvalSummaryContent').innerHTML = summaryHtml;
+            document.getElementById('approvalSummaryLoading').classList.add('d-none');
+            document.getElementById('approvalSummaryContent').classList.remove('d-none');
+
+            const listSelect = document.getElementById('approvalDataListSelect');
+            listSelect.innerHTML = '';
+            if (!approvalState.lists.length) {
+                listSelect.innerHTML = '<option value="">Liste bulunamadı</option>';
+            } else {
+                approvalState.lists.forEach(row => {
+                    const opt = document.createElement('option');
+                    opt.value = String(row.id);
+                    opt.textContent = `${row.name} - ${Number(row.active_count || 0).toLocaleString('tr-TR')} aktif`;
+                    if (Number(data.selected_data_list_id || 0) === Number(row.id)) {
+                        opt.selected = true;
+                    }
+                    listSelect.appendChild(opt);
+                });
+            }
+            updateApprovalActionState();
         })
-        .catch(function () {
-            alert('Liste bilgisi alınamadı.');
+        .catch(() => renderApprovalAlert('Onay verileri alınamadı.'));
+}
+
+function loadExternalUsers(page = 1, query = '') {
+    approvalState.usersPage = page;
+    approvalState.usersQuery = query;
+    document.getElementById('approvalCustomersLoading').textContent = 'Müşteriler yükleniyor...';
+    fetch(`/admin/email-orders/external-users?page=${page}&limit=20&q=${encodeURIComponent(query)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                renderApprovalAlert(data.message || 'Müşteriler yüklenemedi.');
+                document.getElementById('approvalCustomersLoading').textContent = 'Müşteriler yüklenemedi.';
+                return;
+            }
+
+            const users = Array.isArray(data.data) ? data.data : [];
+            const select = document.getElementById('approvalCustomerSelect');
+            select.innerHTML = '';
+            if (!users.length) {
+                select.innerHTML = '<option value="">Kayıt bulunamadı</option>';
+                approvalState.selectedCustomer = null;
+            } else {
+                users.forEach(user => {
+                    const balance = Number(user.mail_balance || 0);
+                    const opt = document.createElement('option');
+                    opt.value = String(user.id);
+                    opt.dataset.balance = String(balance);
+                    opt.dataset.name = user.name || '';
+                    opt.dataset.email = user.email || '';
+                    opt.textContent = `${user.name || '-'} - ${user.email || '-'} - Bakiye: ${balance.toLocaleString('tr-TR')}`;
+                    select.appendChild(opt);
+                });
+                select.selectedIndex = 0;
+                handleCustomerSelection();
+            }
+
+            const pagination = data.pagination || {};
+            approvalState.usersTotalPages = Number(pagination.total_pages || 1);
+            document.getElementById('approvalUsersPageInfo').textContent = `Sayfa ${approvalState.usersPage} / ${approvalState.usersTotalPages}`;
+            document.getElementById('approvalUsersPrevBtn').disabled = approvalState.usersPage <= 1;
+            document.getElementById('approvalUsersNextBtn').disabled = approvalState.usersPage >= approvalState.usersTotalPages;
+            document.getElementById('approvalCustomersLoading').textContent = '';
+            updateApprovalActionState();
+        })
+        .catch(() => {
+            renderApprovalAlert('Müşteriler yüklenemedi.');
+            document.getElementById('approvalCustomersLoading').textContent = 'Müşteriler yüklenemedi.';
         });
 }
 
-function submitApprove(orderId, poolListId) {
-    const body = poolListId ? JSON.stringify({ pool_list_id: poolListId }) : '{}';
+function handleCustomerSelection() {
+    const select = document.getElementById('approvalCustomerSelect');
+    const opt = select.options[select.selectedIndex];
+    if (!opt || !opt.value) {
+        approvalState.selectedCustomer = null;
+        document.getElementById('approvalBalanceSummary').textContent = 'Müşteri seçilmedi.';
+        updateApprovalActionState();
+        return;
+    }
+    const current = Number(opt.dataset.balance || 0);
+    const toDeduct = Number(approvalState.orderTotal || 0);
+    const remaining = current - toDeduct;
+    approvalState.selectedCustomer = {
+        id: Number(opt.value),
+        name: opt.dataset.name || '',
+        email: opt.dataset.email || '',
+        currentBalance: current
+    };
+
+    document.getElementById('approvalBalanceSummary').innerHTML = `
+        <div>Mevcut bakiye: <strong>${current.toLocaleString('tr-TR')}</strong></div>
+        <div>Düşülecek bakiye: <strong>${toDeduct.toLocaleString('tr-TR')}</strong></div>
+        <div>Kalan bakiye: <strong>${remaining.toLocaleString('tr-TR')}</strong></div>
+    `;
+
+    if (remaining < 0) {
+        renderApprovalAlert(`Seçilen müşterinin mail bakiyesi yetersiz. Gönderim adedi: ${toDeduct.toLocaleString('tr-TR')}, mevcut bakiye: ${current.toLocaleString('tr-TR')}`);
+    } else {
+        renderApprovalAlert('');
+    }
+    updateApprovalActionState();
+}
+
+function updateApprovalActionState() {
+    const btn = document.getElementById('approvalConfirmBtn');
+    const listId = Number(document.getElementById('approvalDataListSelect').value || 0);
+    const hasCustomer = !!approvalState.selectedCustomer;
+    const enoughBalance = hasCustomer && approvalState.selectedCustomer.currentBalance >= Number(approvalState.orderTotal || 0);
+    const listOk = approvalState.isPoolOrder ? listId > 0 : true;
+    btn.disabled = !(hasCustomer && enoughBalance && listOk && approvalState.orderTotal > 0);
+}
+
+function submitApprove(orderId) {
+    const selectedListId = Number(document.getElementById('approvalDataListSelect').value || 0);
+    const payload = {
+        external_customer_id: Number(approvalState.selectedCustomer?.id || 0)
+    };
+    if (approvalState.isPoolOrder && selectedListId > 0) {
+        payload.pool_list_id = selectedListId;
+    }
+
+    const btn = document.getElementById('approvalConfirmBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Bakiye düşülüyor ve gönderim başlatılıyor...';
+
     fetch(`/admin/email-orders/${orderId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-        body: body
+        body: JSON.stringify(payload)
     })
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            alert('Kampanya onaylandı!');
+            alert('Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.');
             location.reload();
         } else {
-            alert('Hata: ' + (data.message || 'Onaylanamadı'));
+            renderApprovalAlert(data.message || 'Onaylanamadı.');
+            btn.disabled = false;
+            btn.innerHTML = 'Onayla ve Başlat';
         }
+    })
+    .catch((err) => {
+        renderApprovalAlert('Onay sırasında hata oluştu: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = 'Onayla ve Başlat';
     });
 }
-
-document.getElementById('poolApproveConfirmBtn').addEventListener('click', function () {
-    const orderId = parseInt(document.getElementById('poolApproveOrderId').value, 10);
-    const listId = parseInt(document.getElementById('poolApproveListSelect').value, 10);
-    if (!orderId || !listId) {
-        alert('Lütfen bir liste seçin.');
-        return;
-    }
-    bootstrap.Modal.getInstance(document.getElementById('poolApproveModal')).hide();
-    submitApprove(orderId, listId);
-});
 
 function restartOrder(orderId, isPoolOrder, status) {
     if (isPoolOrder) {
@@ -908,6 +1099,18 @@ function renderOrderDetails(order) {
             </div>
         </div>
 
+        ${order.approval ? `
+        <div class="nx-adm-eo-detail-card mt-3">
+            <span class="nx-adm-eo-detail-card-label text-uppercase">Onay / Bakiye</span>
+            <div class="small"><strong>Müşteri:</strong> ${order.approval.external_customer_name || '-'} / ${order.approval.external_customer_email || '-'}</div>
+            <div class="small"><strong>Düşülen bakiye:</strong> ${(order.approval.balance_amount || 0).toLocaleString('tr-TR')}</div>
+            <div class="small"><strong>Eski bakiye:</strong> ${order.approval.balance_old_amount !== null ? Number(order.approval.balance_old_amount).toLocaleString('tr-TR') : '-'}</div>
+            <div class="small"><strong>Yeni bakiye:</strong> ${order.approval.balance_new_amount !== null ? Number(order.approval.balance_new_amount).toLocaleString('tr-TR') : '-'}</div>
+            <div class="small"><strong>Liste:</strong> ${order.approval.selected_data_list_name || '-'}</div>
+            <div class="small"><strong>Onaylayan:</strong> ${order.approval.admin_name || '-'}</div>
+            <div class="small"><strong>Onay zamanı:</strong> ${order.approval.created_at || '-'}</div>
+        </div>` : ''}
+
         <div class="nx-adm-eo-detail-card mt-3">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                 <span class="nx-adm-eo-detail-card-label text-uppercase mb-0">Konu</span>
@@ -1017,6 +1220,33 @@ function deleteOrder(orderId) {
 
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
+
+    document.getElementById('approvalCustomerSearchBtn')?.addEventListener('click', function() {
+        const query = document.getElementById('approvalCustomerSearch').value || '';
+        loadExternalUsers(1, query);
+    });
+    document.getElementById('approvalCustomerSearch')?.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            loadExternalUsers(1, document.getElementById('approvalCustomerSearch').value || '');
+        }
+    });
+    document.getElementById('approvalCustomerSelect')?.addEventListener('change', handleCustomerSelection);
+    document.getElementById('approvalDataListSelect')?.addEventListener('change', updateApprovalActionState);
+    document.getElementById('approvalUsersPrevBtn')?.addEventListener('click', function() {
+        if (approvalState.usersPage > 1) {
+            loadExternalUsers(approvalState.usersPage - 1, approvalState.usersQuery);
+        }
+    });
+    document.getElementById('approvalUsersNextBtn')?.addEventListener('click', function() {
+        if (approvalState.usersPage < approvalState.usersTotalPages) {
+            loadExternalUsers(approvalState.usersPage + 1, approvalState.usersQuery);
+        }
+    });
+    document.getElementById('approvalConfirmBtn')?.addEventListener('click', function() {
+        if (!approvalState.orderId) return;
+        submitApprove(approvalState.orderId);
+    });
 });
 </script>
 {% endblock %}

@@ -29,6 +29,19 @@
     {% block styles %}{% endblock %}
 </head>
 <body class="dark-sidenav nx-panel">
+<script>
+(function () {
+    try {
+        var collapsed = window.localStorage.getItem('sidebarCollapsed') === '1'
+            || window.localStorage.getItem('nxDesktopSidebarCollapsed') === '1';
+        if (collapsed) {
+            document.body.classList.add('sidebar-collapsed', 'nx-desktop-sidebar-collapsed');
+        }
+    } catch (e) {
+        /* ignore storage errors */
+    }
+})();
+</script>
 
 {# Left Sidebar #}
 {% include '_partials/sidebar.twig' %}

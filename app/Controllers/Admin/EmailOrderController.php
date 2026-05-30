@@ -10,8 +10,10 @@ use App\Domain\Entities\EmailOrder;
 use App\Domain\Entities\EmailTemplate;
 use App\Domain\Entities\User;
 use App\Domain\Enum\EmailOrderStatus;
+use App\Services\ExternalMailBalanceApiService;
 use App\Support\EnumHelper;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\LockMode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Twig\Environment;
@@ -20,7 +22,8 @@ class EmailOrderController
 {
     public function __construct(
         private EntityManagerInterface $em,
-        private Environment $twig
+        private Environment $twig,
+        private ExternalMailBalanceApiService $externalMailBalanceApi
     ) {
     }
 
@@ -382,20 +385,101 @@ class EmailOrderController
     /**
      * Kampanyayı onayla (approve) - Bakiye kesilir, worker'a gider
      */
+    public function approvalData(Request $request, Response $response, array $args): Response
+    {
+        $orderId = (int) ($args['id'] ?? 0);
+        if ($orderId <= 0) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz sipariş ID'], 400);
+        }
+
+        $order = $this->em->find(EmailOrder::class, $orderId);
+        if (!$order) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Sipariş bulunamadı'], 404);
+        }
+
+        [$poolListsPayload, $defaultPoolListId] = $this->loadPoolListsPayload();
+        $summary = $this->buildOrderSummaryPayload($order, false);
+        $summary['template_id'] = $order->getTemplate()?->getId() ?: ($summary['template']['id'] ?? null);
+        $summary['template_name'] = $order->getTemplate()?->getName() ?: ($summary['template']['name'] ?? null);
+
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'order_id' => $summary['id'],
+            'order_subject' => $summary['subject'],
+            'order_total' => $summary['total'],
+            'order_status' => $summary['status'],
+            'selected_template_id' => $summary['template_id'],
+            'selected_template_name' => $summary['template_name'],
+            'is_pool_order' => $summary['is_pool_order'],
+            'selected_data_list_id' => $summary['pool_list_id'] ?: $defaultPoolListId,
+            'available_data_lists' => $poolListsPayload,
+        ]);
+    }
+
+    public function externalUsers(Request $request, Response $response): Response
+    {
+        $query = $request->getQueryParams();
+        $q = trim((string) ($query['q'] ?? ''));
+        $page = max(1, (int) ($query['page'] ?? 1));
+        $limit = max(1, min(100, (int) ($query['limit'] ?? 20)));
+
+        $result = $this->externalMailBalanceApi->listUsers($q, $page, $limit);
+        if (!$result['success']) {
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'message' => $this->translateExternalApiError($result),
+                'status' => $result['status'] ?? 500,
+                'data' => $result['data'] ?? [],
+            ], (int) ($result['status'] ?? 500));
+        }
+
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'data' => $result['data'] ?? [],
+            'pagination' => $result['pagination'] ?? null,
+        ]);
+    }
+
+    public function externalUserShow(Request $request, Response $response, array $args): Response
+    {
+        $externalUserId = (int) ($args['id'] ?? 0);
+        if ($externalUserId <= 0) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz müşteri ID'], 400);
+        }
+
+        $result = $this->externalMailBalanceApi->getUser($externalUserId);
+        if (!$result['success']) {
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'message' => $this->translateExternalApiError($result),
+                'status' => $result['status'] ?? 500,
+                'data' => $result['data'] ?? [],
+            ], (int) ($result['status'] ?? 500));
+        }
+
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'data' => $result['data'] ?? [],
+        ]);
+    }
+
     public function approve(Request $request, Response $response, array $args): Response
     {
+        $externalDebitDone = false;
+        $externalUserId = 0;
+        $orderTotal = 0;
+        $orderSubject = '';
+        $approvalDescription = '';
+        $externalUserData = [];
+        $selectedDataListId = null;
+        $selectedDataListName = null;
+        $adminUserId = isset($_SESSION['user']['id']) ? (int) $_SESSION['user']['id'] : null;
+        $subtractResult = null;
+
         try {
             $orderId = (int) $args['id'];
-            $order = $this->em->find(EmailOrder::class, $orderId);
-
-            if (!$order) {
-                $response->getBody()->write(json_encode(['success' => false, 'message' => 'Sipariş bulunamadı']));
-                return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
-            }
-
-            if ($order->getStatus() !== EmailOrderStatus::PENDING_APPROVAL) {
-                $response->getBody()->write(json_encode(['success' => false, 'message' => 'Sadece onay bekleyen siparişler onaylanabilir']));
-                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            if ($orderId <= 0) {
+                return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz sipariş ID'], 400);
             }
 
             $body = (string) $request->getBody();
@@ -403,20 +487,42 @@ class EmailOrderController
             if (!is_array($payload)) {
                 $payload = $request->getParsedBody() ?: [];
             }
+            $externalUserId = isset($payload['external_customer_id']) ? (int) $payload['external_customer_id'] : 0;
+            if ($externalUserId <= 0) {
+                return $this->jsonResponse($response, ['success' => false, 'message' => 'Lütfen müşteri seçin.'], 400);
+            }
+
             $requestedPoolListId = isset($payload['pool_list_id']) ? (int) $payload['pool_list_id'] : null;
+            $conn = $this->em->getConnection();
+            $conn->beginTransaction();
+
+            $order = $this->em->find(EmailOrder::class, $orderId);
+            if (!$order) {
+                $conn->rollBack();
+                return $this->jsonResponse($response, ['success' => false, 'message' => 'Sipariş bulunamadı'], 404);
+            }
+            $this->em->lock($order, LockMode::PESSIMISTIC_WRITE);
+
+            if ($order->getStatus() !== EmailOrderStatus::PENDING_APPROVAL) {
+                $conn->rollBack();
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'message' => 'Bu sipariş zaten onay sürecinde veya onaylanmış.'
+                ], 409);
+            }
 
             if ($order->isPoolOrder()) {
                 if ($requestedPoolListId === null || $requestedPoolListId < 1) {
-                    $response->getBody()->write(json_encode([
+                    $conn->rollBack();
+                    return $this->jsonResponse($response, [
                         'success' => false,
                         'message' => 'Sistem havuzu siparişi için hangi veri listesinin kullanılacağını seçmelisiniz.',
-                    ]));
-                    return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    ], 400);
                 }
                 $poolList = $this->em->find(EmailDataPoolList::class, $requestedPoolListId);
                 if (!$poolList) {
-                    $response->getBody()->write(json_encode(['success' => false, 'message' => 'Geçersiz havuz listesi']));
-                    return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    $conn->rollBack();
+                    return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz havuz listesi'], 400);
                 }
                 $availableInList = (int) $this->em->createQueryBuilder()
                     ->select('COUNT(p.id)')
@@ -428,61 +534,163 @@ class EmailOrderController
                     ->getQuery()
                     ->getSingleScalarResult();
                 if ($availableInList < $order->getTotal()) {
-                    $response->getBody()->write(json_encode([
+                    $conn->rollBack();
+                    return $this->jsonResponse($response, [
                         'success' => false,
                         'message' => sprintf(
                             'Seçilen listede yeterli aktif kayıt yok (gerekli: %d, mevcut: %d).',
                             $order->getTotal(),
                             $availableInList
                         ),
-                    ]));
-                    return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    ], 400);
                 }
                 $order->setPoolList($poolList);
+                $selectedDataListId = $poolList->getId();
+                $selectedDataListName = $poolList->getName();
             }
 
-            $user = $order->getUser();
-            $totalEmails = $order->getTotal();
-            $emailCredit = $user->getEmailCredit() ?? 0;
-
-            if ($totalEmails > $emailCredit) {
-                $response->getBody()->write(json_encode([
+            $orderTotal = max(0, $order->getTotal());
+            if ($orderTotal < 1) {
+                $conn->rollBack();
+                return $this->jsonResponse($response, [
                     'success' => false,
-                    'message' => "Yetersiz mail kredisi. Gerekli: {$totalEmails}, Mevcut: {$emailCredit}"
-                ]));
-                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    'message' => 'Siparişte gönderim adedi bulunamadı.'
+                ], 400);
             }
 
-            // Bakiyeden düş
-            $newCredit = $emailCredit - $totalEmails;
-            $user->setEmailCredit($newCredit);
+            $orderSubject = trim((string) $order->getSubject());
+            $approvalDescription = sprintf('Nexus Mail gönderim onayı - Order #%d - %s', $order->getId(), $orderSubject);
 
-            // Transaction oluştur
-            $transaction = new \App\Domain\Entities\EmailTransaction();
-            $transaction->setUser($user);
-            $transaction->setType(\App\Domain\Enum\EmailTransactionType::DEBIT);
-            $transaction->setAmount($totalEmails);
-            $transaction->setDescription("Mail siparişi #{$order->getId()} onaylandı - {$totalEmails} mail gönderimi");
-            $transaction->setBalanceBefore($emailCredit);
-            $transaction->setBalanceAfter($newCredit);
+            $externalUserResult = $this->externalMailBalanceApi->getUser($externalUserId);
+            if (!$externalUserResult['success']) {
+                $translated = $this->translateExternalApiError($externalUserResult);
+                $this->insertApprovalLog([
+                    'order_id' => $order->getId(),
+                    'admin_user_id' => $adminUserId,
+                    'external_customer_id' => $externalUserId,
+                    'external_customer_name' => null,
+                    'external_customer_email' => null,
+                    'selected_data_list_id' => $selectedDataListId,
+                    'selected_data_list_name' => $selectedDataListName,
+                    'order_total' => $orderTotal,
+                    'balance_old_amount' => null,
+                    'balance_amount' => $orderTotal,
+                    'balance_new_amount' => null,
+                    'status' => 'failed',
+                    'error_message' => $translated,
+                    'api_response' => $externalUserResult,
+                ], $conn);
+                $conn->commit();
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'message' => $translated
+                ], (int) ($externalUserResult['status'] ?? 400));
+            }
+            $externalUserData = is_array($externalUserResult['data']) ? $externalUserResult['data'] : [];
+
+            $subtractResult = $this->externalMailBalanceApi->subtractBalance($externalUserId, $orderTotal, $approvalDescription);
+            if (!$subtractResult['success']) {
+                $translated = $this->translateExternalApiError($subtractResult);
+                $this->insertApprovalLog([
+                    'order_id' => $order->getId(),
+                    'admin_user_id' => $adminUserId,
+                    'external_customer_id' => $externalUserId,
+                    'external_customer_name' => (string) ($externalUserData['name'] ?? ''),
+                    'external_customer_email' => (string) ($externalUserData['email'] ?? ''),
+                    'selected_data_list_id' => $selectedDataListId,
+                    'selected_data_list_name' => $selectedDataListName,
+                    'order_total' => $orderTotal,
+                    'balance_old_amount' => isset($subtractResult['data']['current_balance']) ? (int) $subtractResult['data']['current_balance'] : null,
+                    'balance_amount' => $orderTotal,
+                    'balance_new_amount' => null,
+                    'status' => 'failed',
+                    'error_message' => $translated,
+                    'api_response' => $subtractResult,
+                ], $conn);
+                $conn->commit();
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'message' => $translated
+                ], (int) ($subtractResult['status'] ?? 400));
+            }
+            $externalDebitDone = true;
 
             $order->setStatus(EmailOrderStatus::PENDING);
-            $this->em->persist($transaction);
-            $this->em->persist($user);
             $this->em->flush();
 
-            $response->getBody()->write(json_encode([
+            $balanceData = is_array($subtractResult['data'] ?? null) ? $subtractResult['data'] : [];
+            $this->insertApprovalLog([
+                'order_id' => $order->getId(),
+                'admin_user_id' => $adminUserId,
+                'external_customer_id' => $externalUserId,
+                'external_customer_name' => (string) ($externalUserData['name'] ?? ''),
+                'external_customer_email' => (string) ($externalUserData['email'] ?? ''),
+                'selected_data_list_id' => $selectedDataListId,
+                'selected_data_list_name' => $selectedDataListName,
+                'order_total' => $orderTotal,
+                'balance_old_amount' => isset($balanceData['old_balance']) ? (int) $balanceData['old_balance'] : null,
+                'balance_amount' => isset($balanceData['amount']) ? (int) $balanceData['amount'] : $orderTotal,
+                'balance_new_amount' => isset($balanceData['new_balance']) ? (int) $balanceData['new_balance'] : null,
+                'status' => 'success',
+                'error_message' => null,
+                'api_response' => $subtractResult,
+            ], $conn);
+
+            $conn->commit();
+            return $this->jsonResponse($response, [
                 'success' => true,
-                'message' => 'Kampanya onaylandı. Worker tarafından işlenecek.'
-            ]));
-            return $response->withHeader('Content-Type', 'application/json');
-        } catch (\Exception $e) {
+                'message' => 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.'
+            ]);
+        } catch (\Throwable $e) {
+            if (isset($conn) && $conn->isTransactionActive()) {
+                $conn->rollBack();
+            }
+
+            if ($externalDebitDone && $externalUserId > 0 && $orderTotal > 0) {
+                $rollbackResult = $this->externalMailBalanceApi->addBalance(
+                    $externalUserId,
+                    $orderTotal,
+                    sprintf('Nexus Mail gönderim onayı rollback - Order #%d', (int) ($args['id'] ?? 0))
+                );
+                $rollbackStatus = $rollbackResult['success'] ? 'rollback_success' : 'rollback_failed';
+                $rollbackMessage = $rollbackResult['success']
+                    ? 'Onay sonrası sistem hatası nedeniyle bakiye geri eklendi.'
+                    : 'Onay sonrası hata oluştu, bakiye geri eklenemedi. Manuel kontrol gerekli.';
+
+                $this->insertApprovalLog([
+                    'order_id' => (int) ($args['id'] ?? 0),
+                    'admin_user_id' => $adminUserId,
+                    'external_customer_id' => $externalUserId,
+                    'external_customer_name' => (string) ($externalUserData['name'] ?? ''),
+                    'external_customer_email' => (string) ($externalUserData['email'] ?? ''),
+                    'selected_data_list_id' => $selectedDataListId,
+                    'selected_data_list_name' => $selectedDataListName,
+                    'order_total' => $orderTotal,
+                    'balance_old_amount' => null,
+                    'balance_amount' => $orderTotal,
+                    'balance_new_amount' => null,
+                    'status' => $rollbackStatus,
+                    'error_message' => $rollbackMessage,
+                    'api_response' => $rollbackResult,
+                ]);
+
+                if ($rollbackResult['success']) {
+                    return $this->jsonResponse($response, [
+                        'success' => false,
+                        'message' => 'Onay sırasında sistem hatası oluştu. Düşülen bakiye geri eklendi, sipariş onaylanmadı.'
+                    ], 500);
+                }
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'message' => 'Onay sırasında kritik hata oluştu. Bakiye geri eklenemedi, manuel müdahale gerekli.'
+                ], 500);
+            }
+
             error_log('Email Order Approve Error: ' . $e->getMessage());
-            $response->getBody()->write(json_encode([
+            return $this->jsonResponse($response, [
                 'success' => false,
                 'message' => 'Onay sırasında hata: ' . $e->getMessage()
-            ]));
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+            ], 500);
         }
     }
 
@@ -1085,6 +1293,7 @@ class EmailOrderController
         $template = $order->getTemplate()
             ? ['id' => $order->getTemplate()->getId(), 'name' => $order->getTemplate()->getName()]
             : $this->findTemplateMetaBySubject($subject);
+        $latestApproval = $this->getLatestApprovalLog((int) $order->getId());
         return [
             'id' => $order->getId(),
             'user' => [
@@ -1107,6 +1316,7 @@ class EmailOrderController
             'updatedAt' => $order->getUpdatedAt()->format('d.m.Y'),
             'completedAt' => $order->getCompletedAt() ? $order->getCompletedAt()->format('d.m.Y') : null,
             'body' => $includeBody ? $order->getBody() : null,
+            'approval' => $latestApproval,
         ];
     }
 
@@ -1238,6 +1448,131 @@ class EmailOrderController
         ];
     }
 
+    private function jsonResponse(Response $response, array $payload, int $status = 200): Response
+    {
+        $response->getBody()->write(json_encode($payload, JSON_UNESCAPED_UNICODE));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
+    }
+
+    private function translateExternalApiError(array $result): string
+    {
+        $status = (int) ($result['status'] ?? 500);
+        $message = strtolower(trim((string) ($result['message'] ?? '')));
+
+        if ($message === 'timeout' || $status === 0) {
+            return 'Bakiye API’sine ulaşılamadı. Lütfen tekrar deneyin.';
+        }
+        if (str_contains($message, 'insufficient mail balance')) {
+            return 'Seçilen müşterinin mail bakiyesi yetersiz.';
+        }
+        if (str_contains($message, 'validation failed')) {
+            return 'Bakiye işlemi doğrulanamadı.';
+        }
+        if (str_contains($message, 'unauthorized')) {
+            return 'Bakiye API anahtarı hatalı veya yetkisiz.';
+        }
+        if (str_contains($message, 'content-type')) {
+            return 'API isteği JSON formatında gönderilmelidir.';
+        }
+        if (str_contains($message, 'too many requests')) {
+            return 'Bakiye API limitine ulaşıldı. Lütfen biraz sonra tekrar deneyin.';
+        }
+        if (str_contains($message, 'user not found')) {
+            return 'Seçilen müşteri bulunamadı.';
+        }
+        if ($status === 401) {
+            return 'Bakiye API anahtarı hatalı veya yetkisiz.';
+        }
+        if ($status === 503) {
+            return 'Bakiye API yapılandırması eksik.';
+        }
+        if ($status === 415) {
+            return 'API isteği JSON formatında gönderilmelidir.';
+        }
+        if ($status === 429) {
+            return 'Bakiye API limitine ulaşıldı. Lütfen biraz sonra tekrar deneyin.';
+        }
+        if ($status === 404) {
+            return 'Seçilen müşteri bulunamadı.';
+        }
+        if ($status === 422 && str_contains($message, 'insufficient')) {
+            return 'Seçilen müşterinin mail bakiyesi yetersiz.';
+        }
+        if ($status === 422) {
+            return 'Bakiye işlemi doğrulanamadı.';
+        }
+        if ($status >= 500) {
+            return 'Bakiye API tarafında sunucu hatası oluştu.';
+        }
+
+        return 'Bakiye API işleminde hata oluştu.';
+    }
+
+    private function insertApprovalLog(array $payload, ?\Doctrine\DBAL\Connection $connection = null): void
+    {
+        try {
+            $conn = $connection ?: $this->em->getConnection();
+            $conn->insert('email_order_approval_logs', [
+                'order_id' => (int) ($payload['order_id'] ?? 0),
+                'admin_user_id' => isset($payload['admin_user_id']) ? (int) $payload['admin_user_id'] : null,
+                'external_customer_id' => (int) ($payload['external_customer_id'] ?? 0),
+                'external_customer_name' => (string) ($payload['external_customer_name'] ?? ''),
+                'external_customer_email' => (string) ($payload['external_customer_email'] ?? ''),
+                'selected_data_list_id' => isset($payload['selected_data_list_id']) ? (int) $payload['selected_data_list_id'] : null,
+                'selected_data_list_name' => (string) ($payload['selected_data_list_name'] ?? ''),
+                'order_total' => (int) ($payload['order_total'] ?? 0),
+                'balance_old_amount' => isset($payload['balance_old_amount']) ? (int) $payload['balance_old_amount'] : null,
+                'balance_amount' => (int) ($payload['balance_amount'] ?? 0),
+                'balance_new_amount' => isset($payload['balance_new_amount']) ? (int) $payload['balance_new_amount'] : null,
+                'status' => (string) ($payload['status'] ?? 'failed'),
+                'error_message' => $payload['error_message'] ?? null,
+                'api_response' => json_encode($payload['api_response'] ?? [], JSON_UNESCAPED_UNICODE),
+                'created_at' => (new \DateTime())->format('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            error_log('email_order_approval_logs insert failed: ' . $e->getMessage());
+        }
+    }
+
+    private function getLatestApprovalLog(int $orderId): ?array
+    {
+        if ($orderId <= 0) {
+            return null;
+        }
+        try {
+            $row = $this->em->getConnection()->executeQuery(
+                "SELECT l.*, u.name AS admin_name
+                 FROM email_order_approval_logs l
+                 LEFT JOIN users u ON u.id = l.admin_user_id
+                 WHERE l.order_id = ?
+                 ORDER BY l.id DESC
+                 LIMIT 1",
+                [$orderId]
+            )->fetchAssociative();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        if (!$row) {
+            return null;
+        }
+
+        return [
+            'external_customer_id' => (int) ($row['external_customer_id'] ?? 0),
+            'external_customer_name' => (string) ($row['external_customer_name'] ?? ''),
+            'external_customer_email' => (string) ($row['external_customer_email'] ?? ''),
+            'selected_data_list_id' => isset($row['selected_data_list_id']) ? (int) $row['selected_data_list_id'] : null,
+            'selected_data_list_name' => (string) ($row['selected_data_list_name'] ?? ''),
+            'balance_old_amount' => isset($row['balance_old_amount']) ? (int) $row['balance_old_amount'] : null,
+            'balance_amount' => (int) ($row['balance_amount'] ?? 0),
+            'balance_new_amount' => isset($row['balance_new_amount']) ? (int) $row['balance_new_amount'] : null,
+            'status' => (string) ($row['status'] ?? ''),
+            'error_message' => (string) ($row['error_message'] ?? ''),
+            'admin_name' => (string) ($row['admin_name'] ?? ''),
+            'created_at' => (string) ($row['created_at'] ?? ''),
+        ];
+    }
+
     private function loadPoolListsPayload(): array
     {
         $listEntities = $this->em->createQueryBuilder()
@@ -1248,17 +1583,17 @@ class EmailOrderController
             ->getQuery()
             ->getResult();
 
+        $activeCountRows = $this->em->getConnection()->executeQuery(
+            'SELECT pool_list_id, COUNT(id) AS active_count FROM email_data_pool WHERE is_active = 1 GROUP BY pool_list_id'
+        )->fetchAllAssociative();
+        $activeCountMap = [];
+        foreach ($activeCountRows as $row) {
+            $activeCountMap[(int) ($row['pool_list_id'] ?? 0)] = (int) ($row['active_count'] ?? 0);
+        }
+
         $poolListsPayload = [];
         foreach ($listEntities as $listEntity) {
-            $activeCount = (int) $this->em->createQueryBuilder()
-                ->select('COUNT(p.id)')
-                ->from(EmailDataPool::class, 'p')
-                ->where('p.poolList = :list')
-                ->andWhere('p.isActive = :active')
-                ->setParameter('list', $listEntity)
-                ->setParameter('active', true)
-                ->getQuery()
-                ->getSingleScalarResult();
+            $activeCount = (int) ($activeCountMap[$listEntity->getId()] ?? 0);
             $poolListsPayload[] = [
                 'id' => $listEntity->getId(),
                 'name' => $listEntity->getName(),
