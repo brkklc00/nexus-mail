@@ -358,10 +358,13 @@
                 </div>
                 {% if total > 0 %}
                 {% set startItem = ((page - 1) * per_page) + 1 %}
-                {% set endItem = [page * per_page, total]|min %}
+                {% set rawEndItem = page * per_page %}
+                {% set endItem = rawEndItem > total ? total : rawEndItem %}
                 {% set baseQuery = 'q=' ~ (q|default('')|url_encode) ~ '&status=' ~ (selected_status|default('')|url_encode) ~ '&per_page=' ~ per_page %}
-                {% set rangeStart = [1, page - 1]|max %}
-                {% set rangeEnd = [total_pages, page + 1]|min %}
+                {% set rangeStartCandidate = page - 1 %}
+                {% set rangeStart = rangeStartCandidate < 1 ? 1 : rangeStartCandidate %}
+                {% set rangeEndCandidate = page + 1 %}
+                {% set rangeEnd = rangeEndCandidate > total_pages ? total_pages : rangeEndCandidate %}
                 <div class="nx-orders-pagination">
                     <div class="nx-orders-pagination-meta">
                         Toplam {{ total|number_format(0, ',', '.') }} sipariş · {{ startItem|number_format(0, ',', '.') }}-{{ endItem|number_format(0, ',', '.') }} · {{ per_page }} / sayfa · Sayfa {{ page }} / {{ total_pages }}
