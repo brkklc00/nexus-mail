@@ -103,12 +103,6 @@
     color: #64748b;
 }
 
-.nx-dash-badge-cancelled {
-    background: #eef2ff !important;
-    border: 1px solid #c7d2fe !important;
-    color: #3730a3 !important;
-}
-
 @media (max-width: 991.98px) {
     .nx-dash-quick-grid {
         grid-template-columns: 1fr;
@@ -315,6 +309,8 @@
                         <tbody>
                             {% for order in recentEmailOrders %}
                             {% set sv = order.status.value|default('pending') %}
+                            {% set statusClass = sv in ['pending','pending_approval'] ? 'is-pending' : (sv == 'processing' ? 'is-processing' : (sv in ['completed','sent'] ? 'is-completed' : (sv == 'failed' ? 'is-failed' : (sv in ['cancelled','canceled'] ? 'is-cancelled' : 'is-cancelled'))) ) %}
+                            {% set statusLabel = sv in ['pending','pending_approval'] ? 'Bekliyor' : (sv == 'processing' ? 'İşleniyor' : (sv in ['completed','sent'] ? 'Tamamlandı' : (sv == 'failed' ? 'Başarısız' : (sv in ['cancelled','canceled'] ? 'İptal' : sv))) ) %}
                             {% set recipientLabel = order.sourceType == 'pool'
                                 ? ('Havuz: ' ~ (order.poolList ? order.poolList.name : ('#' ~ (order.lastPoolId|default('—')))))
                                 : (order.total > 0 ? order.total|number_format(0, ',', '.') ~ ' alıcı' : 'Liste / manuel') %}
@@ -327,19 +323,7 @@
                                     <span class="nx-dash-order-recipient">{{ recipientLabel }}</span>
                                 </td>
                                 <td>
-                                    {% if sv == 'processing' %}
-                                        <span class="badge bg-info-subtle text-info-emphasis">İşleniyor</span>
-                                    {% elseif sv == 'completed' or sv == 'sent' %}
-                                        <span class="badge bg-success-subtle text-success-emphasis">Tamamlandı</span>
-                                    {% elseif sv == 'pending' or sv == 'pending_approval' %}
-                                        <span class="badge bg-warning-subtle text-warning-emphasis">Bekliyor</span>
-                                    {% elseif sv == 'failed' %}
-                                        <span class="badge bg-danger-subtle text-danger-emphasis">Başarısız</span>
-                                    {% elseif sv == 'cancelled' %}
-                                        <span class="badge nx-dash-badge-cancelled">İptal</span>
-                                    {% else %}
-                                        <span class="badge bg-light text-dark">{{ sv }}</span>
-                                    {% endif %}
+                                    <span class="status-badge {{ statusClass }}">{{ statusLabel }}</span>
                                 </td>
                                 <td>{{ order.createdAt|date('d.m.Y H:i') }}</td>
                                 <td class="text-end"><a href="/email-orders/{{ order.id }}" class="btn btn-sm btn-light"><i data-feather="eye" class="icon-xs me-1"></i>Detay</a></td>

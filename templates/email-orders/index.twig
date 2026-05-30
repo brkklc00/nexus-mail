@@ -269,19 +269,19 @@
                                 </td>
                                 <td>
                                     {% if sv == 'pending_approval' %}
-                                        <span class="badge nx-orders-status-badge bg-warning-subtle text-warning-emphasis">Onay Bekliyor</span>
+                                        <span class="mail-status-badge is-pending">Bekliyor</span>
                                     {% elseif sv == 'pending' %}
-                                        <span class="badge nx-orders-status-badge bg-secondary-subtle text-secondary-emphasis">Bekliyor</span>
+                                        <span class="mail-status-badge is-pending">Bekliyor</span>
                                     {% elseif sv == 'processing' %}
-                                        <span class="badge nx-orders-status-badge bg-info-subtle text-info-emphasis">Gönderiliyor</span>
+                                        <span class="mail-status-badge is-processing">İşleniyor</span>
                                     {% elseif sv == 'sent' or sv == 'completed' %}
-                                        <span class="badge nx-orders-status-badge bg-success-subtle text-success-emphasis">Gönderildi</span>
+                                        <span class="mail-status-badge is-completed">Tamamlandı</span>
                                     {% elseif sv == 'failed' %}
-                                        <span class="badge nx-orders-status-badge bg-danger-subtle text-danger-emphasis">Başarısız</span>
-                                    {% elseif sv == 'cancelled' %}
-                                        <span class="badge nx-orders-status-badge bg-secondary-subtle text-secondary-emphasis">İptal</span>
+                                        <span class="mail-status-badge is-failed">Başarısız</span>
+                                    {% elseif sv == 'cancelled' or sv == 'canceled' %}
+                                        <span class="mail-status-badge is-cancelled">İptal</span>
                                     {% else %}
-                                        <span class="badge nx-orders-status-badge bg-secondary-subtle text-secondary-emphasis">—</span>
+                                        <span class="mail-status-badge is-cancelled">—</span>
                                     {% endif %}
                                 </td>
                                 <td class="text-end">{{ order.total|number_format(0, ',', '.') }}</td>
@@ -842,20 +842,22 @@ function renderOrderDetails(order, emails, data = {}) {
     console.log('Rendering page:', currentEmailPage, 'Total emails:', emails.length);
     
     const statusBadges = {
-        'pending': '<span class="badge bg-secondary">Bekliyor</span>',
-        'processing': '<span class="badge bg-warning">İşleniyor</span>',
-        'sent': '<span class="badge bg-success">Gönderildi</span>',
-        'completed': '<span class="badge bg-success">Gönderildi</span>',
-        'failed': '<span class="badge bg-danger">Başarısız</span>',
-        'cancelled': '<span class="badge bg-dark">İptal</span>'
+        'pending': '<span class="mail-status-badge is-pending">Bekliyor</span>',
+        'pending_approval': '<span class="mail-status-badge is-pending">Bekliyor</span>',
+        'processing': '<span class="mail-status-badge is-processing">İşleniyor</span>',
+        'sent': '<span class="mail-status-badge is-completed">Tamamlandı</span>',
+        'completed': '<span class="mail-status-badge is-completed">Tamamlandı</span>',
+        'failed': '<span class="mail-status-badge is-failed">Başarısız</span>',
+        'cancelled': '<span class="mail-status-badge is-cancelled">İptal</span>',
+        'canceled': '<span class="mail-status-badge is-cancelled">İptal</span>'
     };
     
     const emailStatusBadges = {
-        'pending': '<span class="badge bg-secondary">Bekliyor</span>',
-        'sent': '<span class="badge bg-success">Başarılı</span>',
-        'delivered': '<span class="badge bg-success">Başarılı</span>',
-        'bounced': '<span class="badge bg-warning">Geri Döndü</span>',
-        'failed': '<span class="badge bg-danger">Başarısız</span>'
+        'pending': '<span class="mail-status-badge is-pending">Bekliyor</span>',
+        'sent': '<span class="mail-status-badge is-completed">Başarılı</span>',
+        'delivered': '<span class="mail-status-badge is-completed">Başarılı</span>',
+        'bounced': '<span class="mail-status-badge is-cancelled">Geri Döndü</span>',
+        'failed': '<span class="mail-status-badge is-failed">Başarısız</span>'
     };
     
     let html = `
@@ -976,7 +978,7 @@ function renderOrderDetails(order, emails, data = {}) {
             `;
         } else {
             paginatedEmails.forEach(email => {
-                const statusDisplay = emailStatusBadges[email.status] || `<span class="badge bg-info">${email.status}</span>`;
+                const statusDisplay = emailStatusBadges[email.status] || `<span class="mail-status-badge is-processing">${email.status}</span>`;
                 const dateDisplay = email.deliveredAt || email.sentAt || '-';
                 html += `
                     <tr>

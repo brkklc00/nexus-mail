@@ -5060,43 +5060,93 @@ body.nx-panel > .modal-backdrop {
     color: var(--nx-navy-900);
 }
 
+.status-badge,
+.mail-status-badge,
 .nx-orders-status-badge {
-    font-weight: 600;
-    font-size: 0.58rem;
-    padding: 0.18em 0.45em;
-    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 86px;
+    padding: 5px 12px;
+    border-radius: 9px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
     border: 1px solid transparent;
+    white-space: nowrap;
 }
 
-.nx-orders-status-badge.bg-success-subtle {
-    background: #ecfdf5 !important;
-    color: #047857 !important;
-    border-color: #a7f3d0;
+.status-badge.is-pending,
+.mail-status-badge.is-pending,
+.nx-orders-status-badge.is-pending {
+    background: #fff7e6;
+    color: #b45309;
+    border-color: #facc15;
 }
 
-.nx-orders-status-badge.bg-warning-subtle {
-    background: #fffbeb !important;
-    color: #b45309 !important;
-    border-color: #fde68a;
+.status-badge.is-processing,
+.mail-status-badge.is-processing,
+.nx-orders-status-badge.is-processing {
+    background: #e0f2fe;
+    color: #075985;
+    border-color: #7dd3fc;
 }
 
-.nx-orders-status-badge.bg-danger-subtle {
-    background: #fef2f2 !important;
-    color: #b91c1c !important;
+.status-badge.is-completed,
+.mail-status-badge.is-completed,
+.nx-orders-status-badge.is-completed {
+    background: #dcfce7;
+    color: #047857;
+    border-color: #86efac;
+}
+
+.status-badge.is-failed,
+.mail-status-badge.is-failed,
+.nx-orders-status-badge.is-failed {
+    background: #fee2e2;
+    color: #b91c1c;
     border-color: #fecaca;
 }
 
-.nx-orders-status-badge.bg-secondary-subtle {
-    background: #f1f5f9 !important;
-    color: #475569 !important;
-    border-color: var(--nx-border);
+.status-badge.is-cancelled,
+.mail-status-badge.is-cancelled,
+.nx-orders-status-badge.is-cancelled {
+    background: #f1f5f9;
+    color: #475569;
+    border-color: #cbd5e1;
+}
+
+/* Backward compatibility for legacy badge classes */
+.nx-orders-status-badge.bg-warning-subtle,
+.nx-orders-status-badge.text-warning-emphasis,
+.nx-orders-status-badge.bg-secondary-subtle,
+.nx-orders-status-badge.text-secondary-emphasis {
+    background: #fff7e6 !important;
+    color: #b45309 !important;
+    border-color: #facc15 !important;
 }
 
 .nx-orders-status-badge.bg-info-subtle,
-.nx-orders-status-badge.bg-primary-subtle {
-    background: #eff6ff !important;
-    color: #1d4ed8 !important;
-    border-color: #bfdbfe;
+.nx-orders-status-badge.text-info-emphasis,
+.nx-orders-status-badge.bg-primary-subtle,
+.nx-orders-status-badge.text-primary-emphasis {
+    background: #e0f2fe !important;
+    color: #075985 !important;
+    border-color: #7dd3fc !important;
+}
+
+.nx-orders-status-badge.bg-success-subtle,
+.nx-orders-status-badge.text-success-emphasis {
+    background: #dcfce7 !important;
+    color: #047857 !important;
+    border-color: #86efac !important;
+}
+
+.nx-orders-status-badge.bg-danger-subtle,
+.nx-orders-status-badge.text-danger-emphasis {
+    background: #fee2e2 !important;
+    color: #b91c1c !important;
+    border-color: #fecaca !important;
 }
 
 .nx-orders-sent {
