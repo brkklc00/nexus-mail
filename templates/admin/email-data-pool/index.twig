@@ -44,8 +44,8 @@
     }
     .tools-grid {
         display: grid;
-        grid-template-columns: minmax(420px, 1fr) minmax(520px, 1fr);
-        gap: 24px;
+        grid-template-columns: 1fr;
+        gap: 22px;
         align-items: stretch;
     }
     .tool-card {
@@ -219,6 +219,9 @@
         border-radius: 12px;
         font-weight: 600;
     }
+    .section-actions .btn:disabled {
+        opacity: 0.55 !important;
+    }
     .target-badges .badge {
         font-weight: 600;
     }
@@ -243,16 +246,6 @@
         white-space: nowrap;
         word-break: normal;
         font-variant-numeric: tabular-nums;
-    }
-    @media (max-width: 1399.98px) {
-        .tools-grid {
-            grid-template-columns: minmax(360px, 1fr) minmax(420px, 1fr);
-        }
-    }
-    @media (max-width: 1199.98px) {
-        .tools-grid {
-            grid-template-columns: 1fr;
-        }
     }
     @media (max-width: 991.98px) {
         .cleaner-actions {
@@ -481,7 +474,7 @@
                     </div>
                     {% endif %}
 
-                    <div class="tools-grid mt-1">
+                    <div class="tools-grid mt-2">
                     <div class="card tool-card" id="mailCleanerCard">
                         <div class="card-header py-3">
                             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -651,7 +644,7 @@
 
                                         <div class="section-card">
                                             <h6 class="mb-2">Yeni Data ile Listeyi Tamamla</h6>
-                                            <textarea class="form-control form-control-sm mb-2" id="fillManualPayload" rows="3" placeholder="Mail adreslerini yapıştır veya CSV içeriği gir"></textarea>
+                                            <textarea class="form-control form-control-sm mb-2" id="fillManualPayload" rows="3" placeholder="Mail listesi veya CSV içeriği"></textarea>
                                             <div class="section-actions">
                                                 <button type="button" class="btn btn-sm btn-soft-success balance-action-btn" id="previewManualFillBtn">Önizleme</button>
                                                 <button type="button" class="btn btn-sm btn-success balance-action-btn" id="runManualFillBtn">Tamamla</button>
@@ -671,12 +664,23 @@
                                                         <p class="text-muted small mb-2">Kaynak listeyi parçalara böler ve yeni listeler üretir.</p>
                                                         <div class="row g-2">
                                                             <div class="col-md-6">
+                                                                <label class="form-label form-label-sm">Kaynak Liste</label>
+                                                                <select class="form-select form-select-sm" id="splitSourceListId">
+                                                                    {% for pl in pool_lists %}
+                                                                    <option value="{{ pl.id }}" {% if pl.id == current_list_id %}selected{% endif %}>{{ pl.name }}</option>
+                                                                    {% endfor %}
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <label class="form-label form-label-sm">Parça Boyutu</label>
                                                                 <input type="number" class="form-control form-control-sm" id="splitChunkSize" min="1000" value="{{ default_target_limit|default(250000) }}" placeholder="Parça boyutu">
                                                             </div>
                                                             <div class="col-md-6">
+                                                                <label class="form-label form-label-sm">Liste Prefix</label>
                                                                 <input type="text" class="form-control form-control-sm" id="splitPrefix" placeholder="Yeni liste adı prefix" value="Kampanya">
                                                             </div>
                                                             <div class="col-md-6">
+                                                                <label class="form-label form-label-sm">Mod</label>
                                                                 <select class="form-select form-select-sm" id="splitMode">
                                                                     <option value="copy">Kopyala</option>
                                                                     <option value="move">Taşı</option>
@@ -1917,6 +1921,22 @@ function setBalanceButtonsDisabled(disabled) {
     document.getElementById('runSplitBtn').disabled = disabled || !balancePreviewState.split_list;
 }
 
+function setButtonLoading(button, loading, loadingText = 'İşleniyor...') {
+    if (!button) return;
+    if (loading) {
+        if (!button.dataset.originalText) {
+            button.dataset.originalText = button.innerHTML;
+        }
+        button.disabled = true;
+        button.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>${loadingText}`;
+        return;
+    }
+    if (button.dataset.originalText) {
+        button.innerHTML = button.dataset.originalText;
+        delete button.dataset.originalText;
+    }
+}
+
 function toolsEndpoint(path) {
     return `/admin/email-data-pool/tools/${path}`;
 }
@@ -2014,8 +2034,9 @@ function setPreviewSummary(id, text) {
     }
 }
 
-async function previewFill(sourceType) {
+async function previewFill(sourceType, triggerBtn = null) {
     try {
+        setButtonLoading(triggerBtn, true, 'Önizleniyor...');
         setBalanceButtonsDisabled(true);
         const data = await postTools('preview', Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType)));
         openPreviewModal(data);
@@ -2029,13 +2050,15 @@ async function previewFill(sourceType) {
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
+        setButtonLoading(triggerBtn, false);
         setBalanceButtonsDisabled(false);
     }
 }
 
-async function runFill(sourceType) {
+async function runFill(sourceType, triggerBtn = null) {
     try {
         if (!confirm('Seçili ayarlarla hedef tamamlama işlemi başlatılsın mı?')) return;
+        setButtonLoading(triggerBtn, true, 'Uygulanıyor...');
         setBalanceButtonsDisabled(true);
         startCleanerProgress('Hedefe tamamlama çalışıyor...');
         const data = await postTools('fill-to-target', getFillPayload(sourceType));
@@ -2052,6 +2075,7 @@ async function runFill(sourceType) {
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
+        setButtonLoading(triggerBtn, false);
         finishCleanerProgress();
         setBalanceButtonsDisabled(false);
     }
@@ -2068,8 +2092,9 @@ function getOverflowPayload() {
     };
 }
 
-async function previewOverflow() {
+async function previewOverflow(triggerBtn = null) {
     try {
+        setButtonLoading(triggerBtn, true, 'Önizleniyor...');
         setBalanceButtonsDisabled(true);
         const data = await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
         openPreviewModal(data);
@@ -2078,16 +2103,18 @@ async function previewOverflow() {
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
+        setButtonLoading(triggerBtn, false);
         setBalanceButtonsDisabled(false);
     }
 }
 
-async function runOverflow() {
+async function runOverflow(triggerBtn = null) {
     try {
         const dataPreview = await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
         const overflow = Number(dataPreview.overflow || 0).toLocaleString('tr-TR');
         const targetName = document.getElementById('overflowNewListName')?.value?.trim() || document.getElementById('overflowTargetListId')?.selectedOptions?.[0]?.text || 'hedef liste';
         if (!confirm(`Bu işlem ${overflow} kaydı seçili listeden ${targetName} listesine taşıyacak. Devam edilsin mi?`)) return;
+        setButtonLoading(triggerBtn, true, 'Taşınıyor...');
         setBalanceButtonsDisabled(true);
         startCleanerProgress('Fazla kayıtlar aktarılıyor...');
         const data = await postTools('move-overflow', getOverflowPayload());
@@ -2099,6 +2126,7 @@ async function runOverflow() {
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
+        setButtonLoading(triggerBtn, false);
         finishCleanerProgress();
         setBalanceButtonsDisabled(false);
     }
@@ -2106,7 +2134,7 @@ async function runOverflow() {
 
 function getSplitPayload() {
     return {
-        source_list_id: CURRENT_POOL_LIST_ID,
+        source_list_id: Number(document.getElementById('splitSourceListId')?.value || CURRENT_POOL_LIST_ID),
         chunk_size: Number(document.getElementById('splitChunkSize')?.value || 0),
         new_list_prefix: document.getElementById('splitPrefix')?.value || 'Kampanya',
         mode: document.getElementById('splitMode')?.value || 'copy',
@@ -2116,8 +2144,9 @@ function getSplitPayload() {
     };
 }
 
-async function previewSplit() {
+async function previewSplit(triggerBtn = null) {
     try {
+        setButtonLoading(triggerBtn, true, 'Önizleniyor...');
         setBalanceButtonsDisabled(true);
         const data = await postTools('preview', Object.assign({ tool: 'split_list' }, getSplitPayload()));
         openPreviewModal(data);
@@ -2126,13 +2155,15 @@ async function previewSplit() {
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
+        setButtonLoading(triggerBtn, false);
         setBalanceButtonsDisabled(false);
     }
 }
 
-async function runSplit() {
+async function runSplit(triggerBtn = null) {
     try {
         if (!confirm('Liste bölme işlemi başlatılsın mı?')) return;
+        setButtonLoading(triggerBtn, true, 'Bölünüyor...');
         setBalanceButtonsDisabled(true);
         startCleanerProgress('Liste bölme işlemi çalışıyor...');
         const data = await postTools('split-list', getSplitPayload());
@@ -2144,6 +2175,7 @@ async function runSplit() {
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
+        setButtonLoading(triggerBtn, false);
         finishCleanerProgress();
         setBalanceButtonsDisabled(false);
     }
@@ -2193,14 +2225,14 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('confirmDuplicateCleanupBtn')?.addEventListener('click', removeDuplicatesConfirmed);
     document.getElementById('balanceTargetLimitInput')?.addEventListener('change', () => loadTopStats(false));
     document.getElementById('statGotoNonGmailBtn')?.addEventListener('click', openDeleteNonGmailModal);
-    document.getElementById('previewFillBtn')?.addEventListener('click', () => previewFill('list'));
-    document.getElementById('runFillBtn')?.addEventListener('click', () => runFill('list'));
-    document.getElementById('previewManualFillBtn')?.addEventListener('click', () => previewFill('manual'));
-    document.getElementById('runManualFillBtn')?.addEventListener('click', () => runFill('manual'));
-    document.getElementById('previewOverflowBtn')?.addEventListener('click', previewOverflow);
-    document.getElementById('runOverflowBtn')?.addEventListener('click', runOverflow);
-    document.getElementById('previewSplitBtn')?.addEventListener('click', previewSplit);
-    document.getElementById('runSplitBtn')?.addEventListener('click', runSplit);
+    document.getElementById('previewFillBtn')?.addEventListener('click', e => previewFill('list', e.currentTarget));
+    document.getElementById('runFillBtn')?.addEventListener('click', e => runFill('list', e.currentTarget));
+    document.getElementById('previewManualFillBtn')?.addEventListener('click', e => previewFill('manual', e.currentTarget));
+    document.getElementById('runManualFillBtn')?.addEventListener('click', e => runFill('manual', e.currentTarget));
+    document.getElementById('previewOverflowBtn')?.addEventListener('click', e => previewOverflow(e.currentTarget));
+    document.getElementById('runOverflowBtn')?.addEventListener('click', e => runOverflow(e.currentTarget));
+    document.getElementById('previewSplitBtn')?.addEventListener('click', e => previewSplit(e.currentTarget));
+    document.getElementById('runSplitBtn')?.addEventListener('click', e => runSplit(e.currentTarget));
     setBalanceButtonsDisabled(false);
     loadTopStats(false);
     runCleanerAnalyze(false);
