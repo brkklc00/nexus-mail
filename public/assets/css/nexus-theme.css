@@ -5630,14 +5630,30 @@ body.nx-panel > .modal-backdrop {
     border-bottom: 1px solid #e5eaf3 !important;
 }
 
+.nx-email-page .nx-orders-form-card .nx-orders-card-head {
+    justify-content: flex-start !important;
+    text-align: left;
+}
+
+.nx-email-page .nx-orders-form-card .nx-orders-card-head-main {
+    margin-right: auto;
+}
+
 .nx-email-page .nx-orders-list-card > .nx-orders-toolbar-strip .nx-orders-list-toolbar.orders-toolbar {
     display: grid !important;
-    grid-template-columns: minmax(240px, 1fr) 180px 40px !important;
+    grid-template-columns: minmax(260px, 1fr) 190px 104px 120px 40px !important;
     gap: 12px !important;
     align-items: center;
     padding: 16px !important;
     width: 100%;
     box-sizing: border-box;
+}
+
+@media (max-width: 1199.98px) {
+    .nx-email-page .nx-orders-list-card > .nx-orders-toolbar-strip .nx-orders-list-toolbar.orders-toolbar {
+        grid-template-columns: minmax(220px, 1fr) 170px 92px 110px 40px !important;
+        gap: 10px !important;
+    }
 }
 
 .nx-email-page .nx-orders-list-card > .nx-orders-toolbar-strip .nx-orders-search-input {
