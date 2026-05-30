@@ -60,6 +60,19 @@
     .cleaner-progress {
         height: 10px;
     }
+    .tool-card .card-header {
+        background: linear-gradient(135deg, #16213a 0%, #1f2d4d 100%);
+        color: #fff;
+    }
+    .stats-card .card-body {
+        min-height: 96px;
+    }
+    .summary-box {
+        background: #f8fafc;
+        border: 1px solid rgba(30, 41, 59, 0.08);
+        border-radius: 0.5rem;
+        padding: 0.75rem;
+    }
     @media (max-width: 767.98px) {
         .cleaner-actions .btn {
             width: 100%;
@@ -181,55 +194,57 @@
                         </button>
                     </div>
                     {% else %}
-                    <div class="row g-3 mb-4">
-                        <div class="col-sm-4">
-                            <div class="card mb-0 h-100">
+                    <div class="row g-3 mb-4" id="topStatsGrid">
+                        <div class="col-sm-6 col-xl-4">
+                            <div class="card stats-card mb-0 h-100">
                                 <div class="card-body">
-                                    <div class="d-flex align-items-center">
-                                        <div class="flex-shrink-0 me-3">
-                                            <div class="avatar-sm rounded-circle bg-soft-primary">
-                                                <span class="avatar-title"><i data-feather="database" class="icon-dual-primary icon-xs"></i></span>
-                                            </div>
-                                        </div>
-                                        <div class="flex-grow-1 overflow-hidden">
-                                            <p class="text-muted mb-1 small">Toplam kayıt</p>
-                                            <h4 class="mb-0 text-truncate">{{ total|number_format }}</h4>
-                                        </div>
-                                    </div>
+                                    <p class="text-muted mb-1 small">Toplam Kayıt</p>
+                                    <h4 class="mb-0" id="statTopTotal">{{ total|number_format }}</h4>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-sm-4">
-                            <div class="card mb-0 h-100">
+                        <div class="col-sm-6 col-xl-4">
+                            <div class="card stats-card mb-0 h-100 border border-success-subtle">
                                 <div class="card-body">
-                                    <div class="d-flex align-items-center">
-                                        <div class="flex-shrink-0 me-3">
-                                            <div class="avatar-sm rounded-circle bg-soft-success">
-                                                <span class="avatar-title"><i data-feather="check-circle" class="icon-dual-success icon-xs"></i></span>
-                                            </div>
-                                        </div>
-                                        <div class="flex-grow-1 overflow-hidden">
-                                            <p class="text-muted mb-1 small">Aktif</p>
-                                            <h4 class="mb-0 text-truncate">{{ active_count|number_format }}</h4>
-                                        </div>
-                                    </div>
+                                    <p class="text-muted mb-1 small">Gmail Oranı</p>
+                                    <h5 class="text-success mb-1" id="statTopGmailRatio">0 / %0</h5>
+                                    <small class="text-muted" id="statTopGmailDesc">Güncelleniyor...</small>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-sm-4">
-                            <div class="card mb-0 h-100">
+                        <div class="col-sm-6 col-xl-4">
+                            <div class="card stats-card mb-0 h-100 border border-danger-subtle">
                                 <div class="card-body">
-                                    <div class="d-flex align-items-center">
-                                        <div class="flex-shrink-0 me-3">
-                                            <div class="avatar-sm rounded-circle bg-soft-secondary">
-                                                <span class="avatar-title"><i data-feather="pause-circle" class="icon-dual-secondary icon-xs"></i></span>
-                                            </div>
-                                        </div>
-                                        <div class="flex-grow-1 overflow-hidden">
-                                            <p class="text-muted mb-1 small">Pasif</p>
-                                            <h4 class="mb-0 text-truncate">{{ inactive_count|number_format }}</h4>
-                                        </div>
-                                    </div>
+                                    <p class="text-muted mb-1 small">Gmail Dışı</p>
+                                    <h4 class="text-danger mb-1" id="statTopNonGmail">0</h4>
+                                    <button class="btn btn-soft-danger btn-sm" type="button" id="statGotoNonGmailBtn">
+                                        <i data-feather="corner-down-right" class="icon-xs me-1"></i> İndir / Sil
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-xl-4">
+                            <div class="card stats-card mb-0 h-100 border border-info-subtle">
+                                <div class="card-body">
+                                    <p class="text-muted mb-1 small">Duplicate</p>
+                                    <h4 class="text-info mb-0" id="statTopDuplicate">0</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-xl-4">
+                            <div class="card stats-card mb-0 h-100 border border-warning-subtle">
+                                <div class="card-body">
+                                    <p class="text-muted mb-1 small">Hatalı Gmail</p>
+                                    <h4 class="text-warning mb-0" id="statTopTypo">0</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-xl-4">
+                            <div class="card stats-card mb-0 h-100 border border-secondary-subtle">
+                                <div class="card-body">
+                                    <p class="text-muted mb-1 small">Hedef Doluluk</p>
+                                    <h6 class="mb-1" id="statTopTargetMain">Hedef belirlenmedi</h6>
+                                    <small class="text-muted" id="statTopTargetMeta">-</small>
                                 </div>
                             </div>
                         </div>
@@ -268,7 +283,9 @@
                     </div>
                     {% endif %}
 
-                    <div class="card cleaner-card mt-4" id="mailCleanerCard">
+                    <div class="row g-3 mt-1">
+                        <div class="col-xl-6">
+                    <div class="card cleaner-card tool-card h-100" id="mailCleanerCard">
                         <div class="card-header py-3">
                             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                                 <h5 class="mb-0 d-flex align-items-center gap-2">
@@ -380,6 +397,120 @@
                                         <div class="border rounded p-3 h-100">
                                             <p class="small fw-semibold mb-2">Gmail dışı önizleme</p>
                                             <pre class="small mb-0 text-muted" id="cleanerNonGmailPreview"></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                        </div>
+                        <div class="col-xl-6">
+                            <div class="card cleaner-card tool-card h-100" id="mailBalanceCard">
+                                <div class="card-header py-3">
+                                    <h5 class="mb-1 d-flex align-items-center gap-2">
+                                        <i data-feather="sliders" class="icon-xs"></i> Liste Dengeleme Araçları
+                                    </h5>
+                                    <small class="opacity-75">Bir listenin hedef adede tamamlanması, fazla kayıtların başka listeye aktarılması veya listeler arası veri taşınması için kullanılır.</small>
+                                </div>
+                                <div class="card-body">
+                                    <div class="vstack gap-3">
+                                        <div class="summary-box">
+                                            <label class="form-label form-label-sm">Hedef Limit</label>
+                                            <input type="number" class="form-control form-control-sm" id="balanceTargetLimitInput" min="1" value="{{ default_target_limit|default(250000) }}">
+                                        </div>
+
+                                        <div class="summary-box">
+                                            <h6 class="mb-2">Listeyi Hedefe Tamamla</h6>
+                                            <div class="row g-2">
+                                                <div class="col-md-6">
+                                                    <label class="form-label form-label-sm">Kaynak Liste</label>
+                                                    <select class="form-select form-select-sm" id="fillSourceListId">
+                                                        {% for pl in pool_lists %}
+                                                        {% if pl.id != current_list_id %}
+                                                        <option value="{{ pl.id }}">{{ pl.name }}</option>
+                                                        {% endif %}
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label form-label-sm">Mod</label>
+                                                    <select class="form-select form-select-sm" id="fillMode">
+                                                        <option value="copy">Kopyala</option>
+                                                        <option value="move">Taşı</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-12">
+                                                    <div class="d-flex flex-wrap gap-2">
+                                                        <button type="button" class="btn btn-sm btn-soft-primary balance-action-btn" id="previewFillBtn">Önizleme</button>
+                                                        <button type="button" class="btn btn-sm btn-primary balance-action-btn" id="runFillBtn">Uygula</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="summary-box">
+                                            <h6 class="mb-2">Fazlayı Başka Listeye Aktar</h6>
+                                            <div class="row g-2">
+                                                <div class="col-md-6">
+                                                    <label class="form-label form-label-sm">Hedef Liste</label>
+                                                    <select class="form-select form-select-sm" id="overflowTargetListId">
+                                                        {% for pl in pool_lists %}
+                                                        {% if pl.id != current_list_id %}
+                                                        <option value="{{ pl.id }}">{{ pl.name }}</option>
+                                                        {% endif %}
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label form-label-sm">Yeni Liste Adı (ops.)</label>
+                                                    <input type="text" class="form-control form-control-sm" id="overflowNewListName" placeholder="Yeni liste adı">
+                                                </div>
+                                                <div class="col-12">
+                                                    <div class="d-flex flex-wrap gap-2">
+                                                        <button type="button" class="btn btn-sm btn-soft-warning balance-action-btn" id="previewOverflowBtn">Önizleme</button>
+                                                        <button type="button" class="btn btn-sm btn-warning balance-action-btn" id="runOverflowBtn">Fazlayı Aktar</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="summary-box">
+                                            <h6 class="mb-2">Yeni Data ile Listeyi Tamamla</h6>
+                                            <textarea class="form-control form-control-sm mb-2" id="fillManualPayload" rows="3" placeholder="Mail listesi veya CSV içeriği"></textarea>
+                                            <div class="d-flex flex-wrap gap-2">
+                                                <button type="button" class="btn btn-sm btn-soft-success balance-action-btn" id="previewManualFillBtn">Önizleme</button>
+                                                <button type="button" class="btn btn-sm btn-success balance-action-btn" id="runManualFillBtn">Tamamla</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="summary-box">
+                                            <h6 class="mb-2">Listeleri Eşitle / Böl</h6>
+                                            <div class="row g-2">
+                                                <div class="col-md-6">
+                                                    <input type="number" class="form-control form-control-sm" id="splitChunkSize" min="1000" value="{{ default_target_limit|default(250000) }}" placeholder="Parça boyutu">
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <input type="text" class="form-control form-control-sm" id="splitPrefix" placeholder="Yeni liste adı prefix" value="Kampanya">
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <select class="form-select form-select-sm" id="splitMode">
+                                                        <option value="copy">Kopyala</option>
+                                                        <option value="move">Taşı</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-6 d-flex align-items-center">
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="splitOnlyGmail">
+                                                        <label class="form-check-label small" for="splitOnlyGmail">Sadece Gmail</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-12">
+                                                    <div class="d-flex flex-wrap gap-2">
+                                                        <button type="button" class="btn btn-sm btn-soft-info balance-action-btn" id="previewSplitBtn">Önizleme</button>
+                                                        <button type="button" class="btn btn-sm btn-info balance-action-btn" id="runSplitBtn">Böl</button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -734,6 +865,47 @@ Format: email@domain.com" oninput="updateRemoveEmailCount()" style="font-size: 1
                 <button type="button" class="btn btn-info btn-sm" id="confirmDuplicateCleanupBtn">
                     <i data-feather="trash" class="icon-xs me-1"></i> Temizle
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="balancePreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="eye" class="icon-xs"></i> İşlem Önizleme
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="balancePreviewText" class="small text-muted mb-0"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="balanceResultModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="clipboard" class="icon-xs"></i> İşlem Sonucu
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="balanceResultText" class="small mb-2"></pre>
+                <a href="#" class="btn btn-sm btn-soft-primary d-none" id="balanceResultDownloadLink" target="_blank">
+                    <i data-feather="download" class="icon-xs me-1"></i> Kalan Veriyi İndir
+                </a>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary btn-sm" data-bs-dismiss="modal">Tamam</button>
             </div>
         </div>
     </div>
@@ -1374,6 +1546,7 @@ async function runCleanerAnalyze(showSuccess = true) {
     try {
         const stats = await cleanerRequest('analyze');
         renderCleanerStats(stats);
+        await loadTopStats(false);
         if (showSuccess) {
             showCleanerToast('success', 'Analiz tamamlandı.');
         }
@@ -1480,6 +1653,263 @@ async function removeDuplicatesConfirmed() {
     }
 }
 
+function statsUrl() {
+    const limit = Number(document.getElementById('balanceTargetLimitInput')?.value || 0);
+    return `/admin/email-data-pool/${CURRENT_POOL_LIST_ID}/stats?target_limit=${encodeURIComponent(limit)}`;
+}
+
+async function loadTopStats(showToast = false) {
+    if (!CURRENT_POOL_LIST_ID) return;
+    try {
+        const response = await fetch(statsUrl(), { credentials: 'same-origin' });
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'İstatistik alınamadı.');
+        }
+        const total = Number(data.total || 0);
+        const gmailCount = Number(data.gmail_count || 0);
+        const gmailRatio = Number(data.gmail_ratio || 0).toLocaleString('tr-TR');
+        const fmt = v => Number(v || 0).toLocaleString('tr-TR');
+        document.getElementById('statTopTotal').textContent = fmt(total);
+        document.getElementById('statTopGmailRatio').textContent = `${fmt(gmailCount)} / %${gmailRatio}`;
+        document.getElementById('statTopGmailDesc').textContent = `${fmt(total)} kayıt içinde Gmail`;
+        document.getElementById('statTopNonGmail').textContent = fmt(data.non_gmail_count || 0);
+        document.getElementById('statTopDuplicate').textContent = fmt(data.duplicate_count || 0);
+        document.getElementById('statTopTypo').textContent = fmt(data.typo_gmail_count || 0);
+        const target = data.target_limit;
+        if (!target) {
+            document.getElementById('statTopTargetMain').textContent = 'Hedef belirlenmedi';
+            document.getElementById('statTopTargetMeta').textContent = '-';
+        } else {
+            document.getElementById('statTopTargetMain').textContent = `${fmt(total)} / ${fmt(target)}`;
+            const missing = Number(data.missing_to_target || 0);
+            const over = Number(data.over_target || 0);
+            const fillRate = target > 0 ? ((total / Number(target)) * 100).toFixed(1) : '0.0';
+            if (over > 0) {
+                document.getElementById('statTopTargetMeta').textContent = `%${fillRate} dolu, ${fmt(over)} fazla`;
+            } else {
+                document.getElementById('statTopTargetMeta').textContent = `%${fillRate} dolu, ${fmt(missing)} eksik`;
+            }
+        }
+        if (showToast) {
+            showCleanerToast('success', 'Üst istatistikler güncellendi.');
+        }
+    } catch (error) {
+        if (showToast) {
+            showCleanerToast('error', error.message);
+        }
+    }
+}
+
+function setBalanceButtonsDisabled(disabled) {
+    document.querySelectorAll('.balance-action-btn').forEach(btn => {
+        btn.disabled = !CURRENT_POOL_LIST_ID || disabled;
+    });
+}
+
+function toolsEndpoint(path) {
+    return `/admin/email-data-pool/tools/${path}`;
+}
+
+async function postTools(path, payload) {
+    const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+    Object.entries(payload || {}).forEach(([k, v]) => {
+        if (v === null || typeof v === 'undefined') return;
+        body.append(k, String(v));
+    });
+    const response = await fetch(toolsEndpoint(path), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-CSRF-Token': CLEANER_CSRF_TOKEN
+        },
+        body,
+        credentials: 'same-origin'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.success === false) {
+        throw new Error(data.message || 'İşlem başarısız.');
+    }
+    return data;
+}
+
+function previewToText(data) {
+    return Object.entries(data || {})
+        .filter(([k]) => k !== 'success')
+        .map(([k, v]) => `${k}: ${typeof v === 'number' ? Number(v).toLocaleString('tr-TR') : v}`)
+        .join('\n');
+}
+
+function summaryToText(summary) {
+    const labels = {
+        operation_type: 'İşlem tipi',
+        source_list: 'Kaynak liste',
+        target_list: 'Hedef liste',
+        read_records: 'Okunan kayıt',
+        added_records: 'Eklenen kayıt',
+        moved_records: 'Taşınan kayıt',
+        deleted_records: 'Silinen kayıt',
+        duplicate_skipped: 'Duplicate atlanan',
+        non_gmail_skipped: 'Gmail dışı atlanan',
+        typo_fixed: 'Hatalı Gmail düzeltilen',
+        leftover_records: 'Kalan fazla kayıt'
+    };
+    return Object.entries(labels)
+        .map(([key, label]) => `${label}: ${typeof summary?.[key] === 'number' ? Number(summary[key]).toLocaleString('tr-TR') : (summary?.[key] ?? '-')}`)
+        .join('\n');
+}
+
+function openPreviewModal(data) {
+    document.getElementById('balancePreviewText').textContent = previewToText(data);
+    openModalById('balancePreviewModal');
+}
+
+function openResultModal(summary) {
+    document.getElementById('balanceResultText').textContent = summaryToText(summary);
+    const link = document.getElementById('balanceResultDownloadLink');
+    const url = summary?.download_url || '';
+    if (url) {
+        link.href = url;
+        link.classList.remove('d-none');
+    } else {
+        link.href = '#';
+        link.classList.add('d-none');
+    }
+    openModalById('balanceResultModal');
+}
+
+function currentTargetLimit() {
+    return Number(document.getElementById('balanceTargetLimitInput')?.value || 0);
+}
+
+function getFillPayload(sourceType) {
+    return {
+        target_list_id: CURRENT_POOL_LIST_ID,
+        source_type: sourceType,
+        source_list_id: document.getElementById('fillSourceListId')?.value || '',
+        target_count: currentTargetLimit(),
+        mode: document.getElementById('fillMode')?.value || 'copy',
+        clean_gmail_typos: 1,
+        only_gmail: 0,
+        remove_duplicates: 1,
+        leftover_action: sourceType === 'list' ? 'ignore' : 'download',
+        source_payload: sourceType === 'list' ? '' : (document.getElementById('fillManualPayload')?.value || '')
+    };
+}
+
+async function previewFill(sourceType) {
+    try {
+        setBalanceButtonsDisabled(true);
+        const data = await postTools('preview', Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType)));
+        openPreviewModal(data);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setBalanceButtonsDisabled(false);
+    }
+}
+
+async function runFill(sourceType) {
+    try {
+        if (!confirm('Seçili ayarlarla hedef tamamlama işlemi başlatılsın mı?')) return;
+        setBalanceButtonsDisabled(true);
+        startCleanerProgress('Hedefe tamamlama çalışıyor...');
+        const data = await postTools('fill-to-target', getFillPayload(sourceType));
+        openResultModal(data.summary || {});
+        await loadTopStats(false);
+        await runCleanerAnalyze(false);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setBalanceButtonsDisabled(false);
+    }
+}
+
+function getOverflowPayload() {
+    return {
+        source_list_id: CURRENT_POOL_LIST_ID,
+        target_count: currentTargetLimit(),
+        overflow_target_type: document.getElementById('overflowNewListName')?.value?.trim() ? 'new' : 'existing',
+        overflow_target_list_id: document.getElementById('overflowTargetListId')?.value || '',
+        new_list_name: document.getElementById('overflowNewListName')?.value || '',
+        remove_duplicates: 1
+    };
+}
+
+async function previewOverflow() {
+    try {
+        setBalanceButtonsDisabled(true);
+        const data = await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
+        openPreviewModal(data);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setBalanceButtonsDisabled(false);
+    }
+}
+
+async function runOverflow() {
+    try {
+        const dataPreview = await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
+        const overflow = Number(dataPreview.overflow || 0).toLocaleString('tr-TR');
+        const targetName = document.getElementById('overflowNewListName')?.value?.trim() || document.getElementById('overflowTargetListId')?.selectedOptions?.[0]?.text || 'hedef liste';
+        if (!confirm(`Bu işlem ${overflow} kaydı seçili listeden ${targetName} listesine taşıyacak. Devam edilsin mi?`)) return;
+        setBalanceButtonsDisabled(true);
+        startCleanerProgress('Fazla kayıtlar aktarılıyor...');
+        const data = await postTools('move-overflow', getOverflowPayload());
+        openResultModal(data.summary || {});
+        await loadTopStats(false);
+        await runCleanerAnalyze(false);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setBalanceButtonsDisabled(false);
+    }
+}
+
+function getSplitPayload() {
+    return {
+        source_list_id: CURRENT_POOL_LIST_ID,
+        chunk_size: Number(document.getElementById('splitChunkSize')?.value || 0),
+        new_list_prefix: document.getElementById('splitPrefix')?.value || 'Kampanya',
+        mode: document.getElementById('splitMode')?.value || 'copy',
+        only_gmail: document.getElementById('splitOnlyGmail')?.checked ? 1 : 0,
+        clean_gmail_typos: 1,
+        remove_duplicates: 1
+    };
+}
+
+async function previewSplit() {
+    try {
+        setBalanceButtonsDisabled(true);
+        const data = await postTools('preview', Object.assign({ tool: 'split_list' }, getSplitPayload()));
+        openPreviewModal(data);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setBalanceButtonsDisabled(false);
+    }
+}
+
+async function runSplit() {
+    try {
+        if (!confirm('Liste bölme işlemi başlatılsın mı?')) return;
+        setBalanceButtonsDisabled(true);
+        startCleanerProgress('Liste bölme işlemi çalışıyor...');
+        const data = await postTools('split-list', getSplitPayload());
+        openResultModal(data.summary || {});
+        await loadTopStats(false);
+        await runCleanerAnalyze(false);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setBalanceButtonsDisabled(false);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
     const listSearchInput = document.getElementById('poolListSearch');
@@ -1522,6 +1952,18 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('confirmDeleteNonGmailBtn')?.addEventListener('click', deleteNonGmailConfirmed);
     document.getElementById('confirmFixTyposBtn')?.addEventListener('click', fixTyposConfirmed);
     document.getElementById('confirmDuplicateCleanupBtn')?.addEventListener('click', removeDuplicatesConfirmed);
+    document.getElementById('balanceTargetLimitInput')?.addEventListener('change', () => loadTopStats(false));
+    document.getElementById('statGotoNonGmailBtn')?.addEventListener('click', openDeleteNonGmailModal);
+    document.getElementById('previewFillBtn')?.addEventListener('click', () => previewFill('list'));
+    document.getElementById('runFillBtn')?.addEventListener('click', () => runFill('list'));
+    document.getElementById('previewManualFillBtn')?.addEventListener('click', () => previewFill('manual'));
+    document.getElementById('runManualFillBtn')?.addEventListener('click', () => runFill('manual'));
+    document.getElementById('previewOverflowBtn')?.addEventListener('click', previewOverflow);
+    document.getElementById('runOverflowBtn')?.addEventListener('click', runOverflow);
+    document.getElementById('previewSplitBtn')?.addEventListener('click', previewSplit);
+    document.getElementById('runSplitBtn')?.addEventListener('click', runSplit);
+    loadTopStats(false);
+    runCleanerAnalyze(false);
 });
 </script>
 {% endblock %}

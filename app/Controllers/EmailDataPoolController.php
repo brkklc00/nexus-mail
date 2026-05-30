@@ -14,6 +14,8 @@ use Twig\Environment;
 class EmailDataPoolController
 {
     private const CLEANER_CSRF_SESSION_KEY = 'email_pool_cleaner_csrf';
+    private const LEFTOVER_FILES_SESSION_KEY = 'email_pool_leftover_files';
+    private const DEFAULT_TARGET_LIMIT = 250000;
 
     /** @var array<int, string> */
     private const GMAIL_TYPO_DOMAINS = [
@@ -129,6 +131,7 @@ class EmailDataPoolController
             'list_total_all' => $listTotalAll,
             'updated_count_at' => $updatedCountAt,
             'total_all_pools_entries' => $totalAllPoolsEntries,
+            'default_target_limit' => (int) ($_ENV['EMAIL_POOL_DEFAULT_TARGET_LIMIT'] ?? self::DEFAULT_TARGET_LIMIT),
             'cleaner_csrf' => $this->getOrCreateCleanerCsrfToken(),
             'success' => $_SESSION['success'] ?? null,
             'error' => $_SESSION['error'] ?? null
@@ -1334,6 +1337,858 @@ class EmailDataPoolController
             error_log('EmailDataPoolController::cleanerRemoveDuplicates error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Duplicate temizleme sırasında hata oluştu.'], 500);
         }
+    }
+
+    public function stats(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $targetLimit = max(0, (int) ($request->getQueryParams()['target_limit'] ?? ($_ENV['EMAIL_POOL_DEFAULT_TARGET_LIMIT'] ?? self::DEFAULT_TARGET_LIMIT)));
+            $stats = $this->buildListStats((int) $poolList->getId(), $targetLimit);
+
+            return $this->jsonResponse($response, $stats);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 404);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::stats error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'İstatistikler yüklenemedi.'], 500);
+        }
+    }
+
+    public function toolsPreview(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $tool = (string) ($data['tool'] ?? '');
+
+            return match ($tool) {
+                'fill_to_target' => $this->jsonResponse($response, $this->previewFillToTarget($data)),
+                'move_overflow' => $this->jsonResponse($response, $this->previewMoveOverflow($data)),
+                'split_list' => $this->jsonResponse($response, $this->previewSplitList($data)),
+                default => $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz preview aracı.'], 400),
+            };
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::toolsPreview error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Önizleme oluşturulamadı.'], 500);
+        }
+    }
+
+    public function toolsFillToTarget(Request $request, Response $response): Response
+    {
+        $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+        $locks = [];
+        try {
+            $this->assertCleanerCsrf($request);
+            $targetListId = (int) ($data['target_list_id'] ?? 0);
+            $targetList = $this->resolveExistingPoolListById($targetListId);
+            $sourceType = (string) ($data['source_type'] ?? 'list');
+            $mode = (string) ($data['mode'] ?? 'copy');
+            $targetCount = max(0, (int) ($data['target_count'] ?? 0));
+            if ($targetCount < 1) {
+                throw new \RuntimeException('Hedef adet zorunludur.');
+            }
+
+            $locks[] = $this->acquireListLock((int) $targetList->getId());
+            $sourceList = null;
+            if ($sourceType === 'list') {
+                $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
+                if ((int) $sourceList->getId() === (int) $targetList->getId()) {
+                    throw new \RuntimeException('Kaynak ve hedef liste aynı olamaz.');
+                }
+                $locks[] = $this->acquireListLock((int) $sourceList->getId());
+            }
+
+            $currentTotal = (int) $this->em->getConnection()->fetchOne(
+                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+                [(int) $targetList->getId()]
+            );
+            $missing = max(0, $targetCount - $currentTotal);
+            if ($missing < 1) {
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'summary' => [
+                        'operation_type' => 'fill_to_target',
+                        'source_list' => $sourceList?->getName(),
+                        'target_list' => $targetList->getName(),
+                        'read_records' => 0,
+                        'added_records' => 0,
+                        'moved_records' => 0,
+                        'deleted_records' => 0,
+                        'duplicate_skipped' => 0,
+                        'non_gmail_skipped' => 0,
+                        'typo_fixed' => 0,
+                        'leftover_records' => 0,
+                        'download_url' => null,
+                        'message' => 'Hedef liste zaten hedef dolulukta veya üzerinde.',
+                    ],
+                ]);
+            }
+
+            $onlyGmail = filter_var((string) ($data['only_gmail'] ?? '0'), FILTER_VALIDATE_BOOLEAN);
+            $cleanTypos = filter_var((string) ($data['clean_gmail_typos'] ?? '0'), FILTER_VALIDATE_BOOLEAN);
+            $removeDuplicates = filter_var((string) ($data['remove_duplicates'] ?? '1'), FILTER_VALIDATE_BOOLEAN);
+            $leftoverAction = (string) ($data['leftover_action'] ?? 'ignore');
+            $newListName = trim((string) ($data['new_list_name'] ?? ''));
+
+            $sourceEmails = [];
+            $sourceRowsForMove = [];
+            if ($sourceType === 'list' && $sourceList) {
+                $sourceEmails = $this->readEmailsFromList((int) $sourceList->getId(), max($missing * 2, $missing + 5000), $onlyGmail);
+                if ($mode === 'move') {
+                    $sourceRowsForMove = $sourceEmails;
+                }
+            } else {
+                $raw = (string) ($data['source_payload'] ?? $data['emails'] ?? '');
+                $parsed = $this->parseImportInput($raw, false);
+                foreach ($parsed['records'] as $record) {
+                    $sourceEmails[] = ['id' => 0, 'email' => (string) ($record['email'] ?? ''), 'name' => (string) ($record['name'] ?? '')];
+                }
+            }
+
+            $readRecords = count($sourceEmails);
+            $prepared = [];
+            $typoFixed = 0;
+            $nonGmailSkipped = 0;
+            $seenSource = [];
+            foreach ($sourceEmails as $row) {
+                $email = strtolower(trim((string) ($row['email'] ?? '')));
+                if ($email === '') {
+                    continue;
+                }
+                [$normalized, $fixed] = $this->normalizeMaybeTypoGmail($email, $cleanTypos);
+                if ($fixed) {
+                    $typoFixed++;
+                }
+                if ($onlyGmail && !$this->isGmailEmail($normalized)) {
+                    $nonGmailSkipped++;
+                    continue;
+                }
+                if ($removeDuplicates && isset($seenSource[$normalized])) {
+                    continue;
+                }
+                $seenSource[$normalized] = true;
+                $prepared[] = [
+                    'source_id' => (int) ($row['id'] ?? 0),
+                    'email' => $normalized,
+                    'name' => (string) ($row['name'] ?? ''),
+                ];
+            }
+
+            $availableEmails = array_column($prepared, 'email');
+            $existingTargetSet = $this->fetchExistingEmailSet((int) $targetList->getId(), $availableEmails);
+            $selected = [];
+            $duplicateSkipped = 0;
+            $selectedSourceIds = [];
+            foreach ($prepared as $item) {
+                if (isset($existingTargetSet[$item['email']])) {
+                    $duplicateSkipped++;
+                    continue;
+                }
+                $selected[] = ['email' => $item['email'], 'name' => $item['name'] !== '' ? $item['name'] : null];
+                if ($item['source_id'] > 0) {
+                    $selectedSourceIds[] = $item['source_id'];
+                }
+                if (count($selected) >= $missing) {
+                    break;
+                }
+            }
+
+            $added = $selected === [] ? 0 : $this->bulkInsertEmails($selected, (int) $targetList->getId());
+            if ($added > 0) {
+                $this->incrementListCounts((int) $targetList->getId(), $added, $added, 0);
+            }
+
+            $moved = 0;
+            if ($mode === 'move' && $sourceType === 'list' && $selectedSourceIds !== [] && $sourceList) {
+                $moved = $this->deleteRowsByIds((int) $sourceList->getId(), $selectedSourceIds);
+                if ($moved > 0) {
+                    $this->recalculateListCounts([(int) $sourceList->getId()]);
+                }
+            }
+
+            $leftovers = array_slice($prepared, count($selected));
+            $leftoverEmails = array_values(array_filter(array_map(static fn (array $r): string => (string) ($r['email'] ?? ''), $leftovers)));
+            $downloadUrl = null;
+            if ($leftoverEmails !== []) {
+                if ($leftoverAction === 'download') {
+                    $token = $this->storeLeftoverFile($leftoverEmails, 'fill-to-target');
+                    $downloadUrl = '/admin/email-data-pool/tools/leftovers/' . $token;
+                } elseif ($leftoverAction === 'create_list' && $newListName !== '') {
+                    $newList = $this->createPoolList($newListName);
+                    $rows = array_map(static fn (string $mail): array => ['email' => $mail, 'name' => null], $leftoverEmails);
+                    $inserted = $rows === [] ? 0 : $this->bulkInsertEmails($rows, (int) $newList->getId());
+                    if ($inserted > 0) {
+                        $this->incrementListCounts((int) $newList->getId(), $inserted, $inserted, 0);
+                    }
+                }
+            }
+
+            $this->recalculateListCounts([(int) $targetList->getId()]);
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'summary' => [
+                    'operation_type' => 'fill_to_target',
+                    'source_list' => $sourceList?->getName() ?? strtoupper($sourceType),
+                    'target_list' => $targetList->getName(),
+                    'read_records' => $readRecords,
+                    'added_records' => $added,
+                    'moved_records' => $moved,
+                    'deleted_records' => $moved,
+                    'duplicate_skipped' => $duplicateSkipped,
+                    'non_gmail_skipped' => $nonGmailSkipped,
+                    'typo_fixed' => $typoFixed,
+                    'leftover_records' => count($leftoverEmails),
+                    'download_url' => $downloadUrl,
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::toolsFillToTarget error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Tamamlama işlemi başarısız oldu.'], 500);
+        } finally {
+            foreach ($locks as $lockName) {
+                $this->releaseListLock($lockName);
+            }
+        }
+    }
+
+    public function toolsMoveOverflow(Request $request, Response $response): Response
+    {
+        $locks = [];
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
+            $targetCount = max(0, (int) ($data['target_count'] ?? 0));
+            if ($targetCount < 1) {
+                throw new \RuntimeException('Hedef limit zorunludur.');
+            }
+
+            $targetType = (string) ($data['overflow_target_type'] ?? 'existing');
+            $targetList = $targetType === 'new'
+                ? $this->createPoolList(trim((string) ($data['new_list_name'] ?? 'Taşınan Fazla Kayıtlar')))
+                : $this->resolveExistingPoolListById((int) ($data['overflow_target_list_id'] ?? 0));
+            if ((int) $targetList->getId() === (int) $sourceList->getId()) {
+                throw new \RuntimeException('Fazla aktarımda hedef liste kaynak ile aynı olamaz.');
+            }
+
+            $locks[] = $this->acquireListLock((int) $sourceList->getId());
+            $locks[] = $this->acquireListLock((int) $targetList->getId());
+
+            $currentTotal = (int) $this->em->getConnection()->fetchOne(
+                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+                [(int) $sourceList->getId()]
+            );
+            $overflow = max(0, $currentTotal - $targetCount);
+            if ($overflow < 1) {
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'summary' => [
+                        'operation_type' => 'move_overflow',
+                        'source_list' => $sourceList->getName(),
+                        'target_list' => $targetList->getName(),
+                        'read_records' => 0,
+                        'added_records' => 0,
+                        'moved_records' => 0,
+                        'deleted_records' => 0,
+                        'duplicate_skipped' => 0,
+                        'non_gmail_skipped' => 0,
+                        'typo_fixed' => 0,
+                        'leftover_records' => 0,
+                        'download_url' => null,
+                        'message' => 'Kaynak listede taşınacak fazla kayıt yok.',
+                    ],
+                ]);
+            }
+
+            $removeDuplicates = filter_var((string) ($data['remove_duplicates'] ?? '1'), FILTER_VALIDATE_BOOLEAN);
+            $remaining = $overflow;
+            $lastId = PHP_INT_MAX;
+            $batchSize = 5000;
+            $readRecords = 0;
+            $added = 0;
+            $moved = 0;
+            $duplicateSkipped = 0;
+            while ($remaining > 0) {
+                $limit = min($batchSize, $remaining);
+                $rows = $this->em->getConnection()->fetchAllAssociative(
+                    "SELECT id, email, COALESCE(name, '') AS name
+                       FROM email_data_pool
+                      WHERE pool_list_id = ?
+                        AND id < ?
+                      ORDER BY id DESC
+                      LIMIT $limit",
+                    [(int) $sourceList->getId(), $lastId]
+                );
+                if ($rows === []) {
+                    break;
+                }
+                $readRecords += count($rows);
+                $lastId = (int) ($rows[count($rows) - 1]['id'] ?? $lastId);
+                $existingSet = $this->fetchExistingEmailSet((int) $targetList->getId(), array_column($rows, 'email'));
+                $insertRows = [];
+                $moveIds = [];
+                foreach ($rows as $row) {
+                    $email = strtolower(trim((string) ($row['email'] ?? '')));
+                    if ($email === '') {
+                        continue;
+                    }
+                    if ($removeDuplicates && isset($existingSet[$email])) {
+                        $duplicateSkipped++;
+                        continue;
+                    }
+                    $insertRows[] = ['email' => $email, 'name' => (string) ($row['name'] ?? '')];
+                    $moveIds[] = (int) ($row['id'] ?? 0);
+                    $existingSet[$email] = true;
+                }
+                if ($insertRows !== []) {
+                    $added += $this->bulkInsertEmails($insertRows, (int) $targetList->getId());
+                }
+                if ($moveIds !== []) {
+                    $moved += $this->deleteRowsByIds((int) $sourceList->getId(), $moveIds);
+                }
+                $remaining -= count($rows);
+            }
+
+            if ($added > 0) {
+                $this->incrementListCounts((int) $targetList->getId(), $added, $added, 0);
+            }
+            if ($moved > 0) {
+                $this->recalculateListCounts([(int) $sourceList->getId()]);
+            }
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'summary' => [
+                    'operation_type' => 'move_overflow',
+                    'source_list' => $sourceList->getName(),
+                    'target_list' => $targetList->getName(),
+                    'read_records' => $readRecords,
+                    'added_records' => $added,
+                    'moved_records' => $moved,
+                    'deleted_records' => $moved,
+                    'duplicate_skipped' => $duplicateSkipped,
+                    'non_gmail_skipped' => 0,
+                    'typo_fixed' => 0,
+                    'leftover_records' => max(0, $overflow - $moved),
+                    'download_url' => null,
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::toolsMoveOverflow error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Fazla aktarım işlemi başarısız oldu.'], 500);
+        } finally {
+            foreach ($locks as $lockName) {
+                $this->releaseListLock($lockName);
+            }
+        }
+    }
+
+    public function toolsSplitList(Request $request, Response $response): Response
+    {
+        $locks = [];
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
+            $chunkSize = max(1000, (int) ($data['chunk_size'] ?? 0));
+            $prefix = trim((string) ($data['new_list_prefix'] ?? 'Parca'));
+            $mode = (string) ($data['mode'] ?? 'copy');
+            $onlyGmail = filter_var((string) ($data['only_gmail'] ?? '0'), FILTER_VALIDATE_BOOLEAN);
+            $cleanTypos = filter_var((string) ($data['clean_gmail_typos'] ?? '0'), FILTER_VALIDATE_BOOLEAN);
+            $removeDuplicates = filter_var((string) ($data['remove_duplicates'] ?? '1'), FILTER_VALIDATE_BOOLEAN);
+            if ($prefix === '') {
+                throw new \RuntimeException('Liste adı prefix zorunlu.');
+            }
+
+            $locks[] = $this->acquireListLock((int) $sourceList->getId());
+            $conn = $this->em->getConnection();
+            $batchSize = 3000;
+            $lastId = 0;
+            $partNo = 0;
+            $currentTargetList = null;
+            $currentCount = 0;
+            $totalRead = 0;
+            $totalAdded = 0;
+            $totalMoved = 0;
+            $duplicateSkipped = 0;
+            $nonGmailSkipped = 0;
+            $typoFixed = 0;
+            $sourceDeleteIds = [];
+            $seenForCurrentList = [];
+            $targetListNames = [];
+            $pendingInsertRows = [];
+            $pendingInsertListId = 0;
+
+            $flushPendingInsert = function () use (&$pendingInsertRows, &$pendingInsertListId, &$totalAdded, &$currentCount): void {
+                if ($pendingInsertRows === [] || $pendingInsertListId < 1) {
+                    return;
+                }
+                $addedNow = $this->bulkInsertEmails($pendingInsertRows, $pendingInsertListId);
+                if ($addedNow > 0) {
+                    $totalAdded += $addedNow;
+                    $currentCount += $addedNow;
+                    $this->incrementListCounts($pendingInsertListId, $addedNow, $addedNow, 0);
+                }
+                $pendingInsertRows = [];
+                $pendingInsertListId = 0;
+            };
+
+            while (true) {
+                $rows = $conn->fetchAllAssociative(
+                    "SELECT id, email, name
+                       FROM email_data_pool
+                      WHERE pool_list_id = ?
+                        AND id > ?
+                      ORDER BY id ASC
+                      LIMIT $batchSize",
+                    [(int) $sourceList->getId(), $lastId]
+                );
+                if ($rows === []) {
+                    break;
+                }
+
+                $prepared = [];
+                foreach ($rows as $row) {
+                    $totalRead++;
+                    $id = (int) ($row['id'] ?? 0);
+                    $lastId = max($lastId, $id);
+                    $email = strtolower(trim((string) ($row['email'] ?? '')));
+                    if ($email === '') {
+                        continue;
+                    }
+                    [$email, $fixed] = $this->normalizeMaybeTypoGmail($email, $cleanTypos);
+                    if ($fixed) {
+                        $typoFixed++;
+                    }
+                    if ($onlyGmail && !$this->isGmailEmail($email)) {
+                        $nonGmailSkipped++;
+                        continue;
+                    }
+                    $prepared[] = ['id' => $id, 'email' => $email, 'name' => (string) ($row['name'] ?? '')];
+                }
+
+                foreach ($prepared as $row) {
+                    if ($currentTargetList === null || $currentCount >= $chunkSize) {
+                        $flushPendingInsert();
+                        $partNo++;
+                        $currentTargetList = $this->createPoolList($prefix . ' ' . $partNo);
+                        $targetListNames[] = $currentTargetList->getName();
+                        $currentCount = 0;
+                        $seenForCurrentList = [];
+                    }
+
+                    if ($removeDuplicates && isset($seenForCurrentList[$row['email']])) {
+                        $duplicateSkipped++;
+                        continue;
+                    }
+                    $seenForCurrentList[$row['email']] = true;
+                    $pendingInsertRows[] = ['email' => $row['email'], 'name' => $row['name'] !== '' ? $row['name'] : null];
+                    $pendingInsertListId = (int) $currentTargetList->getId();
+                    if (count($pendingInsertRows) >= 1000) {
+                        $flushPendingInsert();
+                    }
+                    if ($mode === 'move') {
+                        $sourceDeleteIds[] = $row['id'];
+                        if (count($sourceDeleteIds) >= 2000) {
+                            $totalMoved += $this->deleteRowsByIds((int) $sourceList->getId(), $sourceDeleteIds);
+                            $sourceDeleteIds = [];
+                        }
+                    }
+                }
+            }
+
+            $flushPendingInsert();
+
+            if ($mode === 'move' && $sourceDeleteIds !== []) {
+                $totalMoved += $this->deleteRowsByIds((int) $sourceList->getId(), $sourceDeleteIds);
+            }
+            if ($mode === 'move' && $totalMoved > 0) {
+                $this->recalculateListCounts([(int) $sourceList->getId()]);
+            }
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'summary' => [
+                    'operation_type' => 'split_list',
+                    'source_list' => $sourceList->getName(),
+                    'target_list' => implode(', ', $targetListNames),
+                    'read_records' => $totalRead,
+                    'added_records' => $totalAdded,
+                    'moved_records' => $totalMoved,
+                    'deleted_records' => $totalMoved,
+                    'duplicate_skipped' => $duplicateSkipped,
+                    'non_gmail_skipped' => $nonGmailSkipped,
+                    'typo_fixed' => $typoFixed,
+                    'leftover_records' => 0,
+                    'download_url' => null,
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::toolsSplitList error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Liste bölme işlemi başarısız oldu.'], 500);
+        } finally {
+            foreach ($locks as $lockName) {
+                $this->releaseListLock($lockName);
+            }
+        }
+    }
+
+    public function downloadLeftoverFile(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $token = trim((string) ($args['token'] ?? ''));
+            if ($token === '') {
+                throw new \RuntimeException('Dosya bulunamadı.');
+            }
+            $files = $_SESSION[self::LEFTOVER_FILES_SESSION_KEY] ?? [];
+            $meta = is_array($files) ? ($files[$token] ?? null) : null;
+            if (!is_array($meta)) {
+                throw new \RuntimeException('Dosya bulunamadı.');
+            }
+            $path = (string) ($meta['path'] ?? '');
+            $expiresAt = (int) ($meta['expires_at'] ?? 0);
+            if ($path === '' || !is_file($path) || $expiresAt < time()) {
+                @unlink($path);
+                unset($_SESSION[self::LEFTOVER_FILES_SESSION_KEY][$token]);
+                throw new \RuntimeException('Dosya süresi dolmuş.');
+            }
+
+            $resource = fopen($path, 'rb');
+            if ($resource === false) {
+                throw new \RuntimeException('Dosya okunamadı.');
+            }
+            register_shutdown_function(static function () use ($path, $token): void {
+                @unlink($path);
+                if (isset($_SESSION[self::LEFTOVER_FILES_SESSION_KEY][$token])) {
+                    unset($_SESSION[self::LEFTOVER_FILES_SESSION_KEY][$token]);
+                }
+            });
+
+            return $response
+                ->withBody(new \Slim\Psr7\Stream($resource))
+                ->withHeader('Content-Type', 'text/plain; charset=utf-8')
+                ->withHeader('Content-Disposition', 'attachment; filename="kalan-veri-' . date('Y-m-d-His') . '.txt"');
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 404);
+        }
+    }
+
+    private function previewFillToTarget(array $data): array
+    {
+        $targetList = $this->resolveExistingPoolListById((int) ($data['target_list_id'] ?? 0));
+        $targetCount = max(0, (int) ($data['target_count'] ?? 0));
+        $current = (int) $this->em->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+            [(int) $targetList->getId()]
+        );
+        $need = max(0, $targetCount - $current);
+        $sourceType = (string) ($data['source_type'] ?? 'list');
+        $available = 0;
+        if ($sourceType === 'list') {
+            $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
+            $available = (int) $this->em->getConnection()->fetchOne(
+                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+                [(int) $sourceList->getId()]
+            );
+        } else {
+            $raw = (string) ($data['source_payload'] ?? $data['emails'] ?? '');
+            $parsed = $this->parseImportInput($raw, false);
+            $available = count($parsed['records']);
+        }
+
+        return [
+            'success' => true,
+            'tool' => 'fill_to_target',
+            'current_total' => $current,
+            'target_total' => $targetCount,
+            'required' => $need,
+            'available' => $available,
+            'will_process' => min($need, $available),
+            'estimated_leftover' => max(0, $available - $need),
+        ];
+    }
+
+    private function previewMoveOverflow(array $data): array
+    {
+        $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
+        $targetCount = max(0, (int) ($data['target_count'] ?? 0));
+        $current = (int) $this->em->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+            [(int) $sourceList->getId()]
+        );
+        $overflow = max(0, $current - $targetCount);
+
+        return [
+            'success' => true,
+            'tool' => 'move_overflow',
+            'current_total' => $current,
+            'target_total' => $targetCount,
+            'overflow' => $overflow,
+            'will_process' => $overflow,
+        ];
+    }
+
+    private function previewSplitList(array $data): array
+    {
+        $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
+        $chunkSize = max(1000, (int) ($data['chunk_size'] ?? 0));
+        $total = (int) $this->em->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+            [(int) $sourceList->getId()]
+        );
+        $parts = (int) ceil($total / $chunkSize);
+
+        return [
+            'success' => true,
+            'tool' => 'split_list',
+            'source_total' => $total,
+            'chunk_size' => $chunkSize,
+            'estimated_parts' => max(0, $parts),
+            'will_process' => $total,
+        ];
+    }
+
+    /**
+     * @return array{
+     *  total:int,gmail_count:int,non_gmail_count:int,duplicate_count:int,typo_gmail_count:int,
+     *  target_limit:?int,missing_to_target:int,over_target:int,updated_at:?string,gmail_ratio:float
+     * }
+     */
+    private function buildListStats(int $poolListId, int $targetLimit): array
+    {
+        $cleaner = $this->buildCleanerStats($poolListId);
+        $total = (int) ($cleaner['total'] ?? 0);
+        $gmailCount = (int) ($cleaner['gmail_count'] ?? 0);
+        $missing = 0;
+        $over = 0;
+        $target = $targetLimit > 0 ? $targetLimit : null;
+        if ($target !== null) {
+            $missing = max(0, $target - $total);
+            $over = max(0, $total - $target);
+        }
+        $updatedAt = $this->em->getConnection()->fetchOne(
+            'SELECT updated_count_at FROM email_data_pool_lists WHERE id = ?',
+            [$poolListId]
+        );
+
+        return [
+            'total' => $total,
+            'gmail_count' => $gmailCount,
+            'non_gmail_count' => (int) ($cleaner['non_gmail_count'] ?? 0),
+            'duplicate_count' => (int) ($cleaner['duplicate_count'] ?? 0),
+            'typo_gmail_count' => (int) ($cleaner['typo_gmail_count'] ?? 0),
+            'target_limit' => $target,
+            'missing_to_target' => $missing,
+            'over_target' => $over,
+            'updated_at' => $updatedAt ? (string) $updatedAt : null,
+            'gmail_ratio' => $total > 0 ? round(($gmailCount / $total) * 100, 2) : 0.0,
+        ];
+    }
+
+    /**
+     * @return array<int, array{id:int,email:string,name:string}>
+     */
+    private function readEmailsFromList(int $listId, int $limit, bool $onlyGmail): array
+    {
+        $limit = max(1, min(500000, $limit));
+        $sql = "SELECT id, email, COALESCE(name, '') AS name FROM email_data_pool WHERE pool_list_id = ?";
+        $params = [$listId];
+        if ($onlyGmail) {
+            $sql .= " AND LOWER(SUBSTRING_INDEX(email, '@', -1)) = 'gmail.com'";
+        }
+        $sql .= ' ORDER BY id ASC LIMIT ' . $limit;
+        $rows = $this->em->getConnection()->fetchAllAssociative($sql, $params);
+
+        return array_map(static fn (array $row): array => [
+            'id' => (int) ($row['id'] ?? 0),
+            'email' => strtolower(trim((string) ($row['email'] ?? ''))),
+            'name' => (string) ($row['name'] ?? ''),
+        ], $rows);
+    }
+
+    /**
+     * @return array<int, array{id:int,email:string,name:string}>
+     */
+    private function readOverflowRows(int $listId, int $overflow): array
+    {
+        $overflow = max(0, $overflow);
+        if ($overflow === 0) {
+            return [];
+        }
+        $sql = 'SELECT id, email, COALESCE(name, "") AS name
+                  FROM email_data_pool
+                 WHERE pool_list_id = ?
+                 ORDER BY id DESC
+                 LIMIT ' . $overflow;
+        $rows = $this->em->getConnection()->fetchAllAssociative($sql, [$listId]);
+
+        return array_map(static fn (array $row): array => [
+            'id' => (int) ($row['id'] ?? 0),
+            'email' => strtolower(trim((string) ($row['email'] ?? ''))),
+            'name' => (string) ($row['name'] ?? ''),
+        ], $rows);
+    }
+
+    /**
+     * @param array<int, string> $emails
+     * @return array<string, bool>
+     */
+    private function fetchExistingEmailSet(int $listId, array $emails): array
+    {
+        $emails = array_values(array_unique(array_filter(array_map(static fn ($v): string => strtolower(trim((string) $v)), $emails))));
+        if ($emails === []) {
+            return [];
+        }
+        $set = [];
+        foreach (array_chunk($emails, 2000) as $chunk) {
+            $in = implode(',', array_fill(0, count($chunk), '?'));
+            $rows = $this->em->getConnection()->fetchFirstColumn(
+                "SELECT LOWER(email) FROM email_data_pool WHERE pool_list_id = ? AND LOWER(email) IN ($in)",
+                array_merge([$listId], $chunk)
+            );
+            foreach ($rows as $mail) {
+                $set[(string) $mail] = true;
+            }
+        }
+
+        return $set;
+    }
+
+    /**
+     * @param array<int, int> $ids
+     */
+    private function deleteRowsByIds(int $listId, array $ids): int
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids), static fn (int $id): bool => $id > 0));
+        if ($ids === []) {
+            return 0;
+        }
+        $total = 0;
+        foreach (array_chunk($ids, 2000) as $chunk) {
+            $in = implode(',', array_fill(0, count($chunk), '?'));
+            $total += $this->em->getConnection()->executeStatement(
+                "DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)",
+                array_merge([$listId], $chunk)
+            );
+        }
+        $this->em->clear();
+
+        return $total;
+    }
+
+    /**
+     * @return array{0:string,1:bool}
+     */
+    private function normalizeMaybeTypoGmail(string $email, bool $cleanTypos): array
+    {
+        $email = strtolower(trim($email));
+        if (!$cleanTypos || !str_contains($email, '@')) {
+            return [$email, false];
+        }
+        [$local, $domain] = explode('@', $email, 2);
+        if ($local === '' || $domain === '') {
+            return [$email, false];
+        }
+        if (in_array($domain, self::GMAIL_TYPO_DOMAINS, true)) {
+            return [$local . '@gmail.com', true];
+        }
+
+        return [$email, false];
+    }
+
+    private function isGmailEmail(string $email): bool
+    {
+        return str_ends_with(strtolower($email), '@gmail.com');
+    }
+
+    private function createPoolList(string $name): EmailDataPoolList
+    {
+        $name = trim($name);
+        if ($name === '') {
+            throw new \RuntimeException('Yeni liste adı boş olamaz.');
+        }
+        $list = new EmailDataPoolList();
+        $list->setName($name);
+        $list->setSortOrder(0);
+        $list->setUpdatedCountAt(new \DateTimeImmutable());
+        $this->em->persist($list);
+        $this->em->flush();
+
+        return $list;
+    }
+
+    private function acquireListLock(int $listId, int $timeoutSeconds = 0): string
+    {
+        $lockName = 'email_pool_list_' . $listId;
+        $granted = (int) $this->em->getConnection()->fetchOne('SELECT GET_LOCK(?, ?)', [$lockName, $timeoutSeconds]);
+        if ($granted !== 1) {
+            throw new \RuntimeException('Liste üzerinde başka bir işlem çalışıyor. Lütfen tekrar deneyin.');
+        }
+
+        return $lockName;
+    }
+
+    private function releaseListLock(string $lockName): void
+    {
+        if ($lockName === '') {
+            return;
+        }
+        try {
+            $this->em->getConnection()->executeQuery('SELECT RELEASE_LOCK(?)', [$lockName]);
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * @param array<int, string> $emails
+     */
+    private function storeLeftoverFile(array $emails, string $prefix): string
+    {
+        $tmpPath = tempnam(sys_get_temp_dir(), 'edp_leftover');
+        if ($tmpPath === false) {
+            throw new \RuntimeException('Kalan veriler için geçici dosya oluşturulamadı.');
+        }
+        $fp = fopen($tmpPath, 'wb');
+        if ($fp === false) {
+            @unlink($tmpPath);
+            throw new \RuntimeException('Kalan veri dosyası açılamadı.');
+        }
+        foreach ($emails as $email) {
+            $email = trim((string) $email);
+            if ($email !== '') {
+                fwrite($fp, $email . PHP_EOL);
+            }
+        }
+        fclose($fp);
+
+        $token = bin2hex(random_bytes(16));
+        $files = $_SESSION[self::LEFTOVER_FILES_SESSION_KEY] ?? [];
+        if (!is_array($files)) {
+            $files = [];
+        }
+        $files[$token] = [
+            'path' => $tmpPath,
+            'prefix' => $prefix,
+            'expires_at' => time() + 1800,
+        ];
+        $_SESSION[self::LEFTOVER_FILES_SESSION_KEY] = $files;
+
+        return $token;
     }
 
     /**

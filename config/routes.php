@@ -568,6 +568,18 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/{listId}/cleaner/remove-duplicates', [\App\Controllers\EmailDataPoolController::class, 'cleanerRemoveDuplicates'])->setName('admin.email-data-pool.cleaner.remove-duplicates')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'delete'));
+            $group->get('/{listId}/stats', [\App\Controllers\EmailDataPoolController::class, 'stats'])->setName('admin.email-data-pool.stats')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/tools/preview', [\App\Controllers\EmailDataPoolController::class, 'toolsPreview'])->setName('admin.email-data-pool.tools.preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/tools/fill-to-target', [\App\Controllers\EmailDataPoolController::class, 'toolsFillToTarget'])->setName('admin.email-data-pool.tools.fill-to-target')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/tools/move-overflow', [\App\Controllers\EmailDataPoolController::class, 'toolsMoveOverflow'])->setName('admin.email-data-pool.tools.move-overflow')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/tools/split-list', [\App\Controllers\EmailDataPoolController::class, 'toolsSplitList'])->setName('admin.email-data-pool.tools.split-list')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->get('/tools/leftovers/{token}', [\App\Controllers\EmailDataPoolController::class, 'downloadLeftoverFile'])->setName('admin.email-data-pool.tools.leftovers.download')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
         });
 
         // Settings
