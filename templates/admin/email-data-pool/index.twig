@@ -42,6 +42,29 @@
         min-height: 360px;
         overflow-y: auto;
     }
+    .cleaner-card {
+        border: 1px solid rgba(26, 32, 44, 0.1);
+    }
+    .cleaner-card .card-header {
+        background: linear-gradient(135deg, #16213a 0%, #1f2d4d 100%);
+        color: #fff;
+    }
+    .cleaner-kpi .card {
+        border: 0;
+        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+    }
+    .cleaner-kpi h5 {
+        font-size: 1.1rem;
+        margin-bottom: 0;
+    }
+    .cleaner-progress {
+        height: 10px;
+    }
+    @media (max-width: 767.98px) {
+        .cleaner-actions .btn {
+            width: 100%;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -244,6 +267,125 @@
                         </div>
                     </div>
                     {% endif %}
+
+                    <div class="card cleaner-card mt-4" id="mailCleanerCard">
+                        <div class="card-header py-3">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                <h5 class="mb-0 d-flex align-items-center gap-2">
+                                    <i data-feather="shield" class="icon-xs"></i> Mail Temizleme Araçları
+                                </h5>
+                                <small class="opacity-75">Seçili liste: {{ current_list_name|default('Yok') }}</small>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">Bu araçlar yalnızca seçili havuz listesinde çalışır. Analiz otomatik çalışmaz; butonla tetiklenir.</p>
+                            <div class="row g-2 cleaner-actions mb-3">
+                                <div class="col-md-6 col-lg-4">
+                                    <button type="button" class="btn btn-sm btn-primary w-100 cleaner-action-btn" id="cleanerAnalyzeBtn" {% if not current_list_id %}disabled{% endif %}>
+                                        <i data-feather="bar-chart-2" class="icon-xs me-1"></i> Analiz Et
+                                    </button>
+                                </div>
+                                <div class="col-md-6 col-lg-4">
+                                    <button type="button" class="btn btn-sm btn-soft-secondary w-100 cleaner-action-btn" id="cleanerExportBtn" {% if not current_list_id %}disabled{% endif %}>
+                                        <i data-feather="download" class="icon-xs me-1"></i> Gmail Dışı Mailleri İndir
+                                    </button>
+                                </div>
+                                <div class="col-md-6 col-lg-4">
+                                    <button type="button" class="btn btn-sm btn-soft-danger w-100 cleaner-action-btn" id="cleanerDeleteNonGmailBtn" {% if not current_list_id %}disabled{% endif %}>
+                                        <i data-feather="trash-2" class="icon-xs me-1"></i> Gmail Dışı Mailleri Sil
+                                    </button>
+                                </div>
+                                <div class="col-md-6 col-lg-4">
+                                    <button type="button" class="btn btn-sm btn-soft-warning w-100 cleaner-action-btn" id="cleanerFixTyposBtn" {% if not current_list_id %}disabled{% endif %}>
+                                        <i data-feather="edit-3" class="icon-xs me-1"></i> Gmail Hatalarını Düzelt
+                                    </button>
+                                </div>
+                                <div class="col-md-6 col-lg-4">
+                                    <button type="button" class="btn btn-sm btn-soft-info w-100 cleaner-action-btn" id="cleanerRemoveDuplicatesBtn" {% if not current_list_id %}disabled{% endif %}>
+                                        <i data-feather="copy" class="icon-xs me-1"></i> Duplicate Temizle
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="cleanerProgressWrap" class="mb-3 d-none">
+                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                    <span id="cleanerProgressText">İşlem sürüyor...</span>
+                                    <span id="cleanerProgressPercent">0%</span>
+                                </div>
+                                <div class="progress cleaner-progress">
+                                    <div id="cleanerProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%"></div>
+                                </div>
+                            </div>
+
+                            <div class="row g-2 cleaner-kpi d-none" id="cleanerKpiGrid">
+                                <div class="col-sm-6 col-lg-4 col-xl-2">
+                                    <div class="card h-100">
+                                        <div class="card-body py-3">
+                                            <p class="text-muted small mb-1">Toplam Kayıt</p>
+                                            <h5 id="kpiTotal">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-sm-6 col-lg-4 col-xl-2">
+                                    <div class="card h-100 border border-success-subtle">
+                                        <div class="card-body py-3">
+                                            <p class="text-muted small mb-1">Gmail</p>
+                                            <h5 class="text-success" id="kpiGmail">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-sm-6 col-lg-4 col-xl-2">
+                                    <div class="card h-100 border border-danger-subtle">
+                                        <div class="card-body py-3">
+                                            <p class="text-muted small mb-1">Gmail Dışı</p>
+                                            <h5 class="text-danger" id="kpiNonGmail">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-sm-6 col-lg-4 col-xl-2">
+                                    <div class="card h-100 border border-warning-subtle">
+                                        <div class="card-body py-3">
+                                            <p class="text-muted small mb-1">Hatalı Gmail Domaini</p>
+                                            <h5 class="text-warning" id="kpiTypo">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-sm-6 col-lg-4 col-xl-2">
+                                    <div class="card h-100 border border-info-subtle">
+                                        <div class="card-body py-3">
+                                            <p class="text-muted small mb-1">Duplicate</p>
+                                            <h5 class="text-info" id="kpiDuplicate">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-sm-6 col-lg-4 col-xl-2">
+                                    <div class="card h-100 border border-secondary-subtle">
+                                        <div class="card-body py-3">
+                                            <p class="text-muted small mb-1">Silinebilir Kayıt</p>
+                                            <h5 class="text-secondary" id="kpiDeletable">0</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="cleanerPreviewWrap" class="mt-3 d-none">
+                                <div class="row g-3">
+                                    <div class="col-lg-6">
+                                        <div class="border rounded p-3 h-100">
+                                            <p class="small fw-semibold mb-2">Normalize önizleme</p>
+                                            <pre class="small mb-0 text-muted" id="cleanerNormalizedPreview"></pre>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="border rounded p-3 h-100">
+                                            <p class="small fw-semibold mb-2">Gmail dışı önizleme</p>
+                                            <pre class="small mb-0 text-muted" id="cleanerNonGmailPreview"></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -525,8 +667,81 @@ Format: email@domain.com" oninput="updateRemoveEmailCount()" style="font-size: 1
     </div>
 </div>
 
+<div class="modal fade" id="cleanerDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="alert-triangle" class="icon-xs"></i> Gmail Dışı Mailleri Sil
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Bu listede <strong id="deleteNonGmailCount">0</strong> adet Gmail dışı kayıt silinecek.</p>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="downloadBeforeDelete">
+                    <label class="form-check-label" for="downloadBeforeDelete">
+                        Silmeden önce indir
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-danger btn-sm" id="confirmDeleteNonGmailBtn">
+                    <i data-feather="trash-2" class="icon-xs me-1"></i> Sil
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="cleanerFixModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="edit-3" class="icon-xs"></i> Gmail Hatalarını Düzelt
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0"><strong id="fixTypoCount">0</strong> kayıt `gmail.com` formatına normalize edilecek.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-warning btn-sm" id="confirmFixTyposBtn">
+                    <i data-feather="check" class="icon-xs me-1"></i> Düzelt
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="cleanerDuplicateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title d-flex align-items-center gap-2 mb-0">
+                    <i data-feather="copy" class="icon-xs"></i> Duplicate Temizle
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">Toplam <strong id="duplicateRemoveCount">0</strong> duplicate kayıt silinecek.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-info btn-sm" id="confirmDuplicateCleanupBtn">
+                    <i data-feather="trash" class="icon-xs me-1"></i> Temizle
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const CURRENT_POOL_LIST_ID = {{ current_list_id|default(0) }};
+const CLEANER_CSRF_TOKEN = '{{ cleaner_csrf|default('')|e('js') }}';
 function appendPoolListToForm(form) {
     if (!CURRENT_POOL_LIST_ID) return;
     const h = document.createElement('input');
@@ -617,7 +832,7 @@ function parseCsvLine(line, delimiter) {
 }
 
 function detectHeaderMap(row) {
-    const emailAliases = ['mailadresi', 'email', 'e-mail', 'mail', 'eposta', 'e-posta', 'recipient', 'address'];
+    const emailAliases = ['mailadresi', 'email', 'emailadresi', 'e-mail', 'mail', 'eposta', 'e-posta', 'epostaadresi', 'mailaddress', 'recipient', 'address'];
     const nameAliases = ['isim', 'name', 'ad', 'full_name', 'fullname'];
     const statusAliases = ['durum', 'status'];
 
@@ -1040,6 +1255,231 @@ function readRemoveExcelFile(file) {
     reader.readAsArrayBuffer(file);
 }
 
+const cleanerState = {
+    stats: null,
+    busy: false,
+    progressTimer: null
+};
+
+function cleanerUrl(action) {
+    return `/admin/email-data-pool/${CURRENT_POOL_LIST_ID}/cleaner/${action}`;
+}
+
+function showCleanerToast(type, message) {
+    if (window.iziToast) {
+        if (type === 'success') {
+            iziToast.success({ title: 'Başarılı', message, position: 'topRight' });
+        } else {
+            iziToast.error({ title: 'Hata', message, position: 'topRight' });
+        }
+        return;
+    }
+    alert(message);
+}
+
+function setCleanerButtonsDisabled(disabled) {
+    document.querySelectorAll('.cleaner-action-btn, #confirmDeleteNonGmailBtn, #confirmFixTyposBtn, #confirmDuplicateCleanupBtn')
+        .forEach(btn => {
+            if (!btn) return;
+            if (CURRENT_POOL_LIST_ID) {
+                btn.disabled = disabled;
+            } else {
+                btn.disabled = true;
+            }
+        });
+}
+
+function startCleanerProgress(text) {
+    const wrap = document.getElementById('cleanerProgressWrap');
+    const bar = document.getElementById('cleanerProgressBar');
+    const percent = document.getElementById('cleanerProgressPercent');
+    const label = document.getElementById('cleanerProgressText');
+    if (!wrap || !bar || !percent || !label) return;
+    label.textContent = text || 'İşlem sürüyor...';
+    wrap.classList.remove('d-none');
+    bar.style.width = '0%';
+    percent.textContent = '0%';
+    let value = 0;
+    clearInterval(cleanerState.progressTimer);
+    cleanerState.progressTimer = setInterval(() => {
+        value = Math.min(92, value + 4);
+        bar.style.width = `${value}%`;
+        percent.textContent = `${value}%`;
+    }, 120);
+}
+
+function finishCleanerProgress() {
+    const wrap = document.getElementById('cleanerProgressWrap');
+    const bar = document.getElementById('cleanerProgressBar');
+    const percent = document.getElementById('cleanerProgressPercent');
+    clearInterval(cleanerState.progressTimer);
+    cleanerState.progressTimer = null;
+    if (bar) bar.style.width = '100%';
+    if (percent) percent.textContent = '100%';
+    setTimeout(() => {
+        if (wrap) wrap.classList.add('d-none');
+        if (bar) bar.style.width = '0%';
+        if (percent) percent.textContent = '0%';
+    }, 350);
+}
+
+async function cleanerRequest(action, options = {}) {
+    const method = options.method || 'GET';
+    const headers = Object.assign({}, options.headers || {});
+    if (method !== 'GET') {
+        headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+        headers['X-CSRF-Token'] = CLEANER_CSRF_TOKEN;
+    }
+    const response = await fetch(cleanerUrl(action), {
+        method,
+        headers,
+        body: options.body || null,
+        credentials: 'same-origin'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.success === false) {
+        throw new Error(data.message || 'İşlem başarısız oldu.');
+    }
+    return data;
+}
+
+function renderCleanerStats(stats) {
+    cleanerState.stats = stats || {};
+    const kpiGrid = document.getElementById('cleanerKpiGrid');
+    const previewWrap = document.getElementById('cleanerPreviewWrap');
+    if (!kpiGrid) return;
+
+    const num = value => Number(value || 0).toLocaleString('tr-TR');
+    document.getElementById('kpiTotal').textContent = num(cleanerState.stats.total);
+    document.getElementById('kpiGmail').textContent = num(cleanerState.stats.gmail_count);
+    document.getElementById('kpiNonGmail').textContent = num(cleanerState.stats.non_gmail_count);
+    document.getElementById('kpiTypo').textContent = num(cleanerState.stats.typo_gmail_count);
+    document.getElementById('kpiDuplicate').textContent = num(cleanerState.stats.duplicate_count);
+    document.getElementById('kpiDeletable').textContent = num(cleanerState.stats.deletable_count);
+    kpiGrid.classList.remove('d-none');
+
+    const normalized = (cleanerState.stats.normalized_preview || [])
+        .map(item => `${item.from} -> ${item.to}`)
+        .join('\n');
+    const nonGmail = (cleanerState.stats.non_gmail_preview || []).join('\n');
+    document.getElementById('cleanerNormalizedPreview').textContent = normalized || 'Önizleme yok';
+    document.getElementById('cleanerNonGmailPreview').textContent = nonGmail || 'Önizleme yok';
+    if (previewWrap) previewWrap.classList.remove('d-none');
+}
+
+async function runCleanerAnalyze(showSuccess = true) {
+    if (!CURRENT_POOL_LIST_ID) return;
+    setCleanerButtonsDisabled(true);
+    startCleanerProgress('Liste analiz ediliyor...');
+    try {
+        const stats = await cleanerRequest('analyze');
+        renderCleanerStats(stats);
+        if (showSuccess) {
+            showCleanerToast('success', 'Analiz tamamlandı.');
+        }
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setCleanerButtonsDisabled(false);
+    }
+}
+
+async function ensureCleanerStats() {
+    if (!cleanerState.stats) {
+        await runCleanerAnalyze(false);
+    }
+    return cleanerState.stats || {};
+}
+
+async function exportNonGmail() {
+    if (!CURRENT_POOL_LIST_ID) return;
+    window.location.href = cleanerUrl('export-non-gmail');
+}
+
+function openModalById(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const modal = new bootstrap.Modal(el);
+    modal.show();
+    return modal;
+}
+
+async function openDeleteNonGmailModal() {
+    const stats = await ensureCleanerStats();
+    document.getElementById('deleteNonGmailCount').textContent = Number(stats.non_gmail_count || 0).toLocaleString('tr-TR');
+    openModalById('cleanerDeleteModal');
+}
+
+async function openFixTyposModal() {
+    const stats = await ensureCleanerStats();
+    document.getElementById('fixTypoCount').textContent = Number(stats.typo_gmail_count || 0).toLocaleString('tr-TR');
+    openModalById('cleanerFixModal');
+}
+
+async function openDuplicateModal() {
+    const stats = await ensureCleanerStats();
+    document.getElementById('duplicateRemoveCount').textContent = Number(stats.duplicate_count || 0).toLocaleString('tr-TR');
+    openModalById('cleanerDuplicateModal');
+}
+
+async function deleteNonGmailConfirmed() {
+    const shouldDownload = document.getElementById('downloadBeforeDelete')?.checked;
+    if (shouldDownload) {
+        exportNonGmail();
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    setCleanerButtonsDisabled(true);
+    startCleanerProgress('Gmail dışı kayıtlar siliniyor...');
+    try {
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+        const result = await cleanerRequest('delete-non-gmail', { method: 'POST', body });
+        bootstrap.Modal.getInstance(document.getElementById('cleanerDeleteModal'))?.hide();
+        showCleanerToast('success', `${Number(result.deleted || 0).toLocaleString('tr-TR')} kayıt silindi.`);
+        await runCleanerAnalyze(false);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setCleanerButtonsDisabled(false);
+    }
+}
+
+async function fixTyposConfirmed() {
+    setCleanerButtonsDisabled(true);
+    startCleanerProgress('Gmail domain hataları düzeltiliyor...');
+    try {
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+        const result = await cleanerRequest('fix-gmail-typos', { method: 'POST', body });
+        bootstrap.Modal.getInstance(document.getElementById('cleanerFixModal'))?.hide();
+        showCleanerToast('success', `${Number(result.fixed || 0).toLocaleString('tr-TR')} kayıt düzeltildi, ${Number(result.duplicates_after_fix || 0).toLocaleString('tr-TR')} duplicate kaldırıldı.`);
+        await runCleanerAnalyze(false);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setCleanerButtonsDisabled(false);
+    }
+}
+
+async function removeDuplicatesConfirmed() {
+    setCleanerButtonsDisabled(true);
+    startCleanerProgress('Duplicate kayıtlar temizleniyor...');
+    try {
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+        const result = await cleanerRequest('remove-duplicates', { method: 'POST', body });
+        bootstrap.Modal.getInstance(document.getElementById('cleanerDuplicateModal'))?.hide();
+        showCleanerToast('success', `${Number(result.removed || 0).toLocaleString('tr-TR')} duplicate kayıt silindi.`);
+        await runCleanerAnalyze(false);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setCleanerButtonsDisabled(false);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
     const listSearchInput = document.getElementById('poolListSearch');
@@ -1072,6 +1512,16 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     });
+
+    setCleanerButtonsDisabled(false);
+    document.getElementById('cleanerAnalyzeBtn')?.addEventListener('click', () => runCleanerAnalyze(true));
+    document.getElementById('cleanerExportBtn')?.addEventListener('click', exportNonGmail);
+    document.getElementById('cleanerDeleteNonGmailBtn')?.addEventListener('click', openDeleteNonGmailModal);
+    document.getElementById('cleanerFixTyposBtn')?.addEventListener('click', openFixTyposModal);
+    document.getElementById('cleanerRemoveDuplicatesBtn')?.addEventListener('click', openDuplicateModal);
+    document.getElementById('confirmDeleteNonGmailBtn')?.addEventListener('click', deleteNonGmailConfirmed);
+    document.getElementById('confirmFixTyposBtn')?.addEventListener('click', fixTyposConfirmed);
+    document.getElementById('confirmDuplicateCleanupBtn')?.addEventListener('click', removeDuplicatesConfirmed);
 });
 </script>
 {% endblock %}

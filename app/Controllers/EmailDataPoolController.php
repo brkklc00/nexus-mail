@@ -13,6 +13,27 @@ use Twig\Environment;
 
 class EmailDataPoolController
 {
+    private const CLEANER_CSRF_SESSION_KEY = 'email_pool_cleaner_csrf';
+
+    /** @var array<int, string> */
+    private const GMAIL_TYPO_DOMAINS = [
+        'gmial.com',
+        'gamil.com',
+        'gmai.com',
+        'gmail.co',
+        'gmail.con',
+        'gmal.com',
+        'gmaill.com',
+        'gml.com',
+        'gnail.com',
+        'gmaiil.com',
+        'gmail.cm',
+        'gmail.om',
+        'gmail.com.tr',
+        'gmail.coom',
+        'gmail.comm',
+    ];
+
     public function __construct(
         private EntityManagerInterface $em,
         private Environment $twig
@@ -108,6 +129,7 @@ class EmailDataPoolController
             'list_total_all' => $listTotalAll,
             'updated_count_at' => $updatedCountAt,
             'total_all_pools_entries' => $totalAllPoolsEntries,
+            'cleaner_csrf' => $this->getOrCreateCleanerCsrfToken(),
             'success' => $_SESSION['success'] ?? null,
             'error' => $_SESSION['error'] ?? null
         ]);
@@ -371,7 +393,7 @@ class EmailDataPoolController
      */
     private function detectHeaderMap(array $headerRow): array
     {
-        $emailAliases = ['mailadresi', 'email', 'e-mail', 'mail', 'eposta', 'e-posta', 'recipient', 'address'];
+        $emailAliases = ['mailadresi', 'email', 'emailadresi', 'e-mail', 'mail', 'eposta', 'e-posta', 'epostaadresi', 'mailaddress', 'recipient', 'address'];
         $nameAliases = ['isim', 'name', 'ad', 'fullname', 'full_name'];
         $statusAliases = ['durum', 'status'];
         $emailAliasesNorm = array_map([$this, 'normalizeHeaderName'], $emailAliases);
@@ -1173,6 +1195,543 @@ class EmailDataPoolController
         }
 
         return array_values($listIds);
+    }
+
+    public function cleanerAnalyze(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $stats = $this->buildCleanerStats((int) $poolList->getId());
+
+            return $this->jsonResponse($response, $stats);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 404);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::cleanerAnalyze error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Analiz sırasında hata oluştu.'], 500);
+        }
+    }
+
+    public function cleanerExportNonGmail(Request $request, Response $response, array $args): Response
+    {
+        @set_time_limit(0);
+        if (function_exists('ini_set')) {
+            @ini_set('max_execution_time', '0');
+            @ini_set('memory_limit', '512M');
+        }
+
+        try {
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $tmpPath = $this->writeNonGmailTxtToTempFile((int) $poolList->getId());
+            $resource = fopen($tmpPath, 'rb');
+            if ($resource === false) {
+                @unlink($tmpPath);
+                throw new \RuntimeException('Dosya açılamadı.');
+            }
+
+            register_shutdown_function(static function () use ($tmpPath): void {
+                @unlink($tmpPath);
+            });
+
+            $stream = new \Slim\Psr7\Stream($resource);
+            $filename = sprintf('gmail-disi-liste-%d-%s.txt', (int) $poolList->getId(), date('Y-m-d'));
+
+            return $response
+                ->withBody($stream)
+                ->withHeader('Content-Type', 'text/plain; charset=utf-8')
+                ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+                ->withHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+                ->withHeader('Pragma', 'no-cache')
+                ->withHeader('Expires', '0');
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 404);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::cleanerExportNonGmail error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Dışa aktarma sırasında hata oluştu.'], 500);
+        }
+    }
+
+    public function cleanerDeleteNonGmail(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $deleted = $this->deleteNonGmailForList((int) $poolList->getId());
+            if ($deleted > 0) {
+                $this->recalculateListCounts([(int) $poolList->getId()]);
+            }
+            $remainingTotal = (int) $this->em->getConnection()->fetchOne(
+                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+                [(int) $poolList->getId()]
+            );
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'deleted' => $deleted,
+                'remaining_total' => $remainingTotal,
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 404;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::cleanerDeleteNonGmail error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Silme sırasında hata oluştu.'], 500);
+        }
+    }
+
+    public function cleanerFixGmailTypos(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $result = $this->fixGmailTyposForList((int) $poolList->getId());
+            if (($result['fixed'] ?? 0) > 0 || ($result['duplicates_after_fix'] ?? 0) > 0) {
+                $this->recalculateListCounts([(int) $poolList->getId()]);
+            }
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'fixed' => (int) ($result['fixed'] ?? 0),
+                'duplicates_after_fix' => (int) ($result['duplicates_after_fix'] ?? 0),
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 404;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::cleanerFixGmailTypos error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Düzeltme sırasında hata oluştu.'], 500);
+        }
+    }
+
+    public function cleanerRemoveDuplicates(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $removed = $this->removeDuplicatesForList((int) $poolList->getId());
+            if ($removed > 0) {
+                $this->recalculateListCounts([(int) $poolList->getId()]);
+            }
+            $remainingTotal = (int) $this->em->getConnection()->fetchOne(
+                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+                [(int) $poolList->getId()]
+            );
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'removed' => $removed,
+                'remaining_total' => $remainingTotal,
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 404;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::cleanerRemoveDuplicates error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Duplicate temizleme sırasında hata oluştu.'], 500);
+        }
+    }
+
+    /**
+     * @return array{
+     *   total: int,
+     *   gmail_count: int,
+     *   non_gmail_count: int,
+     *   typo_gmail_count: int,
+     *   duplicate_count: int,
+     *   deletable_count: int,
+     *   normalized_preview: array<int, array{from: string, to: string}>,
+     *   non_gmail_preview: array<int, string>
+     * }
+     */
+    private function buildCleanerStats(int $poolListId): array
+    {
+        $conn = $this->em->getConnection();
+        $total = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?', [$poolListId]);
+        $gmailCount = (int) $conn->fetchOne(
+            "SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ? AND LOWER(SUBSTRING_INDEX(email, '@', -1)) = 'gmail.com'",
+            [$poolListId]
+        );
+        $nonGmailCount = max(0, $total - $gmailCount);
+
+        $typoParams = array_merge([$poolListId], self::GMAIL_TYPO_DOMAINS);
+        $typoInPlaceholders = implode(',', array_fill(0, count(self::GMAIL_TYPO_DOMAINS), '?'));
+        $typoGmailCount = (int) $conn->fetchOne(
+            "SELECT COUNT(*) FROM email_data_pool
+              WHERE pool_list_id = ?
+                AND INSTR(email, '@') > 1
+                AND LOWER(SUBSTRING_INDEX(email, '@', -1)) IN ($typoInPlaceholders)",
+            $typoParams
+        );
+
+        $duplicateCount = (int) $conn->fetchOne(
+            'SELECT COALESCE(SUM(t.cnt - 1), 0) FROM (
+                SELECT COUNT(*) AS cnt
+                FROM email_data_pool
+                WHERE pool_list_id = ?
+                GROUP BY LOWER(email)
+                HAVING COUNT(*) > 1
+            ) AS t',
+            [$poolListId]
+        );
+
+        $nonGmailPreview = $conn->fetchFirstColumn(
+            "SELECT email FROM email_data_pool
+              WHERE pool_list_id = ?
+                AND LOWER(SUBSTRING_INDEX(email, '@', -1)) <> 'gmail.com'
+              ORDER BY id ASC
+              LIMIT 10",
+            [$poolListId]
+        );
+
+        $typoRows = $conn->fetchAllAssociative(
+            "SELECT email FROM email_data_pool
+              WHERE pool_list_id = ?
+                AND INSTR(email, '@') > 1
+                AND LOWER(SUBSTRING_INDEX(email, '@', -1)) IN ($typoInPlaceholders)
+              ORDER BY id ASC
+              LIMIT 10",
+            $typoParams
+        );
+
+        $normalizedPreview = [];
+        foreach ($typoRows as $row) {
+            $source = trim((string) ($row['email'] ?? ''));
+            if ($source === '' || !str_contains($source, '@')) {
+                continue;
+            }
+            [$localPart] = explode('@', $source, 2);
+            $normalizedPreview[] = [
+                'from' => $source,
+                'to' => $localPart . '@gmail.com',
+            ];
+        }
+
+        return [
+            'total' => $total,
+            'gmail_count' => $gmailCount,
+            'non_gmail_count' => $nonGmailCount,
+            'typo_gmail_count' => $typoGmailCount,
+            'duplicate_count' => $duplicateCount,
+            'deletable_count' => $nonGmailCount + $duplicateCount,
+            'normalized_preview' => $normalizedPreview,
+            'non_gmail_preview' => array_values(array_map('strval', $nonGmailPreview)),
+        ];
+    }
+
+    private function writeNonGmailTxtToTempFile(int $poolListId): string
+    {
+        $tmpPath = tempnam(sys_get_temp_dir(), 'edpnogmail');
+        if ($tmpPath === false) {
+            throw new \RuntimeException('Geçici dosya oluşturulamadı.');
+        }
+
+        $fp = fopen($tmpPath, 'wb');
+        if ($fp === false) {
+            @unlink($tmpPath);
+            throw new \RuntimeException('Geçici dosya açılamadı.');
+        }
+
+        $conn = $this->em->getConnection();
+        $batchSize = max(2000, min(20000, (int) ($_ENV['EMAIL_POOL_TXT_EXPORT_BATCH'] ?? 10000)));
+        $lastId = 0;
+
+        do {
+            $rows = $conn->fetchAllAssociative(
+                "SELECT id, email
+                   FROM email_data_pool
+                  WHERE pool_list_id = ?
+                    AND id > ?
+                    AND LOWER(SUBSTRING_INDEX(email, '@', -1)) <> 'gmail.com'
+                  ORDER BY id ASC
+                  LIMIT $batchSize",
+                [$poolListId, $lastId]
+            );
+            foreach ($rows as $row) {
+                $lastId = (int) ($row['id'] ?? 0);
+                $email = trim((string) ($row['email'] ?? ''));
+                if ($email !== '') {
+                    fwrite($fp, $email . PHP_EOL);
+                }
+            }
+        } while (count($rows) === $batchSize);
+
+        if (fclose($fp) === false) {
+            @unlink($tmpPath);
+            throw new \RuntimeException('Dosya kapatılamadı.');
+        }
+
+        return $tmpPath;
+    }
+
+    private function deleteNonGmailForList(int $poolListId): int
+    {
+        $conn = $this->em->getConnection();
+        $batchSize = 5000;
+        $deleted = 0;
+
+        while (true) {
+            $ids = $conn->fetchFirstColumn(
+                "SELECT id
+                   FROM email_data_pool
+                  WHERE pool_list_id = ?
+                    AND LOWER(SUBSTRING_INDEX(email, '@', -1)) <> 'gmail.com'
+                  ORDER BY id ASC
+                  LIMIT $batchSize",
+                [$poolListId]
+            );
+            if ($ids === []) {
+                break;
+            }
+
+            $ids = array_values(array_map('intval', $ids));
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $params = array_merge([$poolListId], $ids);
+            $deleted += $conn->executeStatement(
+                "DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($placeholders)",
+                $params
+            );
+        }
+
+        $this->em->clear();
+
+        return $deleted;
+    }
+
+    /**
+     * @return array{fixed: int, duplicates_after_fix: int}
+     */
+    private function fixGmailTyposForList(int $poolListId): array
+    {
+        $conn = $this->em->getConnection();
+        $batchSize = 2000;
+        $fixed = 0;
+        $duplicatesAfterFix = 0;
+        $lastId = 0;
+        $typoPlaceholders = implode(',', array_fill(0, count(self::GMAIL_TYPO_DOMAINS), '?'));
+
+        while (true) {
+            $params = array_merge([$poolListId, $lastId], self::GMAIL_TYPO_DOMAINS);
+            $rows = $conn->fetchAllAssociative(
+                "SELECT id, email
+                   FROM email_data_pool
+                  WHERE pool_list_id = ?
+                    AND id > ?
+                    AND INSTR(email, '@') > 1
+                    AND LOWER(SUBSTRING_INDEX(email, '@', -1)) IN ($typoPlaceholders)
+                  ORDER BY id ASC
+                  LIMIT $batchSize",
+                $params
+            );
+            if ($rows === []) {
+                break;
+            }
+
+            $targetNormEmails = [];
+            foreach ($rows as $row) {
+                $email = trim((string) ($row['email'] ?? ''));
+                if ($email === '' || !str_contains($email, '@')) {
+                    continue;
+                }
+                [$localPart] = explode('@', $email, 2);
+                if ($localPart === '') {
+                    continue;
+                }
+                $targetNormEmails[] = strtolower($localPart . '@gmail.com');
+            }
+            $targetNormEmails = array_values(array_unique($targetNormEmails));
+
+            $existingKeepByNorm = [];
+            if ($targetNormEmails !== []) {
+                $in = implode(',', array_fill(0, count($targetNormEmails), '?'));
+                $existsRows = $conn->fetchAllAssociative(
+                    "SELECT LOWER(email) AS norm_email, MIN(id) AS keep_id
+                       FROM email_data_pool
+                      WHERE pool_list_id = ?
+                        AND LOWER(email) IN ($in)
+                      GROUP BY LOWER(email)",
+                    array_merge([$poolListId], $targetNormEmails)
+                );
+                foreach ($existsRows as $existsRow) {
+                    $normEmail = (string) ($existsRow['norm_email'] ?? '');
+                    $keepId = (int) ($existsRow['keep_id'] ?? 0);
+                    if ($normEmail !== '' && $keepId > 0) {
+                        $existingKeepByNorm[$normEmail] = $keepId;
+                    }
+                }
+            }
+
+            $batchKeepByNorm = [];
+            $updates = [];
+            $deleteIds = [];
+
+            foreach ($rows as $row) {
+                $id = (int) ($row['id'] ?? 0);
+                $lastId = max($lastId, $id);
+                $email = trim((string) ($row['email'] ?? ''));
+                if ($id < 1 || $email === '' || !str_contains($email, '@')) {
+                    continue;
+                }
+
+                [$localPart] = explode('@', $email, 2);
+                if ($localPart === '') {
+                    continue;
+                }
+
+                $targetEmail = $localPart . '@gmail.com';
+                $targetNorm = strtolower($targetEmail);
+
+                $keepId = $existingKeepByNorm[$targetNorm] ?? PHP_INT_MAX;
+                if (isset($batchKeepByNorm[$targetNorm])) {
+                    $keepId = min($keepId, $batchKeepByNorm[$targetNorm]);
+                }
+
+                if ($keepId !== PHP_INT_MAX && $keepId !== $id) {
+                    $deleteIds[] = $id;
+                    $duplicatesAfterFix++;
+                    continue;
+                }
+
+                if (strcasecmp($email, $targetEmail) !== 0) {
+                    $updates[$id] = $targetEmail;
+                    $fixed++;
+                }
+
+                $batchKeepByNorm[$targetNorm] = min($batchKeepByNorm[$targetNorm] ?? $id, $id);
+                $existingKeepByNorm[$targetNorm] = min($existingKeepByNorm[$targetNorm] ?? $id, $id);
+            }
+
+            if ($updates !== []) {
+                foreach (array_chunk($updates, 500, true) as $chunk) {
+                    $cases = [];
+                    $ids = [];
+                    $params = [];
+                    foreach ($chunk as $id => $newEmail) {
+                        $cases[] = 'WHEN ? THEN ?';
+                        $params[] = (int) $id;
+                        $params[] = (string) $newEmail;
+                        $ids[] = (int) $id;
+                    }
+
+                    $idPlaceholders = implode(',', array_fill(0, count($ids), '?'));
+                    $sql = 'UPDATE email_data_pool
+                               SET email = CASE id ' . implode(' ', $cases) . " END,
+                                   updated_at = NOW()
+                             WHERE pool_list_id = ?
+                               AND id IN ($idPlaceholders)";
+                    $params[] = $poolListId;
+                    foreach ($ids as $id) {
+                        $params[] = $id;
+                    }
+                    $conn->executeStatement($sql, $params);
+                }
+            }
+
+            if ($deleteIds !== []) {
+                foreach (array_chunk($deleteIds, 2000) as $chunk) {
+                    $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+                    $conn->executeStatement(
+                        "DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($placeholders)",
+                        array_merge([$poolListId], $chunk)
+                    );
+                }
+            }
+        }
+
+        $this->em->clear();
+
+        return [
+            'fixed' => $fixed,
+            'duplicates_after_fix' => $duplicatesAfterFix,
+        ];
+    }
+
+    private function removeDuplicatesForList(int $poolListId): int
+    {
+        $conn = $this->em->getConnection();
+        $batchSize = 5000;
+        $removed = 0;
+        $lastId = 0;
+
+        while (true) {
+            $duplicateIds = $conn->fetchFirstColumn(
+                "SELECT d1.id
+                   FROM email_data_pool d1
+                   JOIN email_data_pool d2
+                     ON d1.pool_list_id = d2.pool_list_id
+                    AND LOWER(d1.email) = LOWER(d2.email)
+                    AND d1.id > d2.id
+                  WHERE d1.pool_list_id = ?
+                    AND d1.id > ?
+                  ORDER BY d1.id ASC
+                  LIMIT $batchSize",
+                [$poolListId, $lastId]
+            );
+            if ($duplicateIds === []) {
+                break;
+            }
+
+            $duplicateIds = array_values(array_map('intval', $duplicateIds));
+            $lastId = max($duplicateIds);
+            $placeholders = implode(',', array_fill(0, count($duplicateIds), '?'));
+            $removed += $conn->executeStatement(
+                "DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($placeholders)",
+                array_merge([$poolListId], $duplicateIds)
+            );
+        }
+
+        $this->em->clear();
+
+        return $removed;
+    }
+
+    private function getOrCreateCleanerCsrfToken(): string
+    {
+        $token = (string) ($_SESSION[self::CLEANER_CSRF_SESSION_KEY] ?? '');
+        if ($token === '') {
+            $token = bin2hex(random_bytes(32));
+            $_SESSION[self::CLEANER_CSRF_SESSION_KEY] = $token;
+        }
+
+        return $token;
+    }
+
+    private function assertCleanerCsrf(Request $request): void
+    {
+        $body = $request->getParsedBody();
+        $bodyToken = null;
+        if (is_array($body)) {
+            $bodyToken = $body['_csrf'] ?? null;
+        }
+        $candidate = trim((string) ($bodyToken ?? $request->getHeaderLine('X-CSRF-Token')));
+        $expected = trim((string) ($_SESSION[self::CLEANER_CSRF_SESSION_KEY] ?? ''));
+        if ($expected === '' || $candidate === '' || !hash_equals($expected, $candidate)) {
+            throw new \RuntimeException('CSRF doğrulaması başarısız.');
+        }
+    }
+
+    private function resolveExistingPoolListById(int $listId): EmailDataPoolList
+    {
+        if ($listId < 1) {
+            throw new \RuntimeException('Liste bulunamadı.');
+        }
+
+        $list = $this->em->find(EmailDataPoolList::class, $listId);
+        if (!$list) {
+            throw new \RuntimeException('Liste bulunamadı.');
+        }
+
+        return $list;
+    }
+
+    private function jsonResponse(Response $response, array $payload, int $status = 200): Response
+    {
+        $response->getBody()->write((string) json_encode($payload, JSON_UNESCAPED_UNICODE));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
     }
 
     public function storeList(Request $request, Response $response): Response
