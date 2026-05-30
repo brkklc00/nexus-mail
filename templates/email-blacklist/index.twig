@@ -3,7 +3,7 @@
 {% block title %}Kara Liste - {{ site_title|default('Nexus Panel') }}{% endblock %}
 
 {% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+<li class="breadcrumb-item"><a href="/email-dashboard">Mail Yönetimi</a></li>
 <li class="breadcrumb-item active" aria-current="page">Kara Liste</li>
 {% endblock %}
 
@@ -41,6 +41,121 @@
 {% block page_icon %}{% endblock %}
 {% block title_text %}{% endblock %}
 
+{% block styles %}
+<style>
+.nx-bl-toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(220px, 1fr) 165px 150px 130px 104px 92px 100px 40px !important;
+    gap: 10px !important;
+    align-items: center;
+    padding: 14px !important;
+}
+
+.nx-bl-toolbar .btn {
+    min-height: 40px;
+}
+
+.nx-bl-soft-danger {
+    border-color: rgba(220, 38, 38, 0.24) !important;
+    color: #b91c1c !important;
+    background: #fff7f7 !important;
+}
+
+.nx-bl-soft-danger:hover {
+    background: #fee2e2 !important;
+    border-color: rgba(185, 28, 28, 0.35) !important;
+}
+
+.nx-bl-email {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.79rem;
+    color: #0f172a;
+}
+
+.nx-bl-reason-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.nx-bl-reason-badge {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 0.18rem 0.52rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.nx-bl-reason-badge.is-invalid_recipient { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+.nx-bl-reason-badge.is-bounce { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+.nx-bl-reason-badge.is-spam { background: #f5f3ff; color: #6d28d9; border: 1px solid #c4b5fd; }
+.nx-bl-reason-badge.is-complaint { background: #fdf2f8; color: #be185d; border: 1px solid #f9a8d4; }
+.nx-bl-reason-badge.is-manual { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
+.nx-bl-reason-badge.is-smtp_error { background: #ecfeff; color: #0e7490; border: 1px solid #67e8f9; }
+.nx-bl-reason-badge.is-other { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+
+.nx-bl-reason-summary {
+    font-size: 0.77rem;
+    color: #0f172a;
+    font-weight: 600;
+    line-height: 1.32;
+}
+
+.nx-bl-reason-hint {
+    font-size: 0.72rem;
+    color: #64748b;
+    line-height: 1.3;
+}
+
+.nx-bl-reason-detail-btn {
+    font-size: 0.72rem;
+    color: #2563eb;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    text-align: left;
+    width: fit-content;
+}
+
+.nx-bl-reason-full {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 260px;
+    overflow: auto;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 10px;
+    padding: 0.8rem;
+    font-size: 0.78rem;
+}
+
+@media (max-width: 1399.98px) {
+    .nx-bl-toolbar {
+        grid-template-columns: minmax(220px, 1fr) 160px 140px 120px 96px 90px 90px 40px !important;
+    }
+}
+
+@media (max-width: 1199.98px) {
+    .nx-bl-toolbar {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+
+    .nx-bl-toolbar .nx-orders-icon-refresh {
+        justify-self: start;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .nx-bl-toolbar {
+        grid-template-columns: 1fr !important;
+    }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 
     {% if success %}
@@ -73,16 +188,9 @@
         </div>
     </div>
 
-    {% set bl_today = 0 %}
-    {% for item in blacklist %}
-        {% if item.createdAt|date('Y-m-d') == 'now'|date('Y-m-d') %}
-            {% set bl_today = bl_today + 1 %}
-        {% endif %}
-    {% endfor %}
-
     <div class="nx-orders-page nx-email-page nx-orders-shell">
     <div class="row g-3 nx-orders-kpis mb-3">
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-6 col-xl">
             <div class="nx-orders-kpi">
                 <div class="nx-orders-kpi-icon nx-orders-kpi-icon--orders"><i data-feather="shield-off"></i></div>
                 <div class="nx-orders-kpi-body">
@@ -92,17 +200,37 @@
                 </div>
             </div>
         </div>
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-6 col-xl">
             <div class="nx-orders-kpi">
                 <div class="nx-orders-kpi-icon nx-orders-kpi-icon--sent"><i data-feather="calendar"></i></div>
                 <div class="nx-orders-kpi-body">
-                    <div class="nx-orders-kpi-value">{{ bl_today|number_format(0, ',', '.') }}</div>
-                    <div class="nx-orders-kpi-label">Bugün eklenen (bu sayfa)</div>
-                    <div class="nx-orders-kpi-hint">Geçerli sayfadaki kayıtlar</div>
+                    <div class="nx-orders-kpi-value">{{ stats.today_total|default(0)|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Bugün eklenen</div>
+                    <div class="nx-orders-kpi-hint">Tüm kara listede</div>
                 </div>
             </div>
         </div>
-        <div class="col-12 col-md-4">
+        <div class="col-12 col-md-6 col-xl">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--warn"><i data-feather="alert-triangle"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ stats.invalid_recipient_total|default(0)|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Invalid recipient</div>
+                    <div class="nx-orders-kpi-hint">En sık sebep tipi</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl">
+            <div class="nx-orders-kpi">
+                <div class="nx-orders-kpi-icon nx-orders-kpi-icon--credit"><i data-feather="slash"></i></div>
+                <div class="nx-orders-kpi-body">
+                    <div class="nx-orders-kpi-value">{{ stats.bounce_spam_total|default(0)|number_format(0, ',', '.') }}</div>
+                    <div class="nx-orders-kpi-label">Bounce / Spam</div>
+                    <div class="nx-orders-kpi-hint">Toplam kayıt</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl">
             <div class="nx-orders-kpi">
                 <div class="nx-orders-kpi-icon nx-orders-kpi-icon--credit"><i data-feather="layers"></i></div>
                 <div class="nx-orders-kpi-body">
@@ -127,7 +255,7 @@
                 <div class="d-flex flex-wrap gap-2 justify-content-end">
                     <button type="button" class="btn btn-sm btn-outline-danger d-none" onclick="deleteSelected()" id="bulkDeleteBtn">
                         <i data-feather="trash-2" class="align-self-center icon-xs me-1"></i>
-                        Seçilileri sil
+                        Seçilenleri sil
                     </button>
                     {% if total > 0 %}
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAllConfirm()">
@@ -137,13 +265,43 @@
                     {% endif %}
                 </div>
             </div>
-            {% if total > 0 %}
+            {% if total > 0 or q or selected_reason_type or selected_date_range %}
             <div class="nx-orders-toolbar-strip">
-                <div class="nx-orders-list-toolbar orders-toolbar">
-                    <input type="search" class="form-control form-control-sm nx-orders-search-input" id="nxBlSearch" placeholder="Mail veya sebep ara…" autocomplete="off" aria-label="Karaliste ara">
-                    <span class="nx-orders-toolbar-mid" aria-hidden="true"></span>
-                    <button type="button" class="btn nx-orders-icon-refresh" id="nxBlToolbarRefresh" title="Yenile"><i data-feather="refresh-cw"></i></button>
-                </div>
+                <form method="GET" action="/email-blacklist" class="nx-orders-list-toolbar orders-toolbar nx-bl-toolbar" id="nxBlacklistFilterForm">
+                    <input type="hidden" name="page" value="1">
+                    <input type="search" class="form-control form-control-sm nx-orders-search-input" id="nxBlSearch" name="q" value="{{ q|default('') }}" placeholder="Mail adresi veya sebep ara..." autocomplete="off" aria-label="Mail veya sebep ara">
+                    <select class="form-select form-select-sm nx-orders-filter-select" id="nxBlReasonType" name="reason_type" aria-label="Sebep tipi">
+                        <option value="">Tüm sebepler</option>
+                        <option value="bounce" {{ selected_reason_type == 'bounce' ? 'selected' : '' }}>Bounce</option>
+                        <option value="invalid_recipient" {{ selected_reason_type == 'invalid_recipient' ? 'selected' : '' }}>Invalid recipient</option>
+                        <option value="spam" {{ selected_reason_type == 'spam' ? 'selected' : '' }}>Spam</option>
+                        <option value="complaint" {{ selected_reason_type == 'complaint' ? 'selected' : '' }}>Complaint</option>
+                        <option value="manual" {{ selected_reason_type == 'manual' ? 'selected' : '' }}>Manual</option>
+                        <option value="smtp_error" {{ selected_reason_type == 'smtp_error' ? 'selected' : '' }}>SMTP error</option>
+                        <option value="other" {{ selected_reason_type == 'other' ? 'selected' : '' }}>Other</option>
+                    </select>
+                    <select class="form-select form-select-sm nx-orders-filter-select" id="nxBlDateRange" name="date_range" aria-label="Tarih filtresi">
+                        <option value="">Tüm tarihler</option>
+                        <option value="today" {{ selected_date_range == 'today' ? 'selected' : '' }}>Bugün</option>
+                        <option value="last_7_days" {{ selected_date_range == 'last_7_days' ? 'selected' : '' }}>Son 7 gün</option>
+                        <option value="last_30_days" {{ selected_date_range == 'last_30_days' ? 'selected' : '' }}>Son 30 gün</option>
+                        <option value="this_month" {{ selected_date_range == 'this_month' ? 'selected' : '' }}>Bu ay</option>
+                    </select>
+                    <select class="form-select form-select-sm nx-orders-filter-select" id="nxBlSort" name="sort" aria-label="Sıralama">
+                        <option value="newest" {{ selected_sort == 'newest' ? 'selected' : '' }}>En yeni</option>
+                        <option value="oldest" {{ selected_sort == 'oldest' ? 'selected' : '' }}>En eski</option>
+                        <option value="email_az" {{ selected_sort == 'email_az' ? 'selected' : '' }}>Mail A-Z</option>
+                        <option value="email_za" {{ selected_sort == 'email_za' ? 'selected' : '' }}>Mail Z-A</option>
+                    </select>
+                    <select class="form-select form-select-sm nx-orders-filter-select" id="nxBlPerPage" name="per_page" aria-label="Sayfa başı kayıt">
+                        <option value="20" {{ perPage == 20 ? 'selected' : '' }}>20 / sayfa</option>
+                        <option value="50" {{ perPage == 50 ? 'selected' : '' }}>50 / sayfa</option>
+                        <option value="100" {{ perPage == 100 ? 'selected' : '' }}>100 / sayfa</option>
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Filtrele</button>
+                    <a href="/email-blacklist" class="btn btn-sm nx-bl-soft-danger">Temizle</a>
+                    <button type="button" class="btn nx-orders-icon-refresh" id="nxBlToolbarRefresh" title="Yenile" aria-label="Yenile"><i data-feather="refresh-cw"></i></button>
+                </form>
             </div>
             {% endif %}
             <div class="card-body nx-orders-list-body">
@@ -169,14 +327,32 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for item in blacklist %}
-                                <tr class="nx-bl-row" data-search="{{ item.email }} {{ item.reason ?? '' }} {{ item.createdAt|date('d.m.Y') }}">
+                                {% for item in blacklistItems %}
+                                <tr class="nx-bl-row">
                                     <td>
                                         <input type="checkbox" class="form-check-input row-checkbox" name="ids[]" value="{{ item.id }}">
                                     </td>
-                                    <td><span class="font-monospace small">{{ item.email }}</span></td>
-                                    <td><small class="text-muted">{{ item.reason ?? '—' }}</small></td>
-                                    <td><span class="text-muted small">{{ item.createdAt|date('d.m.Y H:i') }}</span></td>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="nx-bl-email">{{ item.email }}</span>
+                                            <button type="button" class="btn nx-orders-icon-btn" title="Maili kopyala" onclick="copyText('{{ item.email|e('js') }}', 'Mail adresi kopyalandı')">
+                                                <i data-feather="copy" class="icon-xs"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="nx-bl-reason-wrap">
+                                            <span class="nx-bl-reason-badge is-{{ item.reason_type }}">{{ item.reason_type_label }}</span>
+                                            <span class="nx-bl-reason-summary">{{ item.reason_summary }}</span>
+                                            <span class="nx-bl-reason-hint">{{ item.reason_hint }}</span>
+                                            <button type="button"
+                                                class="nx-bl-reason-detail-btn"
+                                                onclick="openReasonDetailModal('{{ item.email|e('js') }}', '{{ item.reason_type_label|e('js') }}', '{{ item.created_at|date('d.m.Y H:i')|e('js') }}', '{{ (item.reason ?? 'Sebep belirtilmedi')|e('js') }}')">
+                                                Detay
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td><span class="text-muted small">{{ item.created_at|date('d.m.Y H:i') }}</span></td>
                                     <td class="text-end">
                                         <button type="button" class="btn nx-orders-icon-btn" onclick="deleteSingleMail({{ item.id }}, '{{ item.email|e('js') }}')" title="Sil">
                                             <i data-feather="trash-2" class="align-self-center icon-xs"></i>
@@ -190,22 +366,23 @@
                     </form>
 
                     {% if totalPages > 1 %}
+                    {% set baseQuery = 'q=' ~ (q|default('')|url_encode) ~ '&reason_type=' ~ (selected_reason_type|default('')|url_encode) ~ '&date_range=' ~ (selected_date_range|default('')|url_encode) ~ '&sort=' ~ (selected_sort|default('newest')|url_encode) ~ '&per_page=' ~ perPage %}
                     <nav class="mt-3 nx-orders-pagination">
                         <ul class="pagination pagination-sm justify-content-center mb-0">
                             <li class="page-item {{ currentPage == 1 ? 'disabled' : '' }}">
-                                <a class="page-link" href="/email-blacklist?page={{ currentPage - 1 }}">Önceki</a>
+                                <a class="page-link" href="{{ currentPage > 1 ? '/email-blacklist?page=' ~ (currentPage - 1) ~ '&' ~ baseQuery : '#' }}">Önceki</a>
                             </li>
                             {% for page in 1..totalPages %}
                                 {% if page == currentPage %}
                                     <li class="page-item active"><span class="page-link">{{ page }}</span></li>
                                 {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
-                                    <li class="page-item"><a class="page-link" href="/email-blacklist?page={{ page }}">{{ page }}</a></li>
+                                    <li class="page-item"><a class="page-link" href="/email-blacklist?page={{ page }}&{{ baseQuery }}">{{ page }}</a></li>
                                 {% elseif page == currentPage - 3 or page == currentPage + 3 %}
                                     <li class="page-item disabled"><span class="page-link">…</span></li>
                                 {% endif %}
                             {% endfor %}
                             <li class="page-item {{ currentPage == totalPages ? 'disabled' : '' }}">
-                                <a class="page-link" href="/email-blacklist?page={{ currentPage + 1 }}">Sonraki</a>
+                                <a class="page-link" href="{{ currentPage < totalPages ? '/email-blacklist?page=' ~ (currentPage + 1) ~ '&' ~ baseQuery : '#' }}">Sonraki</a>
                             </li>
                         </ul>
                     </nav>
@@ -230,7 +407,7 @@
                     <form action="/email-blacklist" method="POST" onsubmit="return handleBulkSubmit(event)">
                         <div class="mb-3">
                             <label for="emails" class="form-label">Mail Listesi <span class="text-danger">*</span></label>
-                            <textarea class="form-control font-monospace" id="emails" name="emails" rows="8" placeholder="Her satıra bir mail adresi:
+                            <textarea class="form-control font-monospace" id="emails" name="emails" rows="7" placeholder="Her satıra bir mail adresi:
 
 spam@example.com
 abuse@example.com
@@ -263,13 +440,27 @@ user@test.com" required></textarea>
                         </div>
 
                         <div class="mb-3">
-                            <label for="reason_bulk" class="form-label">Sebep (Opsiyonel)</label>
-                            <input type="text" class="form-control" id="reason_bulk" name="reason" placeholder="Örn: Spam, Bounce">
+                            <label for="reason_type" class="form-label">Sebep tipi</label>
+                            <select class="form-select" id="reason_type" name="reason_type">
+                                <option value="manual" selected>Manual</option>
+                                <option value="bounce">Bounce</option>
+                                <option value="spam">Spam</option>
+                                <option value="complaint">Complaint</option>
+                                <option value="invalid_recipient">Invalid recipient</option>
+                                <option value="smtp_error">SMTP error</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reason_custom" class="form-label">Özel sebep (Opsiyonel)</label>
+                            <textarea class="form-control" id="reason_custom" name="reason_custom" rows="3" placeholder="İsterseniz özel sebep yazın (örn: 559 Invalid rcptto)"></textarea>
+                            <small class="text-muted">Boş bırakırsanız seçilen sebep tipi kaydedilir.</small>
                         </div>
 
                         <button type="submit" class="btn nx-orders-primary-btn nx-orders-primary-btn--compact w-100">
                             <i data-feather="shield-off" class="align-self-center icon-xs me-1"></i>
-                            Karalisteye ekle
+                            Kara listeye ekle
                         </button>
                     </form>
                 </div>
@@ -278,7 +469,7 @@ user@test.com" required></textarea>
     </div>
     </div>
 
-<!-- Seçilileri Sil Modal -->
+<!-- Seçilenleri Sil Modal -->
 <div class="modal fade" id="bulkDeleteModal" tabindex="-1" aria-labelledby="bulkDeleteModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -299,10 +490,10 @@ user@test.com" required></textarea>
                         <i data-feather="trash-2" class="icon-xxl text-danger"></i>
                     </div>
                     <h5 class="text-danger mb-2">
-                        <strong id="bulkDeleteCount">0</strong> mail adresi silinecek
+                        Seçili <strong id="bulkDeleteCount">0</strong> kayıt kara listeden silinecek
                     </h5>
                     <p class="text-muted mb-0">
-                        Seçili mail adresleri kara listeden kalıcı olarak çıkarılacaktır.
+                        Bu işlem geri alınamaz. Emin misiniz?
                     </p>
                 </div>
                 
@@ -383,6 +574,41 @@ user@test.com" required></textarea>
     </div>
 </div>
 
+<!-- Sebep Detay Modal -->
+<div class="modal fade" id="reasonDetailModal" tabindex="-1" aria-labelledby="reasonDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="reasonDetailModalLabel">Kara Liste Sebep Detayı</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <div class="small text-muted">Mail adresi</div>
+                        <div class="fw-semibold" id="reasonDetailEmail">-</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="small text-muted">Kategori</div>
+                        <div class="fw-semibold" id="reasonDetailType">-</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="small text-muted">Eklenme</div>
+                        <div class="fw-semibold" id="reasonDetailDate">-</div>
+                    </div>
+                </div>
+                <div class="small text-muted mb-1">Tam sebep mesajı</div>
+                <pre class="nx-bl-reason-full mb-0" id="reasonDetailText"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Kapat</button>
+                <button type="button" class="btn btn-outline-primary" id="copyReasonBtn">Sebebi kopyala</button>
+                <button type="button" class="btn btn-primary" id="copyReasonEmailBtn">Maili kopyala</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
@@ -439,7 +665,7 @@ function updateBulkDeleteBtn() {
     const btn = document.getElementById('bulkDeleteBtn');
     if (checkedCount > 0) {
         btn.style.display = 'inline-block';
-        btn.innerHTML = '<i data-feather="trash-2" class="align-self-center icon-xs me-1"></i> Seçilileri Sil (' + checkedCount + ')';
+        btn.innerHTML = '<i data-feather="trash-2" class="align-self-center icon-xs me-1"></i> Seçilenleri Sil (' + checkedCount + ')';
         feather.replace();
     } else {
         btn.style.display = 'none';
@@ -459,7 +685,7 @@ function deleteSingleMail(id, email) {
     }
 }
 
-// Seçilileri sil - Modal ile
+// Seçilenleri sil - Modal ile
 function deleteSelected() {
     const checkedCount = document.querySelectorAll('.row-checkbox:checked').length;
     if (checkedCount === 0) {
@@ -615,7 +841,7 @@ async function handleFileSelect(event) {
                 alertDiv.className = 'alert alert-success alert-dismissible fade show';
                 alertDiv.innerHTML = `
                     <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
-                    <strong>${uniqueEmails.length.toLocaleString('tr-TR')}</strong> mail adresi yüklendi. "Karalisteye Ekle" butonuna basın.
+                    <strong>${uniqueEmails.length.toLocaleString('tr-TR')}</strong> mail adresi yüklendi. "Kara listeye ekle" butonuna basın.
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 `;
                 
@@ -758,20 +984,42 @@ function readExcelFileOptimized(file) {
     });
 }
 
-function nxBlApplyFilter() {
-    const q = (document.getElementById('nxBlSearch')?.value || '').toLowerCase().trim();
-    document.querySelectorAll('.nx-bl-row').forEach(function (row) {
-        const hay = (row.getAttribute('data-search') || '').toLowerCase();
-        row.style.display = !q || hay.includes(q) ? '' : 'none';
+function copyText(value, successMessage) {
+    const text = String(value || '').trim();
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+        if (window.NexusToast && typeof window.NexusToast.success === 'function') {
+            window.NexusToast.success(successMessage || 'Kopyalandı');
+        }
+    }).catch(() => {
+        if (window.NexusToast && typeof window.NexusToast.warning === 'function') {
+            window.NexusToast.warning('Kopyalama başarısız, tekrar deneyin.');
+        }
     });
+}
+
+function openReasonDetailModal(email, reasonType, createdAt, fullReason) {
+    document.getElementById('reasonDetailEmail').textContent = email || '-';
+    document.getElementById('reasonDetailType').textContent = reasonType || 'Other';
+    document.getElementById('reasonDetailDate').textContent = createdAt || '-';
+    document.getElementById('reasonDetailText').textContent = fullReason || 'Sebep belirtilmedi';
+    const modal = new bootstrap.Modal(document.getElementById('reasonDetailModal'));
+    modal.show();
 }
 
 // DOM yüklendikten sonra
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
-    document.getElementById('nxBlSearch')?.addEventListener('input', nxBlApplyFilter);
     document.getElementById('nxBlToolbarRefresh')?.addEventListener('click', function () { location.reload(); });
     document.getElementById('nxBlHeadRefresh')?.addEventListener('click', function () { location.reload(); });
+    document.getElementById('copyReasonBtn')?.addEventListener('click', function () {
+        const reason = document.getElementById('reasonDetailText')?.textContent || '';
+        copyText(reason, 'Sebep metni kopyalandı');
+    });
+    document.getElementById('copyReasonEmailBtn')?.addEventListener('click', function () {
+        const email = document.getElementById('reasonDetailEmail')?.textContent || '';
+        copyText(email, 'Mail adresi kopyalandı');
+    });
     
     // Tümünü seç/kaldır
     document.getElementById('selectAll')?.addEventListener('change', function() {
