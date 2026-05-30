@@ -1,0 +1,97 @@
+.iziToast.nx-toast {
+    border-radius: 14px !important;
+    border: 1px solid rgba(148, 163, 184, 0.25) !important;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18) !important;
+    backdrop-filter: blur(4px);
+    min-height: 64px !important;
+    max-width: min(420px, calc(100vw - 24px)) !important;
+}
+
+.iziToast.nx-toast .iziToast-body {
+    padding: 12px 14px 12px 12px !important;
+}
+
+.iziToast.nx-toast .iziToast-title {
+    font-size: 0.86rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.1px;
+}
+
+.iziToast.nx-toast .iziToast-message {
+    font-size: 0.82rem !important;
+    line-height: 1.45 !important;
+    margin-top: 2px !important;
+}
+
+.iziToast.nx-toast .iziToast-icon {
+    width: 32px !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    line-height: 32px !important;
+    border-radius: 10px !important;
+    margin-top: 1px !important;
+}
+
+.iziToast.nx-toast .iziToast-close {
+    opacity: 0.72 !important;
+    transform: scale(0.92);
+}
+
+.iziToast.nx-toast .iziToast-close:hover {
+    opacity: 1 !important;
+}
+
+.iziToast.nx-toast.nx-toast--success {
+    background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%) !important;
+    color: #14532d !important;
+}
+
+.iziToast.nx-toast.nx-toast--success .iziToast-icon {
+    background: rgba(22, 163, 74, 0.14) !important;
+    color: #15803d !important;
+}
+
+.iziToast.nx-toast.nx-toast--error {
+    background: linear-gradient(135deg, #fff5f7 0%, #fff1f2 100%) !important;
+    color: #9f1239 !important;
+}
+
+.iziToast.nx-toast.nx-toast--error .iziToast-icon {
+    background: rgba(225, 29, 72, 0.14) !important;
+    color: #be123c !important;
+}
+
+.iziToast.nx-toast.nx-toast--warning {
+    background: linear-gradient(135deg, #fffbeb 0%, #fff7ed 100%) !important;
+    color: #92400e !important;
+}
+
+.iziToast.nx-toast.nx-toast--warning .iziToast-icon {
+    background: rgba(217, 119, 6, 0.16) !important;
+    color: #b45309 !important;
+}
+
+.iziToast.nx-toast.nx-toast--info {
+    background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%) !important;
+    color: #1e3a8a !important;
+}
+
+.iziToast.nx-toast.nx-toast--info .iziToast-icon {
+    background: rgba(37, 99, 235, 0.16) !important;
+    color: #1d4ed8 !important;
+}
+
+@media (max-width: 576px) {
+    .iziToast-wrapper-topRight,
+    .iziToast-wrapper-topLeft,
+    .iziToast-wrapper-topCenter {
+        left: 10px !important;
+        right: 10px !important;
+        width: auto !important;
+    }
+
+    .iziToast.nx-toast {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+}

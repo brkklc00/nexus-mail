@@ -1371,9 +1371,9 @@ class EmailDataPoolController
             } catch (\Throwable) {
             }
 
-            return $this->jsonResponse($response, $stats);
+            return $this->jsonResponse($response, array_merge(['success' => true], $stats));
         } catch (\RuntimeException $e) {
-            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 404);
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::stats error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'İstatistikler yüklenemedi.'], 500);
@@ -1396,6 +1396,9 @@ class EmailDataPoolController
             );
             if ((int) $runningJobId > 0) {
                 $status = $this->analysisJobPayload((int) $runningJobId);
+                $status['success'] = true;
+                $status['already_running'] = true;
+                $status['message'] = 'Bu liste için analiz zaten çalışıyor';
                 return $this->jsonResponse($response, $status);
             }
 
@@ -1416,9 +1419,13 @@ class EmailDataPoolController
                 'last_analyzed_at' => null,
             ]);
 
-            return $this->jsonResponse($response, $this->analysisJobPayload($jobId));
+            $payload = $this->analysisJobPayload($jobId);
+            $payload['success'] = true;
+            $payload['already_running'] = false;
+            $payload['message'] = 'Analiz başlatıldı';
+            return $this->jsonResponse($response, $payload);
         } catch (\RuntimeException $e) {
-            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            $status = $this->runtimeStatusCode($e);
             return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::startAnalysis error: ' . $e->getMessage());
@@ -1437,9 +1444,11 @@ class EmailDataPoolController
             }
             $this->processAnalysisJob($jobId);
 
-            return $this->jsonResponse($response, $this->analysisJobPayload($jobId));
+            $payload = $this->analysisJobPayload($jobId);
+            $payload['success'] = true;
+            return $this->jsonResponse($response, $payload);
         } catch (\RuntimeException $e) {
-            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 404);
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::analysisStatus error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Analiz durumu alınamadı.'], 500);
@@ -2131,6 +2140,7 @@ class EmailDataPoolController
             throw new \RuntimeException('Analiz işi bulunamadı.');
         }
         $payload = [
+            'success' => true,
             'job_id' => (int) ($row['id'] ?? 0),
             'list_id' => (int) ($row['list_id'] ?? 0),
             'status' => (string) ($row['status'] ?? 'idle'),
@@ -2155,6 +2165,22 @@ class EmailDataPoolController
         }
 
         return $payload;
+    }
+
+    private function runtimeStatusCode(\RuntimeException $e): int
+    {
+        $message = $e->getMessage();
+        if (str_contains($message, 'CSRF')) {
+            return 419;
+        }
+        if (str_contains($message, 'Liste bulunamadı')) {
+            return 404;
+        }
+        if (str_contains($message, 'Analiz tabloları bulunamadı')) {
+            return 503;
+        }
+
+        return 400;
     }
 
     private function processAnalysisJob(int $jobId): void

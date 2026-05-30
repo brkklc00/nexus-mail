@@ -30,119 +30,137 @@ class EmailOrderController
      */
     public function index(Request $request, Response $response): Response
     {
-        $user = $this->em->find(User::class, $_SESSION['user']['id']);
-        $params = $request->getQueryParams();
-
-        $page = max(1, (int) ($params['page'] ?? 1));
-        $q = trim((string) ($params['q'] ?? ''));
-        $status = trim((string) ($params['status'] ?? ''));
-        $perPage = (int) ($params['per_page'] ?? 20);
-        $allowedPerPage = [20, 50, 100];
-        if (!in_array($perPage, $allowedPerPage, true)) {
-            $perPage = 20;
-        }
-
-        $listQb = $this->em->createQueryBuilder();
-        $listQb->select('o', 't')
-            ->from(EmailOrder::class, 'o')
-            ->leftJoin('o.template', 't')
-            ->where('o.user = :user')
-            ->setParameter('user', $user);
-
-        if ($q !== '') {
-            $listQb
-                ->andWhere('(LOWER(o.subject) LIKE :q OR CONCAT(\'\', o.id) LIKE :q OR LOWER(o.status) LIKE :q)')
-                ->setParameter('q', '%' . mb_strtolower($q, 'UTF-8') . '%');
-        }
-
-        if ($status !== '') {
-            if ($status === 'pending') {
-                $listQb->andWhere('o.status IN (:statusPending)')
-                    ->setParameter('statusPending', ['pending_approval', 'pending']);
-            } elseif ($status === 'sent') {
-                $listQb->andWhere('o.status IN (:statusCompleted)')
-                    ->setParameter('statusCompleted', ['sent', 'completed']);
-            } elseif ($status === 'other') {
-                $listQb->andWhere('o.status NOT IN (:statusKnown)')
-                    ->setParameter('statusKnown', ['pending_approval', 'pending', 'processing', 'sent', 'completed', 'failed']);
-            } else {
-                $listQb->andWhere('o.status = :status')
-                    ->setParameter('status', $status);
+        try {
+            $userId = (int) ($_SESSION['user']['id'] ?? 0);
+            if ($userId < 1) {
+                return $response->withHeader('Location', '/login')->withStatus(302);
             }
+            $user = $this->em->find(User::class, $userId);
+            if (!$user) {
+                return $response->withHeader('Location', '/login')->withStatus(302);
+            }
+            $params = $request->getQueryParams();
+
+            $page = max(1, (int) ($params['page'] ?? 1));
+            $q = trim((string) ($params['q'] ?? ''));
+            $status = trim((string) ($params['status'] ?? ''));
+            $perPage = (int) ($params['per_page'] ?? 20);
+            $allowedPerPage = [20, 50, 100];
+            if (!in_array($perPage, $allowedPerPage, true)) {
+                $perPage = 20;
+            }
+
+            $listQb = $this->em->createQueryBuilder();
+            $listQb->select('o', 't')
+                ->from(EmailOrder::class, 'o')
+                ->leftJoin('o.template', 't')
+                ->where('o.user = :user')
+                ->setParameter('user', $user);
+
+            if ($q !== '') {
+                $normalizedQ = function_exists('mb_strtolower')
+                    ? mb_strtolower($q, 'UTF-8')
+                    : strtolower($q);
+                $listQb
+                    ->andWhere('(LOWER(o.subject) LIKE :q OR CONCAT(\'\', o.id) LIKE :q OR LOWER(o.status) LIKE :q)')
+                    ->setParameter('q', '%' . $normalizedQ . '%');
+            }
+
+            if ($status !== '') {
+                if ($status === 'pending') {
+                    $listQb->andWhere('o.status IN (:statusPending)')
+                        ->setParameter('statusPending', ['pending_approval', 'pending']);
+                } elseif ($status === 'sent') {
+                    $listQb->andWhere('o.status IN (:statusCompleted)')
+                        ->setParameter('statusCompleted', ['sent', 'completed']);
+                } elseif ($status === 'other') {
+                    $listQb->andWhere('o.status NOT IN (:statusKnown)')
+                        ->setParameter('statusKnown', ['pending_approval', 'pending', 'processing', 'sent', 'completed', 'failed']);
+                } else {
+                    $listQb->andWhere('o.status = :status')
+                        ->setParameter('status', $status);
+                }
+            }
+
+            $countQb = clone $listQb;
+            $total = (int) $countQb
+                ->select('COUNT(o.id)')
+                ->getQuery()
+                ->getSingleScalarResult();
+
+            $totalPages = max(1, (int) ceil($total / $perPage));
+            if ($page > $totalPages) {
+                $page = $totalPages;
+            }
+
+            $orders = $listQb
+                ->orderBy('o.createdAt', 'DESC')
+                ->setFirstResult(($page - 1) * $perPage)
+                ->setMaxResults($perPage)
+                ->getQuery()
+                ->getResult();
+            $templateMetaByOrderId = $this->buildFallbackTemplateMapForOrders($orders);
+
+            // Email Blacklist sayısını al
+            $blacklistCount = $this->em->createQueryBuilder()
+                ->select('COUNT(eb.id)')
+                ->from(\App\Domain\Entities\EmailBlacklist::class, 'eb')
+                ->where('eb.user = :user')
+                ->setParameter('user', $user)
+                ->getQuery()
+                ->getSingleScalarResult();
+
+            // Rehberleri çek (sipariş oluşturma için)
+            $qb2 = $this->em->createQueryBuilder();
+            $phonebooks = $qb2->select('p')
+                ->from(EmailPhonebook::class, 'p')
+                ->where('p.user = :user')
+                ->setParameter('user', $user)
+                ->orderBy('p.title', 'ASC')
+                ->getQuery()
+                ->getResult();
+
+            // Mail şablonlarını çek (sadece onaylı şablonlar sipariş oluşturmada kullanılabilir)
+            $qb3 = $this->em->createQueryBuilder();
+            $templates = $qb3->select('t')
+                ->from(\App\Domain\Entities\EmailTemplate::class, 't')
+                // Kullanıcı kendi şablonlarını (onay beklese de) görebilir; global şablonlar onaylı olmalı
+                ->where('(t.user = :user) OR (t.isGlobal = true AND t.isApproved = true)')
+                ->setParameter('user', $user)
+                ->orderBy('t.name', 'ASC')
+                ->getQuery()
+                ->getResult();
+
+            $html = $this->twig->render('email-orders/index.twig', [
+                'orders' => $orders,
+                'template_meta_by_order_id' => $templateMetaByOrderId,
+                'phonebooks' => $phonebooks,
+                'templates' => $templates,
+                'q' => $q,
+                'selected_status' => $status,
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'total_pages' => $totalPages,
+                'email_credit' => $user->getEmailCredit() ?? 0,
+                'blacklist_count' => $blacklistCount,
+                'success' => $_SESSION['success'] ?? null,
+                'error' => $_SESSION['error'] ?? null,
+                'flash_icon' => $_SESSION['flash_icon'] ?? null
+            ]);
+
+            // Session mesajlarını temizle
+            unset($_SESSION['success'], $_SESSION['error'], $_SESSION['flash_icon']);
+
+            $response->getBody()->write($html);
+            return $response;
+        } catch (\Throwable $e) {
+            error_log('EmailOrderController::index error: ' . $e->getMessage());
+            $_SESSION['error'] = 'Siparişler yüklenirken geçici bir sorun oluştu. Lütfen tekrar deneyin.';
+            $_SESSION['flash_icon'] = 'alert-circle';
+
+            return $response->withHeader('Location', '/dashboard')->withStatus(302);
         }
-
-        $countQb = clone $listQb;
-        $total = (int) $countQb
-            ->select('COUNT(o.id)')
-            ->getQuery()
-            ->getSingleScalarResult();
-
-        $totalPages = max(1, (int) ceil($total / $perPage));
-        if ($page > $totalPages) {
-            $page = $totalPages;
-        }
-
-        $orders = $listQb
-            ->orderBy('o.createdAt', 'DESC')
-            ->setFirstResult(($page - 1) * $perPage)
-            ->setMaxResults($perPage)
-            ->getQuery()
-            ->getResult();
-        $templateMetaByOrderId = $this->buildFallbackTemplateMapForOrders($orders);
-
-        // Email Blacklist sayısını al
-        $blacklistCount = $this->em->createQueryBuilder()
-            ->select('COUNT(eb.id)')
-            ->from(\App\Domain\Entities\EmailBlacklist::class, 'eb')
-            ->where('eb.user = :user')
-            ->setParameter('user', $user)
-            ->getQuery()
-            ->getSingleScalarResult();
-
-        // Rehberleri çek (sipariş oluşturma için)
-        $qb2 = $this->em->createQueryBuilder();
-        $phonebooks = $qb2->select('p')
-            ->from(EmailPhonebook::class, 'p')
-            ->where('p.user = :user')
-            ->setParameter('user', $user)
-            ->orderBy('p.title', 'ASC')
-            ->getQuery()
-            ->getResult();
-
-        // Mail şablonlarını çek (sadece onaylı şablonlar sipariş oluşturmada kullanılabilir)
-        $qb3 = $this->em->createQueryBuilder();
-        $templates = $qb3->select('t')
-            ->from(\App\Domain\Entities\EmailTemplate::class, 't')
-            // Kullanıcı kendi şablonlarını (onay beklese de) görebilir; global şablonlar onaylı olmalı
-            ->where('(t.user = :user) OR (t.isGlobal = true AND t.isApproved = true)')
-            ->setParameter('user', $user)
-            ->orderBy('t.name', 'ASC')
-            ->getQuery()
-            ->getResult();
-
-        $html = $this->twig->render('email-orders/index.twig', [
-            'orders' => $orders,
-            'template_meta_by_order_id' => $templateMetaByOrderId,
-            'phonebooks' => $phonebooks,
-            'templates' => $templates,
-            'q' => $q,
-            'selected_status' => $status,
-            'page' => $page,
-            'per_page' => $perPage,
-            'total' => $total,
-            'total_pages' => $totalPages,
-            'email_credit' => $user->getEmailCredit() ?? 0,
-            'blacklist_count' => $blacklistCount,
-            'success' => $_SESSION['success'] ?? null,
-            'error' => $_SESSION['error'] ?? null,
-            'flash_icon' => $_SESSION['flash_icon'] ?? null
-        ]);
-        
-        // Session mesajlarını temizle
-        unset($_SESSION['success'], $_SESSION['error'], $_SESSION['flash_icon']);
-        
-        $response->getBody()->write($html);
-        return $response;
     }
 
 
