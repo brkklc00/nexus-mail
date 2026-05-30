@@ -10,6 +10,7 @@ use App\Application\Services\AlibabaDirectMailReportService;
 use App\Application\Services\TransactionalEmailService;
 use App\Application\Services\DomainConfigService;
 use App\Services\ExternalMailBalanceApiService;
+use App\Services\ExternalMailBalanceService;
 use App\Infrastructure\Security\PasswordHasher;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
@@ -425,13 +426,17 @@ return array_merge($settings, [
         return new \App\Controllers\Admin\EmailOrderController(
             $c->get(EntityManager::class),
             $c->get(TwigEnvironment::class),
-            $c->get(ExternalMailBalanceApiService::class)
+            $c->get(ExternalMailBalanceService::class)
         );
     }),
 
-    ExternalMailBalanceApiService::class => factory(function (ContainerInterface $c) {
+    ExternalMailBalanceService::class => factory(function (ContainerInterface $c) {
         $settings = $c->get('settings');
-        return new ExternalMailBalanceApiService($settings);
+        return new ExternalMailBalanceService($settings);
+    }),
+
+    ExternalMailBalanceApiService::class => factory(function (ContainerInterface $c) {
+        return $c->get(ExternalMailBalanceService::class);
     }),
 
     \App\Controllers\Admin\EmailPhonebookController::class => factory(function (ContainerInterface $c) {

@@ -204,7 +204,7 @@
                                         {% set description = transaction.description ?? '-' %}
                                         {% if 'Mail siparişi #' in description %}
                                             {% set orderId = description|split('#')|last|split(' ')|first %}
-                                            <a href="/email-orders?modal={{ orderId }}" class="text-primary">
+                                            <a href="/email-send?modal={{ orderId }}" class="text-primary">
                                                 <i data-feather="external-link" class="icon-xs me-1"></i>
                                                 Sipariş #{{ orderId }}
                                             </a>

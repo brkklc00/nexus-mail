@@ -152,13 +152,13 @@
                                     {% if transaction.meta %}
                                         {% if transaction.meta.order_id %}
                                             {% set isEmailOrder = transaction.meta.service == 'email' or transaction.meta.type == 'email' or transaction.type.label matches '/Email|Mail/i' %}
-                                            {% set orderUrl = isEmailOrder ? '/email-orders?modal=' ~ transaction.meta.order_id : '/orders?modal=' ~ transaction.meta.order_id %}
+                                            {% set orderUrl = isEmailOrder ? '/email-send?modal=' ~ transaction.meta.order_id : '/orders?modal=' ~ transaction.meta.order_id %}
                                             <a href="{{ orderUrl }}" class="text-primary">
                                                 <i data-feather="external-link" class="icon-xs me-1"></i>
                                                 Sipariş #{{ transaction.meta.order_id }}
                                             </a>
                                         {% elseif transaction.meta.email_order_id %}
-                                            <a href="/email-orders?modal={{ transaction.meta.email_order_id }}" class="text-primary">
+                                            <a href="/email-send?modal={{ transaction.meta.email_order_id }}" class="text-primary">
                                                 <i data-feather="external-link" class="icon-xs me-1"></i>
                                                 Mail Sipariş #{{ transaction.meta.email_order_id }}
                                             </a>

@@ -71,7 +71,7 @@
                                 <tr>
                                     <td>{{ order.id }}</td>
                                     <td>
-                                        <a href="/email-orders/{{ order.id }}">
+                                        <a href="/email-send/{{ order.id }}">
                                             {{ order.subject|length > 30 ? order.subject|slice(0, 30) ~ '...' : order.subject }}
                                         </a>
                                     </td>
@@ -92,7 +92,7 @@
                                     </td>
                                     <td><small>{{ order.createdAt|date('d.m.Y H:i') }}</small></td>
                                     <td>
-                                        <a href="/email-orders/{{ order.id }}" class="btn btn-sm btn-soft-primary" title="Detay">
+                                        <a href="/email-send/{{ order.id }}" class="btn btn-sm btn-soft-primary" title="Detay">
                                             <i data-feather="eye" class="icon-xs"></i>
                                         </a>
                                     </td>
@@ -116,7 +116,7 @@
                     </h4>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="/email-orders" id="orderForm" onsubmit="return showLoading(event)">
+                    <form method="POST" action="/email-send" id="orderForm" onsubmit="return showLoading(event)">
                         <!-- Konu -->
                         <div class="mb-3">
                             <label for="subject" class="form-label">Mail Konusu <span class="text-danger">*</span></label>

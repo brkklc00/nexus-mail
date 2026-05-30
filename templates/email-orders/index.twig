@@ -3,7 +3,7 @@
 {% block title %}Yeni Gönderim - {{ site_title|default('Nexus Panel') }}{% endblock %}
 
 {% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+<li class="breadcrumb-item"><a href="/email-dashboard">Mail Yönetimi</a></li>
 <li class="breadcrumb-item active" aria-current="page">Yeni Gönderim</li>
 {% endblock %}
 
@@ -16,7 +16,7 @@
                     <div class="page-title-right mb-2">
                         <ol class="breadcrumb m-0">
                             <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
-                            <li class="breadcrumb-item"><a href="/email-dashboard">Email</a></li>
+                            <li class="breadcrumb-item"><a href="/email-dashboard">Mail Yönetimi</a></li>
                             <li class="breadcrumb-item active">Yeni Gönderim</li>
                         </ol>
                     </div>
@@ -239,7 +239,7 @@
             </div>
             {% if total > 0 or q or selected_status %}
             <div class="nx-orders-toolbar-strip">
-                <form method="GET" action="/email-orders" class="nx-orders-list-toolbar orders-toolbar" id="nxEmailOrdersFilterForm">
+                <form method="GET" action="/email-send" class="nx-orders-list-toolbar orders-toolbar" id="nxEmailOrdersFilterForm">
                     <input type="hidden" name="page" value="1">
                     <input type="search" class="form-control form-control-sm nx-orders-search-input" id="nxEmailOrderSearch" name="q" value="{{ q|default('') }}" placeholder="Sipariş no, konu, durum…" autocomplete="off" aria-label="Siparişlerde ara">
                     <select class="form-select form-select-sm nx-orders-filter-select" id="nxEmailOrderStatusFilter" name="status" aria-label="Durum filtresi">
@@ -303,7 +303,7 @@
                             <tr class="nx-email-order-row" data-status="{{ stFilter }}" data-search="#{{ order.id }} {{ order.id }} {{ order.subject|e('html_attr') }} {{ tplLabel|e('html_attr') }} {{ createdStr }}">
                                 <td><span class="nx-orders-id">#{{ order.id }}</span></td>
                                 <td class="nx-email-td-subject">
-                                    <a href="/email-orders/{{ order.id }}" class="nx-email-subject-link text-decoration-none" title="{{ order.subject|e('html_attr') }}">
+                                    <a href="/email-send/{{ order.id }}" class="nx-email-subject-link text-decoration-none" title="{{ order.subject|e('html_attr') }}">
                                         <span class="nx-email-order-subject-title">{{ order.subject }}</span>
                                         <span class="nx-email-order-template-meta" title="{{ tplLabel|e('html_attr') }}">{{ tplLabel }}</span>
                                     </a>
@@ -370,11 +370,11 @@
                     <nav aria-label="Sipariş sayfalama">
                         <ul class="pagination pagination-sm mb-0 nx-orders-pagination-nav">
                             <li class="page-item {{ page <= 1 ? 'disabled' : '' }}">
-                                <a class="page-link" href="{{ page > 1 ? '/email-orders?page=' ~ (page - 1) ~ '&' ~ baseQuery : '#' }}">Önceki</a>
+                                <a class="page-link" href="{{ page > 1 ? '/email-send?page=' ~ (page - 1) ~ '&' ~ baseQuery : '#' }}">Önceki</a>
                             </li>
 
                             {% if rangeStart > 1 %}
-                            <li class="page-item"><a class="page-link" href="/email-orders?page=1&{{ baseQuery }}">1</a></li>
+                            <li class="page-item"><a class="page-link" href="/email-send?page=1&{{ baseQuery }}">1</a></li>
                             {% if rangeStart > 2 %}
                             <li class="page-item disabled"><span class="page-link">...</span></li>
                             {% endif %}
@@ -382,7 +382,7 @@
 
                             {% for p in rangeStart..rangeEnd %}
                             <li class="page-item {{ p == page ? 'active' : '' }}">
-                                <a class="page-link" href="/email-orders?page={{ p }}&{{ baseQuery }}">{{ p }}</a>
+                                <a class="page-link" href="/email-send?page={{ p }}&{{ baseQuery }}">{{ p }}</a>
                             </li>
                             {% endfor %}
 
@@ -390,11 +390,11 @@
                             {% if rangeEnd < (total_pages - 1) %}
                             <li class="page-item disabled"><span class="page-link">...</span></li>
                             {% endif %}
-                            <li class="page-item"><a class="page-link" href="/email-orders?page={{ total_pages }}&{{ baseQuery }}">{{ total_pages }}</a></li>
+                            <li class="page-item"><a class="page-link" href="/email-send?page={{ total_pages }}&{{ baseQuery }}">{{ total_pages }}</a></li>
                             {% endif %}
 
                             <li class="page-item {{ page >= total_pages ? 'disabled' : '' }}">
-                                <a class="page-link" href="{{ page < total_pages ? '/email-orders?page=' ~ (page + 1) ~ '&' ~ baseQuery : '#' }}">Sonraki</a>
+                                <a class="page-link" href="{{ page < total_pages ? '/email-send?page=' ~ (page + 1) ~ '&' ~ baseQuery : '#' }}">Sonraki</a>
                             </li>
                         </ul>
                     </nav>
@@ -441,7 +441,7 @@
                     <div class="tab-content nx-orders-tab-panels">
                         <!-- Rehberden Gönder -->
                         <div class="tab-pane fade show active" id="phonebookTab" role="tabpanel">
-                            <form method="POST" action="/email-orders" onsubmit="return showLoading(event)">
+                            <form method="POST" action="/email-send" onsubmit="return showLoading(event)">
                                 <input type="hidden" name="send_type" value="phonebook">
                                 
                                 <div class="mb-3">
@@ -508,7 +508,7 @@
 
                         <!-- Manuel Gönder -->
                         <div class="tab-pane fade" id="manualTab" role="tabpanel">
-                            <form method="POST" action="/email-orders" onsubmit="return showLoading(event)">
+                            <form method="POST" action="/email-send" onsubmit="return showLoading(event)">
                                 <input type="hidden" name="send_type" value="manual">
                                 
                                 <div class="mb-3">
@@ -579,7 +579,7 @@
 
                         <!-- Sistem Havuzundan Gönder -->
                         <div class="tab-pane fade" id="poolTab" role="tabpanel">
-                            <form method="POST" action="/email-orders" onsubmit="return showLoadingPool(event)">
+                            <form method="POST" action="/email-send" onsubmit="return showLoadingPool(event)">
                                 <input type="hidden" name="send_type" value="pool">
 
                                 <div class="mb-3">
@@ -873,7 +873,7 @@ function viewOrderDetails(orderId) {
     `;
     modal.show();
     
-    fetch(`/email-orders/${orderId}/details`)
+    fetch(`/email-send/${orderId}/details`)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);

@@ -254,11 +254,15 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->get('/{id}/approval-data', [\App\Controllers\Admin\EmailOrderController::class, 'approvalData'])->setName('admin.email-orders.approval-data')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->get('/{id}/approval-context', [\App\Controllers\Admin\EmailOrderController::class, 'approvalContext'])->setName('admin.email-orders.approval-context')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->get('/external-users', [\App\Controllers\Admin\EmailOrderController::class, 'externalUsers'])->setName('admin.email-orders.external-users')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->get('/external-users/{id}', [\App\Controllers\Admin\EmailOrderController::class, 'externalUserShow'])->setName('admin.email-orders.external-user-show')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->post('/{id}/approve', [\App\Controllers\Admin\EmailOrderController::class, 'approve'])->setName('admin.email-orders.approve')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->post('/{id}/approve-with-balance', [\App\Controllers\Admin\EmailOrderController::class, 'approveWithBalance'])->setName('admin.email-orders.approve-with-balance')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/update-template', [\App\Controllers\Admin\EmailOrderController::class, 'updateTemplate'])->setName('admin.email-orders.update-template')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
@@ -270,6 +274,16 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/bulk-delete', [\App\Controllers\Admin\EmailOrderController::class, 'bulkDelete'])->setName('admin.email-orders.bulk-delete')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+        });
+
+        $group->group('/admin/external-balance', function (RouteCollectorProxy $group) use ($container) {
+            $em = $container->get(EntityManager::class);
+            $twig = $container->get(Environment::class);
+
+            $group->get('/users', [\App\Controllers\Admin\EmailOrderController::class, 'externalBalanceUsers'])->setName('admin.external-balance.users')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->get('/users/{id}', [\App\Controllers\Admin\EmailOrderController::class, 'externalBalanceUserShow'])->setName('admin.external-balance.user-show')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
         });
 
         // Admin: Email Templates Management
@@ -415,20 +429,51 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_phonebook', 'read'));
         });
 
-        // Email Orders
+        // Email Send (Yeni Gönderim - ana route)
+        $group->group('/email-send', function (RouteCollectorProxy $group) use ($container) {
+            $em = $container->get(EntityManager::class);
+            $twig = $container->get(Environment::class);
+
+            $group->get('', [\App\Controllers\EmailOrderController::class, 'index'])->setName('email.send.index')
+                ->add(new PermissionMiddleware($em, $twig, 'email_order', 'read'));
+            $group->post('', [\App\Controllers\EmailOrderController::class, 'store'])->setName('email.send.store')
+                ->add(new PermissionMiddleware($em, $twig, 'email_order', 'create'));
+            $group->get('/{id}/details', [\App\Controllers\EmailOrderController::class, 'getDetails'])->setName('email.send.details')
+                ->add(new PermissionMiddleware($em, $twig, 'email_order', 'read'));
+            $group->get('/{id}', [\App\Controllers\EmailOrderController::class, 'redirectToList'])->setName('email.send.show')
+                ->add(new PermissionMiddleware($em, $twig, 'email_order', 'read'));
+        });
+
+        // Email Orders (legacy aliases)
         $group->group('/email-orders', function (RouteCollectorProxy $group) use ($container) {
             $em = $container->get(EntityManager::class);
             $twig = $container->get(Environment::class);
 
-            $group->get('', [\App\Controllers\EmailOrderController::class, 'index'])->setName('email.orders.index')
+            $group->get('', function ($request, $response) {
+                return $response->withHeader('Location', '/email-send')->withStatus(302);
+            })->setName('email.orders.index')
                 ->add(new PermissionMiddleware($em, $twig, 'email_order', 'read'));
             $group->post('', [\App\Controllers\EmailOrderController::class, 'store'])->setName('email.orders.store')
                 ->add(new PermissionMiddleware($em, $twig, 'email_order', 'create'));
+            $group->get('/create', function ($request, $response) {
+                return $response->withHeader('Location', '/email-send')->withStatus(302);
+            })->setName('email.orders.create')
+                ->add(new PermissionMiddleware($em, $twig, 'email_order', 'read'));
             $group->get('/{id}/details', [\App\Controllers\EmailOrderController::class, 'getDetails'])->setName('email.orders.details')
                 ->add(new PermissionMiddleware($em, $twig, 'email_order', 'read'));
             $group->get('/{id}', [\App\Controllers\EmailOrderController::class, 'redirectToList'])->setName('email.orders.show')
                 ->add(new PermissionMiddleware($em, $twig, 'email_order', 'read'));
         });
+
+        $group->get('/new-email-order', function ($request, $response) {
+            return $response->withHeader('Location', '/email-send')->withStatus(302);
+        })->setName('email.orders.new-email-order')
+            ->add(new PermissionMiddleware($container->get(EntityManager::class), $container->get(Environment::class), 'email_order', 'read'));
+
+        $group->get('/admin/email-orders/create', function ($request, $response) {
+            return $response->withHeader('Location', '/email-send')->withStatus(302);
+        })->setName('admin.email-orders.create-legacy')
+            ->add(new PermissionMiddleware($container->get(EntityManager::class), $container->get(Environment::class), 'email_order', 'read'));
 
         // Email Blacklist
         $group->group('/email-blacklist', function (RouteCollectorProxy $group) use ($container) {

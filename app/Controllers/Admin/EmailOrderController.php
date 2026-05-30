@@ -10,7 +10,7 @@ use App\Domain\Entities\EmailOrder;
 use App\Domain\Entities\EmailTemplate;
 use App\Domain\Entities\User;
 use App\Domain\Enum\EmailOrderStatus;
-use App\Services\ExternalMailBalanceApiService;
+use App\Services\ExternalMailBalanceService;
 use App\Support\EnumHelper;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\LockMode;
@@ -23,7 +23,7 @@ class EmailOrderController
     public function __construct(
         private EntityManagerInterface $em,
         private Environment $twig,
-        private ExternalMailBalanceApiService $externalMailBalanceApi
+        private ExternalMailBalanceService $externalMailBalanceApi
     ) {
     }
 
@@ -387,6 +387,12 @@ class EmailOrderController
      */
     public function approvalData(Request $request, Response $response, array $args): Response
     {
+        // Legacy endpoint: forward to new context payload.
+        return $this->approvalContext($request, $response, $args);
+    }
+
+    public function approvalContext(Request $request, Response $response, array $args): Response
+    {
         $orderId = (int) ($args['id'] ?? 0);
         if ($orderId <= 0) {
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz sipariş ID'], 400);
@@ -404,19 +410,32 @@ class EmailOrderController
 
         return $this->jsonResponse($response, [
             'success' => true,
-            'order_id' => $summary['id'],
-            'order_subject' => $summary['subject'],
-            'order_total' => $summary['total'],
-            'order_status' => $summary['status'],
-            'selected_template_id' => $summary['template_id'],
-            'selected_template_name' => $summary['template_name'],
-            'is_pool_order' => $summary['is_pool_order'],
-            'selected_data_list_id' => $summary['pool_list_id'] ?: $defaultPoolListId,
-            'available_data_lists' => $poolListsPayload,
+            'order' => [
+                'id' => $summary['id'],
+                'subject' => $summary['subject'],
+                'total' => $summary['total'],
+                'sent' => $summary['sent'],
+                'failed' => $summary['failed'],
+                'status' => $summary['status'],
+                'template' => [
+                    'id' => $summary['template_id'],
+                    'name' => $summary['template_name'],
+                    'subject' => $summary['subject'],
+                ],
+                'is_pool_order' => $summary['is_pool_order'],
+                'selected_data_list_id' => $summary['pool_list_id'] ?: $defaultPoolListId,
+            ],
+            'data_lists' => $poolListsPayload,
         ]);
     }
 
     public function externalUsers(Request $request, Response $response): Response
+    {
+        // Legacy endpoint: forward to new proxy endpoint.
+        return $this->externalBalanceUsers($request, $response);
+    }
+
+    public function externalBalanceUsers(Request $request, Response $response): Response
     {
         $query = $request->getQueryParams();
         $q = trim((string) ($query['q'] ?? ''));
@@ -425,22 +444,35 @@ class EmailOrderController
 
         $result = $this->externalMailBalanceApi->listUsers($q, $page, $limit);
         if (!$result['success']) {
+            error_log('externalBalanceUsers error status=' . (int) ($result['status'] ?? 500) . ' message=' . (string) ($result['message'] ?? 'unknown'));
             return $this->jsonResponse($response, [
                 'success' => false,
                 'message' => $this->translateExternalApiError($result),
                 'status' => $result['status'] ?? 500,
-                'data' => $result['data'] ?? [],
+                'retryable' => (int) ($result['status'] ?? 500) >= 500 || (int) ($result['status'] ?? 0) === 0,
             ], (int) ($result['status'] ?? 500));
         }
 
         return $this->jsonResponse($response, [
             'success' => true,
-            'data' => $result['data'] ?? [],
-            'pagination' => $result['pagination'] ?? null,
+            'users' => $result['users'] ?? [],
+            'pagination' => $result['pagination'] ?? [
+                'page' => $page,
+                'limit' => $limit,
+                'total' => count((array) ($result['users'] ?? [])),
+                'has_next' => false,
+                'total_pages' => 1,
+            ],
         ]);
     }
 
     public function externalUserShow(Request $request, Response $response, array $args): Response
+    {
+        // Legacy endpoint: forward to new proxy endpoint.
+        return $this->externalBalanceUserShow($request, $response, $args);
+    }
+
+    public function externalBalanceUserShow(Request $request, Response $response, array $args): Response
     {
         $externalUserId = (int) ($args['id'] ?? 0);
         if ($externalUserId <= 0) {
@@ -459,11 +491,17 @@ class EmailOrderController
 
         return $this->jsonResponse($response, [
             'success' => true,
-            'data' => $result['data'] ?? [],
+            'user' => $result['user'] ?? [],
         ]);
     }
 
     public function approve(Request $request, Response $response, array $args): Response
+    {
+        // Legacy endpoint: keep behavior but new flow name is approveWithBalance.
+        return $this->approveWithBalance($request, $response, $args);
+    }
+
+    public function approveWithBalance(Request $request, Response $response, array $args): Response
     {
         $externalDebitDone = false;
         $externalUserId = 0;
@@ -487,12 +525,16 @@ class EmailOrderController
             if (!is_array($payload)) {
                 $payload = $request->getParsedBody() ?: [];
             }
-            $externalUserId = isset($payload['external_customer_id']) ? (int) $payload['external_customer_id'] : 0;
+            $externalUserId = isset($payload['external_user_id'])
+                ? (int) $payload['external_user_id']
+                : (isset($payload['external_customer_id']) ? (int) $payload['external_customer_id'] : 0);
             if ($externalUserId <= 0) {
                 return $this->jsonResponse($response, ['success' => false, 'message' => 'Lütfen müşteri seçin.'], 400);
             }
 
-            $requestedPoolListId = isset($payload['pool_list_id']) ? (int) $payload['pool_list_id'] : null;
+            $requestedPoolListId = isset($payload['data_list_id'])
+                ? (int) $payload['data_list_id']
+                : (isset($payload['pool_list_id']) ? (int) $payload['pool_list_id'] : null);
             $conn = $this->em->getConnection();
             $conn->beginTransaction();
 
@@ -586,7 +628,21 @@ class EmailOrderController
                     'message' => $translated
                 ], (int) ($externalUserResult['status'] ?? 400));
             }
-            $externalUserData = is_array($externalUserResult['data']) ? $externalUserResult['data'] : [];
+            $externalUserData = is_array($externalUserResult['user'] ?? null)
+                ? $externalUserResult['user']
+                : (is_array($externalUserResult['data']) ? $externalUserResult['data'] : []);
+            $currentBalance = (int) ($externalUserData['mail_balance'] ?? $externalUserData['balance'] ?? 0);
+            if ($currentBalance > 0 && $currentBalance < $orderTotal) {
+                $conn->rollBack();
+                return $this->jsonResponse($response, [
+                    'success' => false,
+                    'message' => sprintf(
+                        'Yetersiz mail bakiyesi. Gerekli: %s, Mevcut: %s',
+                        number_format($orderTotal, 0, ',', '.'),
+                        number_format($currentBalance, 0, ',', '.')
+                    )
+                ], 422);
+            }
 
             $subtractResult = $this->externalMailBalanceApi->subtractBalance($externalUserId, $orderTotal, $approvalDescription);
             if (!$subtractResult['success']) {
@@ -639,7 +695,10 @@ class EmailOrderController
             $conn->commit();
             return $this->jsonResponse($response, [
                 'success' => true,
-                'message' => 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.'
+                'message' => 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.',
+                'order_id' => $order->getId(),
+                'external_user_id' => $externalUserId,
+                'amount' => $orderTotal,
             ]);
         } catch (\Throwable $e) {
             if (isset($conn) && $conn->isTransactionActive()) {
@@ -689,7 +748,7 @@ class EmailOrderController
             error_log('Email Order Approve Error: ' . $e->getMessage());
             return $this->jsonResponse($response, [
                 'success' => false,
-                'message' => 'Onay sırasında hata: ' . $e->getMessage()
+                'message' => 'Onay işlemi sırasında sistem hatası oluştu. Lütfen tekrar deneyin.'
             ], 500);
         }
     }
@@ -1456,11 +1515,19 @@ class EmailOrderController
 
     private function translateExternalApiError(array $result): string
     {
+        $normalizedMessage = trim((string) ($result['user_message'] ?? ''));
+        if ($normalizedMessage !== '') {
+            return $normalizedMessage;
+        }
+
         $status = (int) ($result['status'] ?? 500);
         $message = strtolower(trim((string) ($result['message'] ?? '')));
 
-        if ($message === 'timeout' || $status === 0) {
-            return 'Bakiye API’sine ulaşılamadı. Lütfen tekrar deneyin.';
+        if ($message === 'timeout' || str_contains($message, 'timed out')) {
+            return 'Bakiye API zaman aşımına uğradı.';
+        }
+        if ($status === 0) {
+            return 'Bakiye API bağlantısı kurulamadı.';
         }
         if (str_contains($message, 'insufficient mail balance')) {
             return 'Seçilen müşterinin mail bakiyesi yetersiz.';
@@ -1469,7 +1536,7 @@ class EmailOrderController
             return 'Bakiye işlemi doğrulanamadı.';
         }
         if (str_contains($message, 'unauthorized')) {
-            return 'Bakiye API anahtarı hatalı veya yetkisiz.';
+            return 'Bakiye API anahtarı geçersiz.';
         }
         if (str_contains($message, 'content-type')) {
             return 'API isteği JSON formatında gönderilmelidir.';
@@ -1481,7 +1548,7 @@ class EmailOrderController
             return 'Seçilen müşteri bulunamadı.';
         }
         if ($status === 401) {
-            return 'Bakiye API anahtarı hatalı veya yetkisiz.';
+            return 'Bakiye API anahtarı geçersiz.';
         }
         if ($status === 503) {
             return 'Bakiye API yapılandırması eksik.';

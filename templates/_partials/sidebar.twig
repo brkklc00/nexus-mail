@@ -48,7 +48,7 @@
                     <div id="nxSbPanelEmail" class="nx-sb-group__panel" role="region">
                         <ul class="nx-sb-group__list">
                             {% if nx_is_admin or _session.user_permissions.email_order.read|default(false) %}
-                            <li><a href="/email-orders"><i data-feather="send" class="menu-icon"></i><span>Yeni Gönderim</span></a></li>
+                            <li><a href="/email-send"><i data-feather="send" class="menu-icon"></i><span>Yeni Gönderim</span></a></li>
                             {% endif %}
                             {% if nx_is_admin or _session.user_permissions.admin_email_orders.read|default(false) %}
                             <li><a href="/admin/email-orders"><i data-feather="inbox" class="menu-icon"></i><span>Gönderimler</span></a></li>
@@ -150,7 +150,8 @@
         if (t === '/dashboard') {
             return c === '/' || c === '/dashboard';
         }
-        if (t === '/email-orders' && (c === '/email-send' || c.indexOf('/email-send/') === 0)) {
+        if ((t === '/email-orders' && (c === '/email-send' || c.indexOf('/email-send/') === 0))
+            || (t === '/email-send' && (c === '/email-orders' || c.indexOf('/email-orders/') === 0))) {
             return true;
         }
         if (t === '/email-phonebooks' && (c === '/email-guides' || c.indexOf('/email-guides/') === 0)) {

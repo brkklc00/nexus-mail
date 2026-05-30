@@ -156,10 +156,25 @@ class EmailOrderController
             return $response;
         } catch (\Throwable $e) {
             error_log('EmailOrderController::index error: ' . $e->getMessage());
-            $_SESSION['error'] = 'Siparişler yüklenirken geçici bir sorun oluştu. Lütfen tekrar deneyin.';
-            $_SESSION['flash_icon'] = 'alert-circle';
-
-            return $response->withHeader('Location', '/dashboard')->withStatus(302);
+            $html = $this->twig->render('email-orders/index.twig', [
+                'orders' => [],
+                'template_meta_by_order_id' => [],
+                'phonebooks' => [],
+                'templates' => [],
+                'q' => '',
+                'selected_status' => '',
+                'page' => 1,
+                'per_page' => 20,
+                'total' => 0,
+                'total_pages' => 1,
+                'email_credit' => 0,
+                'blacklist_count' => 0,
+                'success' => null,
+                'error' => 'Yeni Gönderim sayfası yüklenirken geçici bir hata oluştu.',
+                'flash_icon' => 'alert-circle'
+            ]);
+            $response->getBody()->write($html);
+            return $response->withStatus(500);
         }
     }
 
