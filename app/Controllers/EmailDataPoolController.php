@@ -16,6 +16,7 @@ class EmailDataPoolController
     private const CLEANER_CSRF_SESSION_KEY = 'email_pool_cleaner_csrf';
     private const LEFTOVER_FILES_SESSION_KEY = 'email_pool_leftover_files';
     private const DEFAULT_TARGET_LIMIT = 250000;
+    private ?bool $hasNormalizationColumns = null;
 
     /** @var array<int, string> */
     private const GMAIL_TYPO_DOMAINS = [
@@ -470,24 +471,37 @@ class EmailDataPoolController
             $values = [];
             $params = [];
             $types = [];
+            $withNormalization = $this->hasNormalizationColumns();
             
             foreach ($batch as $item) {
-                $values[] = "(?, ?, ?, ?, ?, ?)";
-                $params[] = $item['email'];
+                $email = strtolower(trim((string) ($item['email'] ?? '')));
+                $name = $item['name'] ?? null;
+                $values[] = $withNormalization ? "(?, ?, ?, ?, ?, ?, ?, ?)" : "(?, ?, ?, ?, ?, ?)";
+                $params[] = $email;
                 $params[] = $item['name'];
                 $params[] = 1;
                 $params[] = $now;
                 $params[] = $now;
                 $params[] = $poolListId;
+                if ($withNormalization) {
+                    $params[] = $email;
+                    $params[] = $this->extractDomain($email);
+                }
                 $types[] = \PDO::PARAM_STR;
-                $types[] = $item['name'] ? \PDO::PARAM_STR : \PDO::PARAM_NULL;
+                $types[] = $name ? \PDO::PARAM_STR : \PDO::PARAM_NULL;
                 $types[] = \PDO::PARAM_INT;
                 $types[] = \PDO::PARAM_STR;
                 $types[] = \PDO::PARAM_STR;
                 $types[] = \PDO::PARAM_INT;
+                if ($withNormalization) {
+                    $types[] = \PDO::PARAM_STR;
+                    $types[] = \PDO::PARAM_STR;
+                }
             }
             
-            $sql = "INSERT INTO email_data_pool (email, name, is_active, created_at, updated_at, pool_list_id) VALUES " . implode(", ", $values);
+            $sql = $withNormalization
+                ? "INSERT INTO email_data_pool (email, name, is_active, created_at, updated_at, pool_list_id, normalized_email, domain) VALUES " . implode(", ", $values)
+                : "INSERT INTO email_data_pool (email, name, is_active, created_at, updated_at, pool_list_id) VALUES " . implode(", ", $values);
             
             $conn->executeStatement($sql, $params, $types);
             $totalAdded += count($batch);
@@ -1265,6 +1279,7 @@ class EmailDataPoolController
             $deleted = $this->deleteNonGmailForList((int) $poolList->getId());
             if ($deleted > 0) {
                 $this->recalculateListCounts([(int) $poolList->getId()]);
+                $this->invalidateAnalysisCache((int) $poolList->getId());
             }
             $remainingTotal = (int) $this->em->getConnection()->fetchOne(
                 'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
@@ -1294,6 +1309,7 @@ class EmailDataPoolController
             $result = $this->fixGmailTyposForList((int) $poolList->getId());
             if (($result['fixed'] ?? 0) > 0 || ($result['duplicates_after_fix'] ?? 0) > 0) {
                 $this->recalculateListCounts([(int) $poolList->getId()]);
+                $this->invalidateAnalysisCache((int) $poolList->getId());
             }
 
             return $this->jsonResponse($response, [
@@ -1319,6 +1335,7 @@ class EmailDataPoolController
             $removed = $this->removeDuplicatesForList((int) $poolList->getId());
             if ($removed > 0) {
                 $this->recalculateListCounts([(int) $poolList->getId()]);
+                $this->invalidateAnalysisCache((int) $poolList->getId());
             }
             $remainingTotal = (int) $this->em->getConnection()->fetchOne(
                 'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
@@ -1345,7 +1362,14 @@ class EmailDataPoolController
             $listId = (int) ($args['listId'] ?? 0);
             $poolList = $this->resolveExistingPoolListById($listId);
             $targetLimit = max(0, (int) ($request->getQueryParams()['target_limit'] ?? ($_ENV['EMAIL_POOL_DEFAULT_TARGET_LIMIT'] ?? self::DEFAULT_TARGET_LIMIT)));
-            $stats = $this->buildListStats((int) $poolList->getId(), $targetLimit);
+            $stats = $this->buildCachedListStats((int) $poolList->getId(), $targetLimit);
+            try {
+                $runningJob = $this->getRunningAnalysisJob((int) $poolList->getId());
+                if ($runningJob !== null) {
+                    $stats['running_job'] = $runningJob;
+                }
+            } catch (\Throwable) {
+            }
 
             return $this->jsonResponse($response, $stats);
         } catch (\RuntimeException $e) {
@@ -1353,6 +1377,72 @@ class EmailDataPoolController
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::stats error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'İstatistikler yüklenemedi.'], 500);
+        }
+    }
+
+    public function startAnalysis(Request $request, Response $response, array $args): Response
+    {
+        $lockName = '';
+        try {
+            $this->assertCleanerCsrf($request);
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $lockName = $this->acquireListLock((int) $poolList->getId());
+            $conn = $this->em->getConnection();
+
+            $runningJobId = $conn->fetchOne(
+                "SELECT id FROM email_data_pool_analysis_jobs WHERE list_id = ? AND status = 'running' ORDER BY id DESC LIMIT 1",
+                [(int) $poolList->getId()]
+            );
+            if ((int) $runningJobId > 0) {
+                $status = $this->analysisJobPayload((int) $runningJobId);
+                return $this->jsonResponse($response, $status);
+            }
+
+            $totalCount = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?', [(int) $poolList->getId()]);
+            $chunkSize = max(10000, min(50000, (int) ($_ENV['EMAIL_POOL_ANALYSIS_CHUNK_SIZE'] ?? 25000)));
+            $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $conn->executeStatement(
+                "INSERT INTO email_data_pool_analysis_jobs
+                    (list_id, status, total_count, processed_count, percent, chunk_size, last_id, gmail_count, non_gmail_count, invalid_gmail_count, duplicate_count, deletable_count, gmail_ratio, normalized_preview, non_gmail_preview, message, error_message, created_at, updated_at)
+                 VALUES (?, 'running', ?, 0, 0, ?, 0, 0, 0, 0, 0, 0, 0, '[]', '[]', 'Liste analiz ediliyor...', NULL, ?, ?)",
+                [(int) $poolList->getId(), $totalCount, $chunkSize, $now, $now]
+            );
+            $jobId = (int) $conn->lastInsertId();
+            $this->upsertAnalysisCache([
+                'list_id' => (int) $poolList->getId(),
+                'status' => 'running',
+                'error_message' => null,
+                'last_analyzed_at' => null,
+            ]);
+
+            return $this->jsonResponse($response, $this->analysisJobPayload($jobId));
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::startAnalysis error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Analiz başlatılamadı.'], 500);
+        } finally {
+            $this->releaseListLock($lockName);
+        }
+    }
+
+    public function analysisStatus(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $jobId = (int) ($args['jobId'] ?? 0);
+            if ($jobId < 1) {
+                throw new \RuntimeException('Analiz işi bulunamadı.');
+            }
+            $this->processAnalysisJob($jobId);
+
+            return $this->jsonResponse($response, $this->analysisJobPayload($jobId));
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 404);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::analysisStatus error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Analiz durumu alınamadı.'], 500);
         }
     }
 
@@ -1508,6 +1598,7 @@ class EmailDataPoolController
                 $moved = $this->deleteRowsByIds((int) $sourceList->getId(), $selectedSourceIds);
                 if ($moved > 0) {
                     $this->recalculateListCounts([(int) $sourceList->getId()]);
+                    $this->invalidateAnalysisCache((int) $sourceList->getId());
                 }
             }
 
@@ -1529,6 +1620,7 @@ class EmailDataPoolController
             }
 
             $this->recalculateListCounts([(int) $targetList->getId()]);
+            $this->invalidateAnalysisCache((int) $targetList->getId());
 
             return $this->jsonResponse($response, [
                 'success' => true,
@@ -1663,6 +1755,10 @@ class EmailDataPoolController
             }
             if ($moved > 0) {
                 $this->recalculateListCounts([(int) $sourceList->getId()]);
+                $this->invalidateAnalysisCache((int) $sourceList->getId());
+            }
+            if ($added > 0) {
+                $this->invalidateAnalysisCache((int) $targetList->getId());
             }
 
             return $this->jsonResponse($response, [
@@ -1816,6 +1912,7 @@ class EmailDataPoolController
             }
             if ($mode === 'move' && $totalMoved > 0) {
                 $this->recalculateListCounts([(int) $sourceList->getId()]);
+                $this->invalidateAnalysisCache((int) $sourceList->getId());
             }
 
             return $this->jsonResponse($response, [
@@ -1963,41 +2060,343 @@ class EmailDataPoolController
         ];
     }
 
-    /**
-     * @return array{
-     *  total:int,gmail_count:int,non_gmail_count:int,duplicate_count:int,typo_gmail_count:int,
-     *  target_limit:?int,missing_to_target:int,over_target:int,updated_at:?string,gmail_ratio:float
-     * }
-     */
-    private function buildListStats(int $poolListId, int $targetLimit): array
+    private function buildCachedListStats(int $poolListId, int $targetLimit): array
     {
-        $cleaner = $this->buildCleanerStats($poolListId);
-        $total = (int) ($cleaner['total'] ?? 0);
-        $gmailCount = (int) ($cleaner['gmail_count'] ?? 0);
-        $missing = 0;
-        $over = 0;
+        $conn = $this->em->getConnection();
         $target = $targetLimit > 0 ? $targetLimit : null;
-        if ($target !== null) {
-            $missing = max(0, $target - $total);
-            $over = max(0, $total - $target);
+        $listTotal = (int) $conn->fetchOne('SELECT total_count FROM email_data_pool_lists WHERE id = ?', [$poolListId]);
+        try {
+            $this->ensureAnalysisTables();
+            $cache = $conn->fetchAssociative('SELECT * FROM email_data_pool_analysis_cache WHERE list_id = ?', [$poolListId]) ?: [];
+        } catch (\Throwable) {
+            $cache = [];
         }
-        $updatedAt = $this->em->getConnection()->fetchOne(
-            'SELECT updated_count_at FROM email_data_pool_lists WHERE id = ?',
-            [$poolListId]
-        );
+        $total = isset($cache['total_count']) ? (int) $cache['total_count'] : $listTotal;
+        $missing = $target !== null ? max(0, $target - $total) : 0;
+        $over = $target !== null ? max(0, $total - $target) : 0;
 
         return [
+            'analysis_status' => (string) ($cache['status'] ?? 'idle'),
+            'analysis_available' => !empty($cache) && in_array((string) ($cache['status'] ?? ''), ['completed', 'running'], true),
             'total' => $total,
-            'gmail_count' => $gmailCount,
-            'non_gmail_count' => (int) ($cleaner['non_gmail_count'] ?? 0),
-            'duplicate_count' => (int) ($cleaner['duplicate_count'] ?? 0),
-            'typo_gmail_count' => (int) ($cleaner['typo_gmail_count'] ?? 0),
+            'gmail_count' => isset($cache['gmail_count']) ? (int) $cache['gmail_count'] : null,
+            'non_gmail_count' => isset($cache['non_gmail_count']) ? (int) $cache['non_gmail_count'] : null,
+            'duplicate_count' => isset($cache['duplicate_count']) ? (int) $cache['duplicate_count'] : null,
+            'typo_gmail_count' => isset($cache['invalid_gmail_count']) ? (int) $cache['invalid_gmail_count'] : null,
+            'deletable_count' => isset($cache['deletable_count']) ? (int) $cache['deletable_count'] : null,
+            'gmail_ratio' => isset($cache['gmail_ratio']) ? (float) $cache['gmail_ratio'] : null,
             'target_limit' => $target,
             'missing_to_target' => $missing,
             'over_target' => $over,
-            'updated_at' => $updatedAt ? (string) $updatedAt : null,
-            'gmail_ratio' => $total > 0 ? round(($gmailCount / $total) * 100, 2) : 0.0,
+            'last_analyzed_at' => isset($cache['last_analyzed_at']) ? (string) $cache['last_analyzed_at'] : null,
+            'normalized_preview' => $this->decodePreview((string) ($cache['normalized_preview'] ?? '[]')),
+            'non_gmail_preview' => $this->decodePreview((string) ($cache['non_gmail_preview'] ?? '[]')),
+            'error_message' => (string) ($cache['error_message'] ?? ''),
+            'updated_at' => isset($cache['updated_at']) ? (string) $cache['updated_at'] : null,
         ];
+    }
+
+    private function getRunningAnalysisJob(int $poolListId): ?array
+    {
+        $this->ensureAnalysisTables();
+        $row = $this->em->getConnection()->fetchAssociative(
+            "SELECT id, status, total_count, processed_count, percent, message
+               FROM email_data_pool_analysis_jobs
+              WHERE list_id = ? AND status = 'running'
+              ORDER BY id DESC LIMIT 1",
+            [$poolListId]
+        );
+        if (!$row) {
+            return null;
+        }
+
+        return [
+            'job_id' => (int) ($row['id'] ?? 0),
+            'status' => (string) ($row['status'] ?? 'idle'),
+            'total' => (int) ($row['total_count'] ?? 0),
+            'processed' => (int) ($row['processed_count'] ?? 0),
+            'percent' => (int) ($row['percent'] ?? 0),
+            'message' => (string) ($row['message'] ?? 'Liste analiz ediliyor...'),
+        ];
+    }
+
+    private function analysisJobPayload(int $jobId): array
+    {
+        $this->ensureAnalysisTables();
+        $row = $this->em->getConnection()->fetchAssociative(
+            'SELECT * FROM email_data_pool_analysis_jobs WHERE id = ?',
+            [$jobId]
+        );
+        if (!$row) {
+            throw new \RuntimeException('Analiz işi bulunamadı.');
+        }
+        $payload = [
+            'job_id' => (int) ($row['id'] ?? 0),
+            'list_id' => (int) ($row['list_id'] ?? 0),
+            'status' => (string) ($row['status'] ?? 'idle'),
+            'total' => (int) ($row['total_count'] ?? 0),
+            'processed' => (int) ($row['processed_count'] ?? 0),
+            'percent' => (int) ($row['percent'] ?? 0),
+            'message' => (string) ($row['message'] ?? ''),
+            'error' => (string) ($row['error_message'] ?? ''),
+        ];
+        if (($payload['status'] ?? '') === 'completed') {
+            $cache = $this->buildCachedListStats((int) $payload['list_id'], 0);
+            $payload['result'] = [
+                'total' => $cache['total'],
+                'gmail' => (int) ($cache['gmail_count'] ?? 0),
+                'non_gmail' => (int) ($cache['non_gmail_count'] ?? 0),
+                'invalid_gmail' => (int) ($cache['typo_gmail_count'] ?? 0),
+                'duplicate' => (int) ($cache['duplicate_count'] ?? 0),
+                'deletable' => (int) ($cache['deletable_count'] ?? 0),
+                'gmail_ratio' => (float) ($cache['gmail_ratio'] ?? 0),
+                'last_analyzed_at' => $cache['last_analyzed_at'],
+            ];
+        }
+
+        return $payload;
+    }
+
+    private function processAnalysisJob(int $jobId): void
+    {
+        $this->ensureAnalysisTables();
+        $lockName = 'email_pool_analysis_job_' . $jobId;
+        $granted = (int) $this->em->getConnection()->fetchOne('SELECT GET_LOCK(?, 0)', [$lockName]);
+        if ($granted !== 1) {
+            return;
+        }
+
+        try {
+            $conn = $this->em->getConnection();
+            $job = $conn->fetchAssociative('SELECT * FROM email_data_pool_analysis_jobs WHERE id = ?', [$jobId]);
+            if (!$job || (string) ($job['status'] ?? '') !== 'running') {
+                return;
+            }
+
+            $listId = (int) ($job['list_id'] ?? 0);
+            $chunkSize = max(10000, min(50000, (int) ($job['chunk_size'] ?? 25000)));
+            $lastId = (int) ($job['last_id'] ?? 0);
+            $rows = $conn->fetchAllAssociative(
+                "SELECT id, email, COALESCE(normalized_email, LOWER(TRIM(email))) AS normalized_email, COALESCE(domain, SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1)) AS domain
+                   FROM email_data_pool
+                  WHERE pool_list_id = ?
+                    AND id > ?
+                  ORDER BY id ASC
+                  LIMIT $chunkSize",
+                [$listId, $lastId]
+            );
+            if ($rows === []) {
+                $this->finalizeAnalysisJob($jobId, $job);
+                return;
+            }
+
+            $processed = (int) ($job['processed_count'] ?? 0);
+            $gmailCount = (int) ($job['gmail_count'] ?? 0);
+            $nonGmailCount = (int) ($job['non_gmail_count'] ?? 0);
+            $invalidCount = (int) ($job['invalid_gmail_count'] ?? 0);
+            $normalizedPreview = $this->decodePreview((string) ($job['normalized_preview'] ?? '[]'));
+            $nonGmailPreview = $this->decodePreview((string) ($job['non_gmail_preview'] ?? '[]'));
+
+            foreach ($rows as $row) {
+                $email = strtolower(trim((string) ($row['email'] ?? '')));
+                $domain = strtolower(trim((string) ($row['domain'] ?? $this->extractDomain($email))));
+                if ($domain === 'gmail.com') {
+                    $gmailCount++;
+                } else {
+                    $nonGmailCount++;
+                    if (count($nonGmailPreview) < 10 && $email !== '') {
+                        $nonGmailPreview[] = $email;
+                    }
+                }
+                if (in_array($domain, self::GMAIL_TYPO_DOMAINS, true)) {
+                    $invalidCount++;
+                    if (count($normalizedPreview) < 10 && str_contains($email, '@')) {
+                        [$localPart] = explode('@', $email, 2);
+                        $normalizedPreview[] = ['from' => $email, 'to' => $localPart . '@gmail.com'];
+                    }
+                }
+            }
+
+            $processed += count($rows);
+            $lastId = (int) ($rows[count($rows) - 1]['id'] ?? $lastId);
+            $total = max(1, (int) ($job['total_count'] ?? 0));
+            $percent = min(99, (int) floor(($processed / $total) * 100));
+            $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+
+            $conn->executeStatement(
+                'UPDATE email_data_pool_analysis_jobs
+                    SET processed_count = ?, last_id = ?, percent = ?, gmail_count = ?, non_gmail_count = ?, invalid_gmail_count = ?, normalized_preview = ?, non_gmail_preview = ?, message = ?, updated_at = ?
+                  WHERE id = ?',
+                [$processed, $lastId, $percent, $gmailCount, $nonGmailCount, $invalidCount, json_encode($normalizedPreview, JSON_UNESCAPED_UNICODE), json_encode($nonGmailPreview, JSON_UNESCAPED_UNICODE), 'Liste analiz ediliyor...', $now, $jobId]
+            );
+            if ($processed >= (int) ($job['total_count'] ?? 0)) {
+                $fresh = $conn->fetchAssociative('SELECT * FROM email_data_pool_analysis_jobs WHERE id = ?', [$jobId]) ?: $job;
+                $this->finalizeAnalysisJob($jobId, $fresh);
+            }
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::processAnalysisJob error: ' . $e->getMessage());
+            $conn = $this->em->getConnection();
+            $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $conn->executeStatement(
+                "UPDATE email_data_pool_analysis_jobs
+                    SET status = 'failed', error_message = ?, message = ?, updated_at = ?
+                  WHERE id = ?",
+                [$e->getMessage(), 'Analiz hata verdi', $now, $jobId]
+            );
+            $listId = (int) $conn->fetchOne('SELECT list_id FROM email_data_pool_analysis_jobs WHERE id = ?', [$jobId]);
+            if ($listId > 0) {
+                $this->upsertAnalysisCache([
+                    'list_id' => $listId,
+                    'status' => 'failed',
+                    'error_message' => $e->getMessage(),
+                    'last_analyzed_at' => $now,
+                ]);
+            }
+        } finally {
+            $this->em->getConnection()->executeQuery('SELECT RELEASE_LOCK(?)', [$lockName]);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     */
+    private function finalizeAnalysisJob(int $jobId, array $job): void
+    {
+        $conn = $this->em->getConnection();
+        $listId = (int) ($job['list_id'] ?? 0);
+        if ($listId < 1) {
+            return;
+        }
+        $hasNorm = $this->hasNormalizationColumns();
+        $duplicateSql = $hasNorm
+            ? 'SELECT COALESCE(SUM(t.cnt - 1), 0) FROM (SELECT COUNT(*) AS cnt FROM email_data_pool WHERE pool_list_id = ? GROUP BY normalized_email HAVING COUNT(*) > 1) t'
+            : 'SELECT COALESCE(SUM(t.cnt - 1), 0) FROM (SELECT COUNT(*) AS cnt FROM email_data_pool WHERE pool_list_id = ? GROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1) t';
+        $duplicateCount = (int) $conn->fetchOne($duplicateSql, [$listId]);
+        $gmailCount = (int) ($job['gmail_count'] ?? 0);
+        $nonGmailCount = (int) ($job['non_gmail_count'] ?? 0);
+        $invalidCount = (int) ($job['invalid_gmail_count'] ?? 0);
+        $totalCount = (int) ($job['total_count'] ?? 0);
+        $deletable = max(0, $nonGmailCount + $duplicateCount);
+        $gmailRatio = $totalCount > 0 ? round(($gmailCount / $totalCount) * 100, 2) : 0.0;
+        $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $normalizedPreviewJson = (string) ($job['normalized_preview'] ?? '[]');
+        $nonGmailPreviewJson = (string) ($job['non_gmail_preview'] ?? '[]');
+
+        $conn->executeStatement(
+            "UPDATE email_data_pool_analysis_jobs
+                SET status = 'completed',
+                    processed_count = total_count,
+                    percent = 100,
+                    duplicate_count = ?,
+                    deletable_count = ?,
+                    gmail_ratio = ?,
+                    message = ?,
+                    completed_at = ?,
+                    updated_at = ?
+              WHERE id = ?",
+            [$duplicateCount, $deletable, $gmailRatio, 'Analiz tamamlandı', $now, $now, $jobId]
+        );
+
+        $this->upsertAnalysisCache([
+            'list_id' => $listId,
+            'total_count' => $totalCount,
+            'gmail_count' => $gmailCount,
+            'non_gmail_count' => $nonGmailCount,
+            'invalid_gmail_count' => $invalidCount,
+            'duplicate_count' => $duplicateCount,
+            'deletable_count' => $deletable,
+            'gmail_ratio' => $gmailRatio,
+            'target_limit' => (int) ($_ENV['EMAIL_POOL_DEFAULT_TARGET_LIMIT'] ?? self::DEFAULT_TARGET_LIMIT),
+            'over_limit_count' => 0,
+            'missing_count' => 0,
+            'normalized_preview' => $normalizedPreviewJson,
+            'non_gmail_preview' => $nonGmailPreviewJson,
+            'last_analyzed_at' => $now,
+            'status' => 'completed',
+            'error_message' => null,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function upsertAnalysisCache(array $data): void
+    {
+        $this->ensureAnalysisTables();
+        $listId = (int) ($data['list_id'] ?? 0);
+        if ($listId < 1) {
+            return;
+        }
+        $conn = $this->em->getConnection();
+        $exists = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_data_pool_analysis_cache WHERE list_id = ?', [$listId]) > 0;
+        $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $defaults = [
+            'total_count' => 0, 'gmail_count' => 0, 'non_gmail_count' => 0, 'invalid_gmail_count' => 0,
+            'duplicate_count' => 0, 'deletable_count' => 0, 'gmail_ratio' => 0, 'target_limit' => null,
+            'over_limit_count' => 0, 'missing_count' => 0, 'normalized_preview' => '[]', 'non_gmail_preview' => '[]',
+            'last_analyzed_at' => null, 'status' => 'idle', 'error_message' => null,
+        ];
+        $payload = array_merge($defaults, $data);
+        if (!$exists) {
+            $conn->executeStatement(
+                "INSERT INTO email_data_pool_analysis_cache
+                    (list_id,total_count,gmail_count,non_gmail_count,invalid_gmail_count,duplicate_count,deletable_count,gmail_ratio,target_limit,over_limit_count,missing_count,normalized_preview,non_gmail_preview,last_analyzed_at,status,error_message,created_at,updated_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [$listId, $payload['total_count'], $payload['gmail_count'], $payload['non_gmail_count'], $payload['invalid_gmail_count'], $payload['duplicate_count'], $payload['deletable_count'], $payload['gmail_ratio'], $payload['target_limit'], $payload['over_limit_count'], $payload['missing_count'], $payload['normalized_preview'], $payload['non_gmail_preview'], $payload['last_analyzed_at'], $payload['status'], $payload['error_message'], $now, $now]
+            );
+        } else {
+            $conn->executeStatement(
+                'UPDATE email_data_pool_analysis_cache
+                    SET total_count = ?, gmail_count = ?, non_gmail_count = ?, invalid_gmail_count = ?, duplicate_count = ?, deletable_count = ?, gmail_ratio = ?, target_limit = ?, over_limit_count = ?, missing_count = ?, normalized_preview = ?, non_gmail_preview = ?, last_analyzed_at = ?, status = ?, error_message = ?, updated_at = ?
+                  WHERE list_id = ?',
+                [$payload['total_count'], $payload['gmail_count'], $payload['non_gmail_count'], $payload['invalid_gmail_count'], $payload['duplicate_count'], $payload['deletable_count'], $payload['gmail_ratio'], $payload['target_limit'], $payload['over_limit_count'], $payload['missing_count'], $payload['normalized_preview'], $payload['non_gmail_preview'], $payload['last_analyzed_at'], $payload['status'], $payload['error_message'], $now, $listId]
+            );
+        }
+    }
+
+    private function invalidateAnalysisCache(int $listId): void
+    {
+        if ($listId < 1) {
+            return;
+        }
+        try {
+            $this->ensureAnalysisTables();
+            $this->em->getConnection()->executeStatement(
+                "UPDATE email_data_pool_analysis_cache
+                    SET status = 'idle',
+                        error_message = NULL,
+                        updated_at = ?
+                  WHERE list_id = ?",
+                [(new \DateTimeImmutable())->format('Y-m-d H:i:s'), $listId]
+            );
+        } catch (\Throwable) {
+        }
+    }
+
+    private function ensureAnalysisTables(): void
+    {
+        $conn = $this->em->getConnection();
+        $db = (string) $conn->getDatabase();
+        $cacheExists = (int) $conn->fetchOne(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+            [$db, 'email_data_pool_analysis_cache']
+        ) > 0;
+        $jobsExists = (int) $conn->fetchOne(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+            [$db, 'email_data_pool_analysis_jobs']
+        ) > 0;
+        if (!$cacheExists || !$jobsExists) {
+            throw new \RuntimeException('Analiz tabloları bulunamadı. Lütfen migration çalıştırın.');
+        }
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function decodePreview(string $json): array
+    {
+        $decoded = json_decode($json, true);
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**
@@ -2114,6 +2513,40 @@ class EmailDataPoolController
     private function isGmailEmail(string $email): bool
     {
         return str_ends_with(strtolower($email), '@gmail.com');
+    }
+
+    private function extractDomain(string $email): string
+    {
+        $email = strtolower(trim($email));
+        if (!str_contains($email, '@')) {
+            return '';
+        }
+        [, $domain] = explode('@', $email, 2);
+        return strtolower(trim($domain));
+    }
+
+    private function hasNormalizationColumns(): bool
+    {
+        if ($this->hasNormalizationColumns !== null) {
+            return $this->hasNormalizationColumns;
+        }
+        try {
+            $conn = $this->em->getConnection();
+            $db = (string) $conn->getDatabase();
+            $normalizedExists = (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                [$db, 'email_data_pool', 'normalized_email']
+            ) > 0;
+            $domainExists = (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                [$db, 'email_data_pool', 'domain']
+            ) > 0;
+            $this->hasNormalizationColumns = $normalizedExists && $domainExists;
+        } catch (\Throwable) {
+            $this->hasNormalizationColumns = false;
+        }
+
+        return $this->hasNormalizationColumns;
     }
 
     private function createPoolList(string $name): EmailDataPoolList
@@ -2475,7 +2908,13 @@ class EmailDataPoolController
                     $idPlaceholders = implode(',', array_fill(0, count($ids), '?'));
                     $sql = 'UPDATE email_data_pool
                                SET email = CASE id ' . implode(' ', $cases) . " END,
-                                   updated_at = NOW()
+                                   updated_at = NOW()";
+                    if ($this->hasNormalizationColumns()) {
+                        $sql .= ',
+                                   normalized_email = LOWER(TRIM(email)),
+                                   domain = SUBSTRING_INDEX(LOWER(TRIM(email)), \'@\', -1)';
+                    }
+                    $sql .= "
                              WHERE pool_list_id = ?
                                AND id IN ($idPlaceholders)";
                     $params[] = $poolListId;

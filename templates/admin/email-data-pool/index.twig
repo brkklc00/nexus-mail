@@ -42,6 +42,16 @@
         min-height: 360px;
         overflow-y: auto;
     }
+    .left-pool-list-card {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 180px);
+    }
+    .left-pool-list-body {
+        overflow-y: auto;
+        min-height: 0;
+        flex: 1;
+    }
     .tools-grid {
         display: grid;
         grid-template-columns: 1fr;
@@ -297,7 +307,7 @@
     {% set list_pages = (list_total / list_per_page)|round(0, 'ceil') %}
     <div class="row g-3">
         <div class="col-lg-3">
-            <div class="card h-100">
+            <div class="card h-100 left-pool-list-card">
                 <div class="card-header border-bottom py-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -318,7 +328,7 @@
                         value="{{ list_search|default('') }}"
                         autocomplete="off">
                 </div>
-                <div class="list-group list-group-flush pool-list-group pool-list-scroll">
+                <div class="list-group list-group-flush pool-list-group pool-list-scroll left-pool-list-body">
                     {% for pl in pool_lists %}
                     <a href="/admin/email-data-pool?list_id={{ pl.id }}{% if list_search %}&list_search={{ list_search|url_encode }}{% endif %}{% if list_page > 1 %}&list_page={{ list_page }}{% endif %}"
                        class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3 {% if pl.id == current_list_id %}active{% endif %}">
@@ -1622,7 +1632,10 @@ const cleanerState = {
     stats: null,
     busy: false,
     progressTimer: null,
-    lastProgressValue: 0
+    lastProgressValue: 0,
+    analysisJobId: null,
+    statusPollTimer: null,
+    analysisStatus: 'idle'
 };
 
 const balancePreviewState = {
@@ -1634,6 +1647,14 @@ const balancePreviewState = {
 
 function cleanerUrl(action) {
     return `/admin/email-data-pool/${CURRENT_POOL_LIST_ID}/cleaner/${action}`;
+}
+
+function analysisStartUrl() {
+    return `/admin/email-data-pool/${CURRENT_POOL_LIST_ID}/analysis/start`;
+}
+
+function analysisStatusUrl(jobId) {
+    return `/admin/email-data-pool/analysis/${jobId}/status`;
 }
 
 function showCleanerToast(type, message) {
@@ -1658,6 +1679,9 @@ function setCleanerButtonsDisabled(disabled) {
                 btn.disabled = true;
             }
         });
+    if (!disabled) {
+        updateCleanerActionAvailability(cleanerState.stats || {});
+    }
 }
 
 function startCleanerProgress(text) {
@@ -1681,6 +1705,19 @@ function startCleanerProgress(text) {
     }, 120);
 }
 
+function setCleanerProgress(text, percentValue) {
+    const wrap = document.getElementById('cleanerProgressWrap');
+    const bar = document.getElementById('cleanerProgressBar');
+    const percent = document.getElementById('cleanerProgressPercent');
+    const label = document.getElementById('cleanerProgressText');
+    if (!wrap || !bar || !percent || !label) return;
+    wrap.classList.remove('d-none');
+    const safePercent = Math.max(0, Math.min(100, Number(percentValue || 0)));
+    label.textContent = text || 'Liste analiz ediliyor...';
+    bar.style.width = `${safePercent}%`;
+    percent.textContent = `${safePercent}%`;
+}
+
 function finishCleanerProgress() {
     const wrap = document.getElementById('cleanerProgressWrap');
     const bar = document.getElementById('cleanerProgressBar');
@@ -1696,6 +1733,17 @@ function finishCleanerProgress() {
         if (bar) bar.style.width = '0%';
         if (percent) percent.textContent = '0%';
     }, 350);
+}
+
+function hideCleanerProgress() {
+    clearInterval(cleanerState.progressTimer);
+    cleanerState.progressTimer = null;
+    const wrap = document.getElementById('cleanerProgressWrap');
+    const bar = document.getElementById('cleanerProgressBar');
+    const percent = document.getElementById('cleanerProgressPercent');
+    if (wrap) wrap.classList.add('d-none');
+    if (bar) bar.style.width = '0%';
+    if (percent) percent.textContent = '0%';
 }
 
 async function cleanerRequest(action, options = {}) {
@@ -1720,17 +1768,19 @@ async function cleanerRequest(action, options = {}) {
 
 function renderCleanerStats(stats) {
     cleanerState.stats = stats || {};
+    cleanerState.analysisStatus = cleanerState.stats.analysis_status || cleanerState.analysisStatus || 'idle';
     const kpiGrid = document.getElementById('cleanerKpiGrid');
     const previewWrap = document.getElementById('cleanerPreviewWrap');
     if (!kpiGrid) return;
 
     const num = value => Number(value || 0).toLocaleString('tr-TR');
-    document.getElementById('kpiTotal').textContent = num(cleanerState.stats.total);
-    document.getElementById('kpiGmail').textContent = num(cleanerState.stats.gmail_count);
-    document.getElementById('kpiNonGmail').textContent = num(cleanerState.stats.non_gmail_count);
-    document.getElementById('kpiTypo').textContent = num(cleanerState.stats.typo_gmail_count);
-    document.getElementById('kpiDuplicate').textContent = num(cleanerState.stats.duplicate_count);
-    document.getElementById('kpiDeletable').textContent = num(cleanerState.stats.deletable_count);
+    const analyzed = cleanerState.analysisStatus === 'completed' || cleanerState.analysisStatus === 'running';
+    document.getElementById('kpiTotal').textContent = analyzed ? num(cleanerState.stats.total) : 'Analiz bekliyor';
+    document.getElementById('kpiGmail').textContent = analyzed ? num(cleanerState.stats.gmail_count) : '-';
+    document.getElementById('kpiNonGmail').textContent = analyzed ? num(cleanerState.stats.non_gmail_count) : '-';
+    document.getElementById('kpiTypo').textContent = analyzed ? num(cleanerState.stats.typo_gmail_count) : '-';
+    document.getElementById('kpiDuplicate').textContent = analyzed ? num(cleanerState.stats.duplicate_count) : '-';
+    document.getElementById('kpiDeletable').textContent = analyzed ? num(cleanerState.stats.deletable_count) : '-';
     kpiGrid.classList.remove('d-none');
 
     const normalized = (cleanerState.stats.normalized_preview || [])
@@ -1742,7 +1792,74 @@ function renderCleanerStats(stats) {
     document.getElementById('cleanerNormalizedEmpty')?.classList.toggle('d-none', normalized !== '');
     document.getElementById('cleanerNonGmailEmpty')?.classList.toggle('d-none', nonGmail !== '');
     if (previewWrap) previewWrap.classList.remove('d-none');
+    updateCleanerActionAvailability(cleanerState.stats);
     feather.replace();
+}
+
+function updateCleanerActionAvailability(stats) {
+    const analyzed = (stats.analysis_status || cleanerState.analysisStatus) === 'completed';
+    const map = [
+        { id: 'cleanerExportBtn', enabled: analyzed && Number(stats.non_gmail_count || 0) > 0, hint: 'Analiz sonrası Gmail dışı kayıt varsa aktif olur.' },
+        { id: 'cleanerDeleteNonGmailBtn', enabled: analyzed && Number(stats.non_gmail_count || 0) > 0, hint: 'Analiz sonrası Gmail dışı kayıt varsa aktif olur.' },
+        { id: 'cleanerFixTyposBtn', enabled: analyzed && Number(stats.typo_gmail_count || 0) > 0, hint: 'Analiz sonrası hatalı Gmail kaydı varsa aktif olur.' },
+        { id: 'cleanerRemoveDuplicatesBtn', enabled: analyzed && Number(stats.duplicate_count || 0) > 0, hint: 'Analiz sonrası duplicate varsa aktif olur.' }
+    ];
+    map.forEach(item => {
+        const btn = document.getElementById(item.id);
+        if (!btn) return;
+        btn.disabled = !item.enabled;
+        if (!item.enabled) {
+            btn.title = item.hint;
+        } else {
+            btn.removeAttribute('title');
+        }
+    });
+}
+
+function stopAnalysisPolling() {
+    if (cleanerState.statusPollTimer) {
+        clearInterval(cleanerState.statusPollTimer);
+        cleanerState.statusPollTimer = null;
+    }
+}
+
+async function pollAnalysisStatus(jobId, showSuccessToast = false) {
+    const response = await fetch(analysisStatusUrl(jobId), { credentials: 'same-origin' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.success === false) {
+        throw new Error(data.message || 'Analiz durumu okunamadı.');
+    }
+    cleanerState.analysisJobId = jobId;
+    cleanerState.analysisStatus = data.status || 'idle';
+    if (data.status === 'running') {
+        setCleanerProgress(data.message || 'Liste analiz ediliyor...', data.percent || 0);
+        return;
+    }
+    stopAnalysisPolling();
+    if (data.status === 'completed') {
+        finishCleanerProgress();
+        await loadTopStats(false);
+        if (showSuccessToast) {
+            showCleanerToast('success', 'Analiz tamamlandı.');
+        }
+        return;
+    }
+    if (data.status === 'failed') {
+        finishCleanerProgress();
+        showCleanerToast('error', data.error || 'Analiz başarısız oldu.');
+    }
+}
+
+function startAnalysisPolling(jobId, showSuccessToast = false) {
+    stopAnalysisPolling();
+    cleanerState.analysisJobId = jobId;
+    pollAnalysisStatus(jobId, showSuccessToast).catch(error => showCleanerToast('error', error.message));
+    cleanerState.statusPollTimer = setInterval(() => {
+        pollAnalysisStatus(jobId, showSuccessToast).catch(error => {
+            stopAnalysisPolling();
+            showCleanerToast('error', error.message);
+        });
+    }, 1500);
 }
 
 async function runCleanerAnalyze(showSuccess = true) {
@@ -1750,23 +1867,31 @@ async function runCleanerAnalyze(showSuccess = true) {
     setCleanerButtonsDisabled(true);
     startCleanerProgress('Liste analiz ediliyor...');
     try {
-        const stats = await cleanerRequest('analyze');
-        renderCleanerStats(stats);
-        await loadTopStats(false);
-        if (showSuccess) {
-            showCleanerToast('success', 'Analiz tamamlandı.');
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+        const response = await fetch(analysisStartUrl(), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body,
+            credentials: 'same-origin'
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success === false || !data.job_id) {
+            throw new Error(data.message || 'Analiz başlatılamadı.');
         }
+        startAnalysisPolling(data.job_id, showSuccess);
     } catch (error) {
         showCleanerToast('error', error.message);
-    } finally {
         finishCleanerProgress();
         setCleanerButtonsDisabled(false);
     }
 }
 
 async function ensureCleanerStats() {
-    if (!cleanerState.stats) {
-        await runCleanerAnalyze(false);
+    if (!cleanerState.stats || cleanerState.stats.analysis_status !== 'completed') {
+        throw new Error('Önce analiz tamamlanmalıdır.');
     }
     return cleanerState.stats || {};
 }
@@ -1785,21 +1910,33 @@ function openModalById(id) {
 }
 
 async function openDeleteNonGmailModal() {
-    const stats = await ensureCleanerStats();
-    document.getElementById('deleteNonGmailCount').textContent = Number(stats.non_gmail_count || 0).toLocaleString('tr-TR');
-    openModalById('cleanerDeleteModal');
+    try {
+        const stats = await ensureCleanerStats();
+        document.getElementById('deleteNonGmailCount').textContent = Number(stats.non_gmail_count || 0).toLocaleString('tr-TR');
+        openModalById('cleanerDeleteModal');
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    }
 }
 
 async function openFixTyposModal() {
-    const stats = await ensureCleanerStats();
-    document.getElementById('fixTypoCount').textContent = Number(stats.typo_gmail_count || 0).toLocaleString('tr-TR');
-    openModalById('cleanerFixModal');
+    try {
+        const stats = await ensureCleanerStats();
+        document.getElementById('fixTypoCount').textContent = Number(stats.typo_gmail_count || 0).toLocaleString('tr-TR');
+        openModalById('cleanerFixModal');
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    }
 }
 
 async function openDuplicateModal() {
-    const stats = await ensureCleanerStats();
-    document.getElementById('duplicateRemoveCount').textContent = Number(stats.duplicate_count || 0).toLocaleString('tr-TR');
-    openModalById('cleanerDuplicateModal');
+    try {
+        const stats = await ensureCleanerStats();
+        document.getElementById('duplicateRemoveCount').textContent = Number(stats.duplicate_count || 0).toLocaleString('tr-TR');
+        openModalById('cleanerDuplicateModal');
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    }
 }
 
 async function deleteNonGmailConfirmed() {
@@ -1816,7 +1953,7 @@ async function deleteNonGmailConfirmed() {
         const result = await cleanerRequest('delete-non-gmail', { method: 'POST', body });
         bootstrap.Modal.getInstance(document.getElementById('cleanerDeleteModal'))?.hide();
         showCleanerToast('success', `${Number(result.deleted || 0).toLocaleString('tr-TR')} kayıt silindi.`);
-        await runCleanerAnalyze(false);
+        await loadTopStats(false);
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1833,7 +1970,7 @@ async function fixTyposConfirmed() {
         const result = await cleanerRequest('fix-gmail-typos', { method: 'POST', body });
         bootstrap.Modal.getInstance(document.getElementById('cleanerFixModal'))?.hide();
         showCleanerToast('success', `${Number(result.fixed || 0).toLocaleString('tr-TR')} kayıt düzeltildi, ${Number(result.duplicates_after_fix || 0).toLocaleString('tr-TR')} duplicate kaldırıldı.`);
-        await runCleanerAnalyze(false);
+        await loadTopStats(false);
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1850,7 +1987,7 @@ async function removeDuplicatesConfirmed() {
         const result = await cleanerRequest('remove-duplicates', { method: 'POST', body });
         bootstrap.Modal.getInstance(document.getElementById('cleanerDuplicateModal'))?.hide();
         showCleanerToast('success', `${Number(result.removed || 0).toLocaleString('tr-TR')} duplicate kayıt silindi.`);
-        await runCleanerAnalyze(false);
+        await loadTopStats(false);
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1872,16 +2009,21 @@ async function loadTopStats(showToast = false) {
         if (!response.ok || data.success === false) {
             throw new Error(data.message || 'İstatistik alınamadı.');
         }
+        cleanerState.stats = data || {};
+        cleanerState.analysisStatus = data.analysis_status || 'idle';
         const total = Number(data.total || 0);
         const gmailCount = Number(data.gmail_count || 0);
         const gmailRatio = Number(data.gmail_ratio || 0).toLocaleString('tr-TR');
         const fmt = v => Number(v || 0).toLocaleString('tr-TR');
         document.getElementById('statTopTotal').textContent = fmt(total);
-        document.getElementById('statTopGmailRatio').textContent = `${fmt(gmailCount)} / %${gmailRatio}`;
-        document.getElementById('statTopGmailDesc').textContent = `${fmt(total)} kayıt içinde Gmail`;
-        document.getElementById('statTopNonGmail').textContent = fmt(data.non_gmail_count || 0);
-        document.getElementById('statTopDuplicate').textContent = fmt(data.duplicate_count || 0);
-        document.getElementById('statTopTypo').textContent = fmt(data.typo_gmail_count || 0);
+        const completed = data.analysis_status === 'completed';
+        document.getElementById('statTopGmailRatio').textContent = completed ? `${fmt(gmailCount)} / %${gmailRatio}` : 'Analiz bekliyor';
+        document.getElementById('statTopGmailDesc').textContent = completed
+            ? `${fmt(total)} kayıt içinde Gmail${data.last_analyzed_at ? ` · Son analiz: ${data.last_analyzed_at}` : ''}`
+            : (data.analysis_status === 'running' ? 'Güncelleniyor...' : 'Henüz analiz yapılmadı');
+        document.getElementById('statTopNonGmail').textContent = completed ? fmt(data.non_gmail_count || 0) : '-';
+        document.getElementById('statTopDuplicate').textContent = completed ? fmt(data.duplicate_count || 0) : '-';
+        document.getElementById('statTopTypo').textContent = completed ? fmt(data.typo_gmail_count || 0) : '-';
         const target = data.target_limit;
         document.getElementById('targetCurrentBadge').textContent = `Mevcut: ${fmt(total)}`;
         if (!target) {
@@ -1900,6 +2042,13 @@ async function loadTopStats(showToast = false) {
                 document.getElementById('statTopTargetMeta').textContent = `%${fillRate} dolu, ${fmt(missing)} eksik`;
                 document.getElementById('targetDeltaBadge').textContent = `Eksik: ${fmt(missing)}`;
             }
+        }
+        renderCleanerStats(data);
+        if (data.running_job && data.running_job.job_id) {
+            startAnalysisPolling(data.running_job.job_id, false);
+        } else if (data.analysis_status !== 'running') {
+            stopAnalysisPolling();
+            hideCleanerProgress();
         }
         if (showToast) {
             showCleanerToast('success', 'Üst istatistikler güncellendi.');
@@ -2064,7 +2213,7 @@ async function runFill(sourceType, triggerBtn = null) {
         const data = await postTools('fill-to-target', getFillPayload(sourceType));
         openResultModal(data.summary || {});
         await loadTopStats(false);
-        await runCleanerAnalyze(false);
+        await loadTopStats(false);
         if (sourceType === 'list') {
             balancePreviewState.fill_to_target = false;
             setPreviewSummary('fillPreviewSummary', 'Önizleme bekleniyor.');
@@ -2120,7 +2269,7 @@ async function runOverflow(triggerBtn = null) {
         const data = await postTools('move-overflow', getOverflowPayload());
         openResultModal(data.summary || {});
         await loadTopStats(false);
-        await runCleanerAnalyze(false);
+        await loadTopStats(false);
         balancePreviewState.move_overflow = false;
         setPreviewSummary('overflowPreviewSummary', 'Önizleme bekleniyor.');
     } catch (error) {
@@ -2169,7 +2318,7 @@ async function runSplit(triggerBtn = null) {
         const data = await postTools('split-list', getSplitPayload());
         openResultModal(data.summary || {});
         await loadTopStats(false);
-        await runCleanerAnalyze(false);
+        await loadTopStats(false);
         balancePreviewState.split_list = false;
         setPreviewSummary('splitPreviewSummary', 'Önizleme bekleniyor.');
     } catch (error) {
@@ -2235,7 +2384,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('runSplitBtn')?.addEventListener('click', e => runSplit(e.currentTarget));
     setBalanceButtonsDisabled(false);
     loadTopStats(false);
-    runCleanerAnalyze(false);
 });
 </script>
 {% endblock %}

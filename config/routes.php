@@ -570,6 +570,10 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'delete'));
             $group->get('/{listId}/stats', [\App\Controllers\EmailDataPoolController::class, 'stats'])->setName('admin.email-data-pool.stats')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/{listId}/analysis/start', [\App\Controllers\EmailDataPoolController::class, 'startAnalysis'])->setName('admin.email-data-pool.analysis.start')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/analysis/{jobId}/status', [\App\Controllers\EmailDataPoolController::class, 'analysisStatus'])->setName('admin.email-data-pool.analysis.status')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/tools/preview', [\App\Controllers\EmailDataPoolController::class, 'toolsPreview'])->setName('admin.email-data-pool.tools.preview')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/tools/fill-to-target', [\App\Controllers\EmailDataPoolController::class, 'toolsFillToTarget'])->setName('admin.email-data-pool.tools.fill-to-target')
