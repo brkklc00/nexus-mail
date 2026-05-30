@@ -42,40 +42,238 @@
         min-height: 360px;
         overflow-y: auto;
     }
-    .cleaner-card {
-        border: 1px solid rgba(26, 32, 44, 0.1);
+    .tools-grid {
+        display: grid;
+        grid-template-columns: minmax(420px, 1fr) minmax(520px, 1fr);
+        gap: 24px;
+        align-items: stretch;
     }
-    .cleaner-card .card-header {
-        background: linear-gradient(135deg, #16213a 0%, #1f2d4d 100%);
-        color: #fff;
-    }
-    .cleaner-kpi .card {
-        border: 0;
-        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
-    }
-    .cleaner-kpi h5 {
-        font-size: 1.1rem;
-        margin-bottom: 0;
-    }
-    .cleaner-progress {
-        height: 10px;
+    .tool-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        overflow: hidden;
+        height: 100%;
     }
     .tool-card .card-header {
         background: linear-gradient(135deg, #16213a 0%, #1f2d4d 100%);
         color: #fff;
     }
+    .tool-card .card-header .tool-icon-wrap {
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255, 255, 255, 0.32);
+        background: rgba(255, 255, 255, 0.08);
+    }
+    .tool-card .card-body {
+        background: #fff;
+    }
+    .cleaner-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .cleaner-actions .btn {
+        height: 44px;
+        border-radius: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+        opacity: 1 !important;
+    }
+    .btn-cleaner-analyze {
+        background: linear-gradient(135deg, #0f2a4d 0%, #2563eb 100%);
+        color: #fff;
+        border: none;
+    }
+    .btn-cleaner-export {
+        background: #eff6ff;
+        color: #1d4ed8;
+        border: 1px solid #bfdbfe;
+    }
+    .btn-cleaner-delete {
+        background: #fff1f2;
+        color: #e11d48;
+        border: 1px solid #fecdd3;
+    }
+    .btn-cleaner-fix {
+        background: #fff7ed;
+        color: #ea580c;
+        border: 1px solid #fed7aa;
+    }
+    .btn-cleaner-dup {
+        background: #ecfeff;
+        color: #0891b2;
+        border: 1px solid #a5f3fc;
+    }
+    .cleaner-actions .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
+    }
+    .cleaner-actions .btn:disabled {
+        opacity: 0.58 !important;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+    #cleanerProgressWrap {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px 12px;
+    }
+    .cleaner-progress {
+        height: 8px;
+        background: #e2e8f0;
+    }
+    .cleaner-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .cleaner-kpi-item {
+        min-width: 0;
+        min-height: 92px;
+        padding: 16px;
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+    }
+    .cleaner-kpi-item .label {
+        color: #64748b;
+        line-height: 1.25;
+        white-space: normal;
+        word-break: normal;
+        margin-bottom: 8px;
+        font-size: 0.8rem;
+    }
+    .cleaner-kpi-item .value {
+        font-size: 1.35rem;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+    }
+    .cleaner-kpi-gmail .value { color: #059669; }
+    .cleaner-kpi-non .value { color: #dc2626; }
+    .cleaner-kpi-typo .value { color: #d97706; }
+    .cleaner-kpi-dup .value { color: #2563eb; }
+    .cleaner-preview-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .cleaner-preview-box {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #f8fafc;
+        min-height: 110px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+    }
+    .cleaner-preview-title {
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 8px;
+    }
+    .cleaner-preview-content {
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        color: #334155;
+        flex: 1;
+        max-height: 140px;
+        overflow: auto;
+    }
+    .cleaner-preview-empty {
+        margin: auto;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 0.82rem;
+    }
+    .section-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 16px;
+    }
+    .section-card h6 {
+        font-weight: 700;
+    }
+    .section-card .form-control,
+    .section-card .form-select {
+        height: 42px;
+        border-radius: 10px;
+    }
+    .section-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .section-actions .btn {
+        height: 42px;
+        border-radius: 12px;
+        font-weight: 600;
+    }
+    .target-badges .badge {
+        font-weight: 600;
+    }
+    .balance-preview-summary {
+        border: 1px dashed #cbd5e1;
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: 0.82rem;
+        color: #475569;
+        background: #fff;
+    }
     .stats-card .card-body {
         min-height: 96px;
     }
-    .summary-box {
-        background: #f8fafc;
-        border: 1px solid rgba(30, 41, 59, 0.08);
-        border-radius: 0.5rem;
-        padding: 0.75rem;
+    .stats-card .card-body p {
+        white-space: normal;
+        word-break: normal;
     }
-    @media (max-width: 767.98px) {
-        .cleaner-actions .btn {
-            width: 100%;
+    .stats-card h4,
+    .stats-card h5,
+    .stats-card h6 {
+        white-space: nowrap;
+        word-break: normal;
+        font-variant-numeric: tabular-nums;
+    }
+    @media (max-width: 1399.98px) {
+        .tools-grid {
+            grid-template-columns: minmax(360px, 1fr) minmax(420px, 1fr);
+        }
+    }
+    @media (max-width: 1199.98px) {
+        .tools-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    @media (max-width: 991.98px) {
+        .cleaner-actions {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .cleaner-kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .cleaner-preview-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    @media (max-width: 575.98px) {
+        .cleaner-actions {
+            grid-template-columns: 1fr;
+        }
+        .cleaner-kpi-grid {
+            grid-template-columns: 1fr;
+        }
+        .cleaner-kpi-item .value {
+            font-size: 1.2rem;
         }
     }
 </style>
@@ -283,45 +481,34 @@
                     </div>
                     {% endif %}
 
-                    <div class="row g-3 mt-1">
-                        <div class="col-xl-6">
-                    <div class="card cleaner-card tool-card h-100" id="mailCleanerCard">
+                    <div class="tools-grid mt-1">
+                    <div class="card tool-card" id="mailCleanerCard">
                         <div class="card-header py-3">
                             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                                 <h5 class="mb-0 d-flex align-items-center gap-2">
-                                    <i data-feather="shield" class="icon-xs"></i> Mail Temizleme Araçları
+                                    <span class="tool-icon-wrap"><i data-feather="shield" class="icon-xs"></i></span> Mail Temizleme Araçları
                                 </h5>
                                 <small class="opacity-75">Seçili liste: {{ current_list_name|default('Yok') }}</small>
                             </div>
                         </div>
                         <div class="card-body">
                             <p class="text-muted small mb-3">Bu araçlar yalnızca seçili havuz listesinde çalışır. Analiz otomatik çalışmaz; butonla tetiklenir.</p>
-                            <div class="row g-2 cleaner-actions mb-3">
-                                <div class="col-md-6 col-lg-4">
-                                    <button type="button" class="btn btn-sm btn-primary w-100 cleaner-action-btn" id="cleanerAnalyzeBtn" {% if not current_list_id %}disabled{% endif %}>
+                            <div class="cleaner-actions mb-3">
+                                    <button type="button" class="btn btn-sm btn-cleaner-analyze cleaner-action-btn" id="cleanerAnalyzeBtn" {% if not current_list_id %}disabled{% endif %}>
                                         <i data-feather="bar-chart-2" class="icon-xs me-1"></i> Analiz Et
                                     </button>
-                                </div>
-                                <div class="col-md-6 col-lg-4">
-                                    <button type="button" class="btn btn-sm btn-soft-secondary w-100 cleaner-action-btn" id="cleanerExportBtn" {% if not current_list_id %}disabled{% endif %}>
+                                    <button type="button" class="btn btn-sm btn-cleaner-export cleaner-action-btn" id="cleanerExportBtn" {% if not current_list_id %}disabled{% endif %}>
                                         <i data-feather="download" class="icon-xs me-1"></i> Gmail Dışı Mailleri İndir
                                     </button>
-                                </div>
-                                <div class="col-md-6 col-lg-4">
-                                    <button type="button" class="btn btn-sm btn-soft-danger w-100 cleaner-action-btn" id="cleanerDeleteNonGmailBtn" {% if not current_list_id %}disabled{% endif %}>
+                                    <button type="button" class="btn btn-sm btn-cleaner-delete cleaner-action-btn" id="cleanerDeleteNonGmailBtn" {% if not current_list_id %}disabled{% endif %}>
                                         <i data-feather="trash-2" class="icon-xs me-1"></i> Gmail Dışı Mailleri Sil
                                     </button>
-                                </div>
-                                <div class="col-md-6 col-lg-4">
-                                    <button type="button" class="btn btn-sm btn-soft-warning w-100 cleaner-action-btn" id="cleanerFixTyposBtn" {% if not current_list_id %}disabled{% endif %}>
+                                    <button type="button" class="btn btn-sm btn-cleaner-fix cleaner-action-btn" id="cleanerFixTyposBtn" {% if not current_list_id %}disabled{% endif %}>
                                         <i data-feather="edit-3" class="icon-xs me-1"></i> Gmail Hatalarını Düzelt
                                     </button>
-                                </div>
-                                <div class="col-md-6 col-lg-4">
-                                    <button type="button" class="btn btn-sm btn-soft-info w-100 cleaner-action-btn" id="cleanerRemoveDuplicatesBtn" {% if not current_list_id %}disabled{% endif %}>
+                                    <button type="button" class="btn btn-sm btn-cleaner-dup cleaner-action-btn" id="cleanerRemoveDuplicatesBtn" {% if not current_list_id %}disabled{% endif %}>
                                         <i data-feather="copy" class="icon-xs me-1"></i> Duplicate Temizle
                                     </button>
-                                </div>
                             </div>
 
                             <div id="cleanerProgressWrap" class="mb-3 d-none">
@@ -334,93 +521,78 @@
                                 </div>
                             </div>
 
-                            <div class="row g-2 cleaner-kpi d-none" id="cleanerKpiGrid">
-                                <div class="col-sm-6 col-lg-4 col-xl-2">
-                                    <div class="card h-100">
-                                        <div class="card-body py-3">
-                                            <p class="text-muted small mb-1">Toplam Kayıt</p>
-                                            <h5 id="kpiTotal">0</h5>
-                                        </div>
-                                    </div>
+                            <div class="cleaner-kpi-grid d-none" id="cleanerKpiGrid">
+                                <div class="cleaner-kpi-item">
+                                    <p class="label">Toplam Kayıt</p>
+                                    <div class="value" id="kpiTotal">0</div>
                                 </div>
-                                <div class="col-sm-6 col-lg-4 col-xl-2">
-                                    <div class="card h-100 border border-success-subtle">
-                                        <div class="card-body py-3">
-                                            <p class="text-muted small mb-1">Gmail</p>
-                                            <h5 class="text-success" id="kpiGmail">0</h5>
-                                        </div>
-                                    </div>
+                                <div class="cleaner-kpi-item cleaner-kpi-gmail">
+                                    <p class="label">Gmail</p>
+                                    <div class="value" id="kpiGmail">0</div>
                                 </div>
-                                <div class="col-sm-6 col-lg-4 col-xl-2">
-                                    <div class="card h-100 border border-danger-subtle">
-                                        <div class="card-body py-3">
-                                            <p class="text-muted small mb-1">Gmail Dışı</p>
-                                            <h5 class="text-danger" id="kpiNonGmail">0</h5>
-                                        </div>
-                                    </div>
+                                <div class="cleaner-kpi-item cleaner-kpi-non">
+                                    <p class="label">Gmail Dışı</p>
+                                    <div class="value" id="kpiNonGmail">0</div>
                                 </div>
-                                <div class="col-sm-6 col-lg-4 col-xl-2">
-                                    <div class="card h-100 border border-warning-subtle">
-                                        <div class="card-body py-3">
-                                            <p class="text-muted small mb-1">Hatalı Gmail Domaini</p>
-                                            <h5 class="text-warning" id="kpiTypo">0</h5>
-                                        </div>
-                                    </div>
+                                <div class="cleaner-kpi-item cleaner-kpi-typo">
+                                    <p class="label">Hatalı Gmail Domaini</p>
+                                    <div class="value" id="kpiTypo">0</div>
                                 </div>
-                                <div class="col-sm-6 col-lg-4 col-xl-2">
-                                    <div class="card h-100 border border-info-subtle">
-                                        <div class="card-body py-3">
-                                            <p class="text-muted small mb-1">Duplicate</p>
-                                            <h5 class="text-info" id="kpiDuplicate">0</h5>
-                                        </div>
-                                    </div>
+                                <div class="cleaner-kpi-item cleaner-kpi-dup">
+                                    <p class="label">Duplicate</p>
+                                    <div class="value" id="kpiDuplicate">0</div>
                                 </div>
-                                <div class="col-sm-6 col-lg-4 col-xl-2">
-                                    <div class="card h-100 border border-secondary-subtle">
-                                        <div class="card-body py-3">
-                                            <p class="text-muted small mb-1">Silinebilir Kayıt</p>
-                                            <h5 class="text-secondary" id="kpiDeletable">0</h5>
-                                        </div>
-                                    </div>
+                                <div class="cleaner-kpi-item">
+                                    <p class="label">Silinebilir Kayıt</p>
+                                    <div class="value" id="kpiDeletable">0</div>
                                 </div>
                             </div>
 
                             <div id="cleanerPreviewWrap" class="mt-3 d-none">
-                                <div class="row g-3">
-                                    <div class="col-lg-6">
-                                        <div class="border rounded p-3 h-100">
-                                            <p class="small fw-semibold mb-2">Normalize önizleme</p>
-                                            <pre class="small mb-0 text-muted" id="cleanerNormalizedPreview"></pre>
-                                        </div>
+                                <div class="cleaner-preview-grid">
+                                        <div class="cleaner-preview-box">
+                                            <div class="cleaner-preview-title">Normalize önizleme</div>
+                                            <pre class="cleaner-preview-content" id="cleanerNormalizedPreview"></pre>
+                                            <div class="cleaner-preview-empty d-none" id="cleanerNormalizedEmpty">
+                                                <i data-feather="inbox" class="icon-xs mb-1"></i>
+                                                <div>Önizleme yok</div>
+                                            </div>
                                     </div>
-                                    <div class="col-lg-6">
-                                        <div class="border rounded p-3 h-100">
-                                            <p class="small fw-semibold mb-2">Gmail dışı önizleme</p>
-                                            <pre class="small mb-0 text-muted" id="cleanerNonGmailPreview"></pre>
-                                        </div>
+                                        <div class="cleaner-preview-box">
+                                            <div class="cleaner-preview-title">Gmail dışı önizleme</div>
+                                            <pre class="cleaner-preview-content" id="cleanerNonGmailPreview"></pre>
+                                            <div class="cleaner-preview-empty d-none" id="cleanerNonGmailEmpty">
+                                                <i data-feather="inbox" class="icon-xs mb-1"></i>
+                                                <div>Önizleme yok</div>
+                                            </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                        </div>
-                        <div class="col-xl-6">
-                            <div class="card cleaner-card tool-card h-100" id="mailBalanceCard">
+                            <div class="card tool-card" id="mailBalanceCard">
                                 <div class="card-header py-3">
                                     <h5 class="mb-1 d-flex align-items-center gap-2">
-                                        <i data-feather="sliders" class="icon-xs"></i> Liste Dengeleme Araçları
+                                        <span class="tool-icon-wrap"><i data-feather="sliders" class="icon-xs"></i></span> Liste Dengeleme Araçları
                                     </h5>
                                     <small class="opacity-75">Bir listenin hedef adede tamamlanması, fazla kayıtların başka listeye aktarılması veya listeler arası veri taşınması için kullanılır.</small>
                                 </div>
                                 <div class="card-body">
                                     <div class="vstack gap-3">
-                                        <div class="summary-box">
-                                            <label class="form-label form-label-sm">Hedef Limit</label>
+                                        <div class="section-card">
+                                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                                                <label class="form-label form-label-sm mb-0">Hedef limit</label>
+                                                <div class="d-flex gap-2 target-badges">
+                                                    <span class="badge bg-soft-primary text-primary" id="targetCurrentBadge">Mevcut: 0</span>
+                                                    <span class="badge bg-soft-warning text-warning" id="targetDeltaBadge">Eksik: 0</span>
+                                                </div>
+                                            </div>
                                             <input type="number" class="form-control form-control-sm" id="balanceTargetLimitInput" min="1" value="{{ default_target_limit|default(250000) }}">
                                         </div>
 
-                                        <div class="summary-box">
+                                        <div class="section-card">
                                             <h6 class="mb-2">Listeyi Hedefe Tamamla</h6>
+                                            <p class="text-muted small mb-2">Kaynak listeden seçili listeyi hedef limite kadar tamamlar.</p>
                                             <div class="row g-2">
                                                 <div class="col-md-6">
                                                     <label class="form-label form-label-sm">Kaynak Liste</label>
@@ -440,16 +612,18 @@
                                                     </select>
                                                 </div>
                                                 <div class="col-12">
-                                                    <div class="d-flex flex-wrap gap-2">
+                                                    <div class="section-actions">
                                                         <button type="button" class="btn btn-sm btn-soft-primary balance-action-btn" id="previewFillBtn">Önizleme</button>
                                                         <button type="button" class="btn btn-sm btn-primary balance-action-btn" id="runFillBtn">Uygula</button>
                                                     </div>
                                                 </div>
                                             </div>
+                                            <div class="balance-preview-summary mt-2" id="fillPreviewSummary">Önizleme bekleniyor.</div>
                                         </div>
 
-                                        <div class="summary-box">
+                                        <div class="section-card">
                                             <h6 class="mb-2">Fazlayı Başka Listeye Aktar</h6>
+                                            <p class="text-muted small mb-2">Hedef limit üstündeki kayıtları başka listeye taşır.</p>
                                             <div class="row g-2">
                                                 <div class="col-md-6">
                                                     <label class="form-label form-label-sm">Hedef Liste</label>
@@ -466,48 +640,62 @@
                                                     <input type="text" class="form-control form-control-sm" id="overflowNewListName" placeholder="Yeni liste adı">
                                                 </div>
                                                 <div class="col-12">
-                                                    <div class="d-flex flex-wrap gap-2">
+                                                    <div class="section-actions">
                                                         <button type="button" class="btn btn-sm btn-soft-warning balance-action-btn" id="previewOverflowBtn">Önizleme</button>
                                                         <button type="button" class="btn btn-sm btn-warning balance-action-btn" id="runOverflowBtn">Fazlayı Aktar</button>
                                                     </div>
                                                 </div>
                                             </div>
+                                            <div class="balance-preview-summary mt-2" id="overflowPreviewSummary">Önizleme bekleniyor.</div>
                                         </div>
 
-                                        <div class="summary-box">
+                                        <div class="section-card">
                                             <h6 class="mb-2">Yeni Data ile Listeyi Tamamla</h6>
-                                            <textarea class="form-control form-control-sm mb-2" id="fillManualPayload" rows="3" placeholder="Mail listesi veya CSV içeriği"></textarea>
-                                            <div class="d-flex flex-wrap gap-2">
+                                            <textarea class="form-control form-control-sm mb-2" id="fillManualPayload" rows="3" placeholder="Mail adreslerini yapıştır veya CSV içeriği gir"></textarea>
+                                            <div class="section-actions">
                                                 <button type="button" class="btn btn-sm btn-soft-success balance-action-btn" id="previewManualFillBtn">Önizleme</button>
                                                 <button type="button" class="btn btn-sm btn-success balance-action-btn" id="runManualFillBtn">Tamamla</button>
                                             </div>
+                                            <div class="balance-preview-summary mt-2" id="manualFillPreviewSummary">Önizleme bekleniyor.</div>
                                         </div>
 
-                                        <div class="summary-box">
-                                            <h6 class="mb-2">Listeleri Eşitle / Böl</h6>
-                                            <div class="row g-2">
-                                                <div class="col-md-6">
-                                                    <input type="number" class="form-control form-control-sm" id="splitChunkSize" min="1000" value="{{ default_target_limit|default(250000) }}" placeholder="Parça boyutu">
-                                                </div>
-                                                <div class="col-md-6">
-                                                    <input type="text" class="form-control form-control-sm" id="splitPrefix" placeholder="Yeni liste adı prefix" value="Kampanya">
-                                                </div>
-                                                <div class="col-md-6">
-                                                    <select class="form-select form-select-sm" id="splitMode">
-                                                        <option value="copy">Kopyala</option>
-                                                        <option value="move">Taşı</option>
-                                                    </select>
-                                                </div>
-                                                <div class="col-md-6 d-flex align-items-center">
-                                                    <div class="form-check form-switch">
-                                                        <input class="form-check-input" type="checkbox" id="splitOnlyGmail">
-                                                        <label class="form-check-label small" for="splitOnlyGmail">Sadece Gmail</label>
-                                                    </div>
-                                                </div>
-                                                <div class="col-12">
-                                                    <div class="d-flex flex-wrap gap-2">
-                                                        <button type="button" class="btn btn-sm btn-soft-info balance-action-btn" id="previewSplitBtn">Önizleme</button>
-                                                        <button type="button" class="btn btn-sm btn-info balance-action-btn" id="runSplitBtn">Böl</button>
+                                        <div class="accordion" id="splitAccordion">
+                                            <div class="accordion-item section-card p-0">
+                                                <h2 class="accordion-header" id="splitAccordionHead">
+                                                    <button class="accordion-button collapsed bg-transparent fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#splitAccordionBody" aria-expanded="false" aria-controls="splitAccordionBody">
+                                                        <i data-feather="git-branch" class="icon-xs me-2"></i> Listeleri Eşitle / Böl
+                                                    </button>
+                                                </h2>
+                                                <div id="splitAccordionBody" class="accordion-collapse collapse" aria-labelledby="splitAccordionHead" data-bs-parent="#splitAccordion">
+                                                    <div class="accordion-body pt-1">
+                                                        <p class="text-muted small mb-2">Kaynak listeyi parçalara böler ve yeni listeler üretir.</p>
+                                                        <div class="row g-2">
+                                                            <div class="col-md-6">
+                                                                <input type="number" class="form-control form-control-sm" id="splitChunkSize" min="1000" value="{{ default_target_limit|default(250000) }}" placeholder="Parça boyutu">
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <input type="text" class="form-control form-control-sm" id="splitPrefix" placeholder="Yeni liste adı prefix" value="Kampanya">
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <select class="form-select form-select-sm" id="splitMode">
+                                                                    <option value="copy">Kopyala</option>
+                                                                    <option value="move">Taşı</option>
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-md-6 d-flex align-items-center">
+                                                                <div class="form-check form-switch">
+                                                                    <input class="form-check-input" type="checkbox" id="splitOnlyGmail">
+                                                                    <label class="form-check-label small" for="splitOnlyGmail">Sadece Gmail</label>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-12">
+                                                                <div class="section-actions">
+                                                                    <button type="button" class="btn btn-sm btn-soft-info balance-action-btn" id="previewSplitBtn">Önizleme</button>
+                                                                    <button type="button" class="btn btn-sm btn-info balance-action-btn" id="runSplitBtn">Böl</button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div class="balance-preview-summary mt-2" id="splitPreviewSummary">Önizleme bekleniyor.</div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -515,7 +703,6 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1430,7 +1617,15 @@ function readRemoveExcelFile(file) {
 const cleanerState = {
     stats: null,
     busy: false,
-    progressTimer: null
+    progressTimer: null,
+    lastProgressValue: 0
+};
+
+const balancePreviewState = {
+    fill_to_target: false,
+    fill_manual: false,
+    move_overflow: false,
+    split_list: false
 };
 
 function cleanerUrl(action) {
@@ -1472,9 +1667,11 @@ function startCleanerProgress(text) {
     bar.style.width = '0%';
     percent.textContent = '0%';
     let value = 0;
+    cleanerState.lastProgressValue = 0;
     clearInterval(cleanerState.progressTimer);
     cleanerState.progressTimer = setInterval(() => {
         value = Math.min(92, value + 4);
+        cleanerState.lastProgressValue = value;
         bar.style.width = `${value}%`;
         percent.textContent = `${value}%`;
     }, 120);
@@ -1486,8 +1683,10 @@ function finishCleanerProgress() {
     const percent = document.getElementById('cleanerProgressPercent');
     clearInterval(cleanerState.progressTimer);
     cleanerState.progressTimer = null;
+    const label = document.getElementById('cleanerProgressText');
     if (bar) bar.style.width = '100%';
     if (percent) percent.textContent = '100%';
+    if (label) label.textContent = 'Analiz tamamlandı';
     setTimeout(() => {
         if (wrap) wrap.classList.add('d-none');
         if (bar) bar.style.width = '0%';
@@ -1534,9 +1733,12 @@ function renderCleanerStats(stats) {
         .map(item => `${item.from} -> ${item.to}`)
         .join('\n');
     const nonGmail = (cleanerState.stats.non_gmail_preview || []).join('\n');
-    document.getElementById('cleanerNormalizedPreview').textContent = normalized || 'Önizleme yok';
-    document.getElementById('cleanerNonGmailPreview').textContent = nonGmail || 'Önizleme yok';
+    document.getElementById('cleanerNormalizedPreview').textContent = normalized;
+    document.getElementById('cleanerNonGmailPreview').textContent = nonGmail;
+    document.getElementById('cleanerNormalizedEmpty')?.classList.toggle('d-none', normalized !== '');
+    document.getElementById('cleanerNonGmailEmpty')?.classList.toggle('d-none', nonGmail !== '');
     if (previewWrap) previewWrap.classList.remove('d-none');
+    feather.replace();
 }
 
 async function runCleanerAnalyze(showSuccess = true) {
@@ -1677,9 +1879,11 @@ async function loadTopStats(showToast = false) {
         document.getElementById('statTopDuplicate').textContent = fmt(data.duplicate_count || 0);
         document.getElementById('statTopTypo').textContent = fmt(data.typo_gmail_count || 0);
         const target = data.target_limit;
+        document.getElementById('targetCurrentBadge').textContent = `Mevcut: ${fmt(total)}`;
         if (!target) {
             document.getElementById('statTopTargetMain').textContent = 'Hedef belirlenmedi';
             document.getElementById('statTopTargetMeta').textContent = '-';
+            document.getElementById('targetDeltaBadge').textContent = 'Hedef yok';
         } else {
             document.getElementById('statTopTargetMain').textContent = `${fmt(total)} / ${fmt(target)}`;
             const missing = Number(data.missing_to_target || 0);
@@ -1687,8 +1891,10 @@ async function loadTopStats(showToast = false) {
             const fillRate = target > 0 ? ((total / Number(target)) * 100).toFixed(1) : '0.0';
             if (over > 0) {
                 document.getElementById('statTopTargetMeta').textContent = `%${fillRate} dolu, ${fmt(over)} fazla`;
+                document.getElementById('targetDeltaBadge').textContent = `Fazla: ${fmt(over)}`;
             } else {
                 document.getElementById('statTopTargetMeta').textContent = `%${fillRate} dolu, ${fmt(missing)} eksik`;
+                document.getElementById('targetDeltaBadge').textContent = `Eksik: ${fmt(missing)}`;
             }
         }
         if (showToast) {
@@ -1705,6 +1911,10 @@ function setBalanceButtonsDisabled(disabled) {
     document.querySelectorAll('.balance-action-btn').forEach(btn => {
         btn.disabled = !CURRENT_POOL_LIST_ID || disabled;
     });
+    document.getElementById('runFillBtn').disabled = disabled || !balancePreviewState.fill_to_target;
+    document.getElementById('runManualFillBtn').disabled = disabled || !balancePreviewState.fill_manual;
+    document.getElementById('runOverflowBtn').disabled = disabled || !balancePreviewState.move_overflow;
+    document.getElementById('runSplitBtn').disabled = disabled || !balancePreviewState.split_list;
 }
 
 function toolsEndpoint(path) {
@@ -1797,11 +2007,25 @@ function getFillPayload(sourceType) {
     };
 }
 
+function setPreviewSummary(id, text) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.textContent = text;
+    }
+}
+
 async function previewFill(sourceType) {
     try {
         setBalanceButtonsDisabled(true);
         const data = await postTools('preview', Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType)));
         openPreviewModal(data);
+        if (sourceType === 'list') {
+            balancePreviewState.fill_to_target = true;
+            setPreviewSummary('fillPreviewSummary', `Eklenecek: ${Number(data.will_process || 0).toLocaleString('tr-TR')} | Kalan: ${Number(data.estimated_leftover || 0).toLocaleString('tr-TR')}`);
+        } else {
+            balancePreviewState.fill_manual = true;
+            setPreviewSummary('manualFillPreviewSummary', `Eklenecek: ${Number(data.will_process || 0).toLocaleString('tr-TR')} | Kalan: ${Number(data.estimated_leftover || 0).toLocaleString('tr-TR')}`);
+        }
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1818,6 +2042,13 @@ async function runFill(sourceType) {
         openResultModal(data.summary || {});
         await loadTopStats(false);
         await runCleanerAnalyze(false);
+        if (sourceType === 'list') {
+            balancePreviewState.fill_to_target = false;
+            setPreviewSummary('fillPreviewSummary', 'Önizleme bekleniyor.');
+        } else {
+            balancePreviewState.fill_manual = false;
+            setPreviewSummary('manualFillPreviewSummary', 'Önizleme bekleniyor.');
+        }
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1842,6 +2073,8 @@ async function previewOverflow() {
         setBalanceButtonsDisabled(true);
         const data = await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
         openPreviewModal(data);
+        balancePreviewState.move_overflow = true;
+        setPreviewSummary('overflowPreviewSummary', `Taşınacak: ${Number(data.overflow || 0).toLocaleString('tr-TR')} kayıt`);
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1861,6 +2094,8 @@ async function runOverflow() {
         openResultModal(data.summary || {});
         await loadTopStats(false);
         await runCleanerAnalyze(false);
+        balancePreviewState.move_overflow = false;
+        setPreviewSummary('overflowPreviewSummary', 'Önizleme bekleniyor.');
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1886,6 +2121,8 @@ async function previewSplit() {
         setBalanceButtonsDisabled(true);
         const data = await postTools('preview', Object.assign({ tool: 'split_list' }, getSplitPayload()));
         openPreviewModal(data);
+        balancePreviewState.split_list = true;
+        setPreviewSummary('splitPreviewSummary', `Tahmini parça: ${Number(data.estimated_parts || 0).toLocaleString('tr-TR')} | İşlenecek: ${Number(data.will_process || 0).toLocaleString('tr-TR')}`);
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1902,6 +2139,8 @@ async function runSplit() {
         openResultModal(data.summary || {});
         await loadTopStats(false);
         await runCleanerAnalyze(false);
+        balancePreviewState.split_list = false;
+        setPreviewSummary('splitPreviewSummary', 'Önizleme bekleniyor.');
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -1962,6 +2201,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('runOverflowBtn')?.addEventListener('click', runOverflow);
     document.getElementById('previewSplitBtn')?.addEventListener('click', previewSplit);
     document.getElementById('runSplitBtn')?.addEventListener('click', runSplit);
+    setBalanceButtonsDisabled(false);
     loadTopStats(false);
     runCleanerAnalyze(false);
 });
