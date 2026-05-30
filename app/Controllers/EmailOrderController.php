@@ -31,15 +31,61 @@ class EmailOrderController
     public function index(Request $request, Response $response): Response
     {
         $user = $this->em->find(User::class, $_SESSION['user']['id']);
+        $params = $request->getQueryParams();
 
-        // Siparişleri çek
-        $qb = $this->em->createQueryBuilder();
-        $orders = $qb->select('o', 't')
+        $page = max(1, (int) ($params['page'] ?? 1));
+        $q = trim((string) ($params['q'] ?? ''));
+        $status = trim((string) ($params['status'] ?? ''));
+        $perPage = (int) ($params['per_page'] ?? 20);
+        $allowedPerPage = [20, 50, 100];
+        if (!in_array($perPage, $allowedPerPage, true)) {
+            $perPage = 20;
+        }
+
+        $listQb = $this->em->createQueryBuilder();
+        $listQb->select('o', 't')
             ->from(EmailOrder::class, 'o')
             ->leftJoin('o.template', 't')
             ->where('o.user = :user')
-            ->setParameter('user', $user)
+            ->setParameter('user', $user);
+
+        if ($q !== '') {
+            $listQb
+                ->andWhere('(LOWER(o.subject) LIKE :q OR CONCAT(\'\', o.id) LIKE :q OR LOWER(o.status) LIKE :q)')
+                ->setParameter('q', '%' . mb_strtolower($q, 'UTF-8') . '%');
+        }
+
+        if ($status !== '') {
+            if ($status === 'pending') {
+                $listQb->andWhere('o.status IN (:statusPending)')
+                    ->setParameter('statusPending', ['pending_approval', 'pending']);
+            } elseif ($status === 'sent') {
+                $listQb->andWhere('o.status IN (:statusCompleted)')
+                    ->setParameter('statusCompleted', ['sent', 'completed']);
+            } elseif ($status === 'other') {
+                $listQb->andWhere('o.status NOT IN (:statusKnown)')
+                    ->setParameter('statusKnown', ['pending_approval', 'pending', 'processing', 'sent', 'completed', 'failed']);
+            } else {
+                $listQb->andWhere('o.status = :status')
+                    ->setParameter('status', $status);
+            }
+        }
+
+        $countQb = clone $listQb;
+        $total = (int) $countQb
+            ->select('COUNT(o.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        $totalPages = max(1, (int) ceil($total / $perPage));
+        if ($page > $totalPages) {
+            $page = $totalPages;
+        }
+
+        $orders = $listQb
             ->orderBy('o.createdAt', 'DESC')
+            ->setFirstResult(($page - 1) * $perPage)
+            ->setMaxResults($perPage)
             ->getQuery()
             ->getResult();
         $templateMetaByOrderId = $this->buildFallbackTemplateMapForOrders($orders);
@@ -79,6 +125,12 @@ class EmailOrderController
             'template_meta_by_order_id' => $templateMetaByOrderId,
             'phonebooks' => $phonebooks,
             'templates' => $templates,
+            'q' => $q,
+            'selected_status' => $status,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'total_pages' => $totalPages,
             'email_credit' => $user->getEmailCredit() ?? 0,
             'blacklist_count' => $blacklistCount,
             'success' => $_SESSION['success'] ?? null,

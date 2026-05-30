@@ -109,6 +109,35 @@
         overflow: hidden;
         text-overflow: ellipsis;
     }
+
+    .nx-orders-pagination {
+        border-top: 1px solid #e2e8f0;
+        padding-top: 0.85rem;
+        margin-top: 0.85rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .nx-orders-pagination-meta {
+        font-size: 0.82rem;
+        color: #64748b;
+    }
+
+    .nx-orders-pagination-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .nx-orders-pagination-nav .page-link {
+        min-width: 2.1rem;
+        text-align: center;
+    }
     
 </style>
 {% endblock %}
@@ -208,30 +237,42 @@
                     </div>
                 </div>
             </div>
-            {% if orders is not empty %}
+            {% if total > 0 or q or selected_status %}
             <div class="nx-orders-toolbar-strip">
-                <div class="nx-orders-list-toolbar orders-toolbar">
-                    <input type="search" class="form-control form-control-sm nx-orders-search-input" id="nxEmailOrderSearch" placeholder="Sipariş no, konu, durum…" autocomplete="off" aria-label="Siparişlerde ara">
-                    <select class="form-select form-select-sm nx-orders-filter-select" id="nxEmailOrderStatusFilter" aria-label="Durum filtresi">
+                <form method="GET" action="/email-orders" class="nx-orders-list-toolbar orders-toolbar" id="nxEmailOrdersFilterForm">
+                    <input type="hidden" name="page" value="1">
+                    <input type="search" class="form-control form-control-sm nx-orders-search-input" id="nxEmailOrderSearch" name="q" value="{{ q|default('') }}" placeholder="Sipariş no, konu, durum…" autocomplete="off" aria-label="Siparişlerde ara">
+                    <select class="form-select form-select-sm nx-orders-filter-select" id="nxEmailOrderStatusFilter" name="status" aria-label="Durum filtresi">
                         <option value="">Tümü</option>
-                        <option value="pending">Onay / Bekliyor</option>
-                        <option value="processing">Gönderiliyor</option>
-                        <option value="sent">Gönderildi</option>
-                        <option value="failed">Hatalı</option>
-                        <option value="other">Diğer</option>
+                        <option value="pending" {{ selected_status == 'pending' ? 'selected' : '' }}>Onay / Bekliyor</option>
+                        <option value="processing" {{ selected_status == 'processing' ? 'selected' : '' }}>Gönderiliyor</option>
+                        <option value="sent" {{ selected_status == 'sent' ? 'selected' : '' }}>Gönderildi</option>
+                        <option value="failed" {{ selected_status == 'failed' ? 'selected' : '' }}>Hatalı</option>
+                        <option value="other" {{ selected_status == 'other' ? 'selected' : '' }}>Diğer</option>
                     </select>
+                    <select class="form-select form-select-sm nx-orders-filter-select" id="nxEmailOrderPerPage" name="per_page" aria-label="Sayfa başına kayıt">
+                        <option value="20" {{ per_page == 20 ? 'selected' : '' }}>20 / sayfa</option>
+                        <option value="50" {{ per_page == 50 ? 'selected' : '' }}>50 / sayfa</option>
+                        <option value="100" {{ per_page == 100 ? 'selected' : '' }}>100 / sayfa</option>
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Filtrele</button>
                     <button type="button" class="btn nx-orders-icon-refresh" id="nxEmailOrdersToolbarRefresh" title="Listeyi yenile" aria-label="Listeyi yenile">
                         <i data-feather="refresh-cw"></i>
                     </button>
-                </div>
+                </form>
             </div>
             {% endif %}
             <div class="card-body nx-orders-list-body">
                 {% if orders is empty %}
                 <div class="nx-orders-empty text-center py-5 px-3">
                     <div class="nx-orders-empty-icon mb-3"><i data-feather="mail"></i></div>
+                    {% if q or selected_status %}
+                    <h5 class="fw-semibold mb-2">Filtreye uygun sipariş bulunamadı</h5>
+                    <p class="text-muted small mb-4">Arama veya durum filtresini değiştirip tekrar deneyin.</p>
+                    {% else %}
                     <h5 class="fw-semibold mb-2">Henüz mail siparişi yok</h5>
                     <p class="text-muted small mb-4">Sağdaki formdan ilk siparişinizi oluşturabilirsiniz.</p>
+                    {% endif %}
                     <a href="#nx-new-mail-order" class="btn nx-orders-primary-btn btn-sm">
                         <i data-feather="send" class="align-self-center icon-xs me-1"></i> Mail gönder
                     </a>
@@ -315,6 +356,51 @@
                         </tbody>
                     </table>
                 </div>
+                {% if total > 0 %}
+                {% set startItem = ((page - 1) * per_page) + 1 %}
+                {% set endItem = [page * per_page, total]|min %}
+                {% set baseQuery = 'q=' ~ (q|default('')|url_encode) ~ '&status=' ~ (selected_status|default('')|url_encode) ~ '&per_page=' ~ per_page %}
+                {% set rangeStart = [1, page - 1]|max %}
+                {% set rangeEnd = [total_pages, page + 1]|min %}
+                <div class="nx-orders-pagination">
+                    <div class="nx-orders-pagination-meta">
+                        Toplam {{ total|number_format(0, ',', '.') }} sipariş · {{ startItem|number_format(0, ',', '.') }}-{{ endItem|number_format(0, ',', '.') }} · {{ per_page }} / sayfa · Sayfa {{ page }} / {{ total_pages }}
+                    </div>
+                    {% if total_pages > 1 %}
+                    <nav aria-label="Sipariş sayfalama">
+                        <ul class="pagination pagination-sm mb-0 nx-orders-pagination-nav">
+                            <li class="page-item {{ page <= 1 ? 'disabled' : '' }}">
+                                <a class="page-link" href="{{ page > 1 ? '/email-orders?page=' ~ (page - 1) ~ '&' ~ baseQuery : '#' }}">Önceki</a>
+                            </li>
+
+                            {% if rangeStart > 1 %}
+                            <li class="page-item"><a class="page-link" href="/email-orders?page=1&{{ baseQuery }}">1</a></li>
+                            {% if rangeStart > 2 %}
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                            {% endif %}
+
+                            {% for p in rangeStart..rangeEnd %}
+                            <li class="page-item {{ p == page ? 'active' : '' }}">
+                                <a class="page-link" href="/email-orders?page={{ p }}&{{ baseQuery }}">{{ p }}</a>
+                            </li>
+                            {% endfor %}
+
+                            {% if rangeEnd < total_pages %}
+                            {% if rangeEnd < (total_pages - 1) %}
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                            <li class="page-item"><a class="page-link" href="/email-orders?page={{ total_pages }}&{{ baseQuery }}">{{ total_pages }}</a></li>
+                            {% endif %}
+
+                            <li class="page-item {{ page >= total_pages ? 'disabled' : '' }}">
+                                <a class="page-link" href="{{ page < total_pages ? '/email-orders?page=' ~ (page + 1) ~ '&' ~ baseQuery : '#' }}">Sonraki</a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+                {% endif %}
                 {% endif %}
             </div>
         </div>
@@ -1109,24 +1195,26 @@ function showLoading(event) {
     return true;
 }
 
-function nxEmailOrdersApplyFilters() {
-    const q = (document.getElementById('nxEmailOrderSearch')?.value || '').toLowerCase().trim();
-    const st = document.getElementById('nxEmailOrderStatusFilter')?.value || '';
-    document.querySelectorAll('.nx-email-order-row').forEach(function(row) {
-        const hay = (row.getAttribute('data-search') || '').toLowerCase();
-        const rowSt = row.getAttribute('data-status') || '';
-        const okQ = !q || hay.includes(q);
-        let okS = !st;
-        if (st) okS = rowSt === st;
-        row.style.display = okQ && okS ? '' : 'none';
-    });
-}
-
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
 
-    document.getElementById('nxEmailOrderSearch')?.addEventListener('input', nxEmailOrdersApplyFilters);
-    document.getElementById('nxEmailOrderStatusFilter')?.addEventListener('change', nxEmailOrdersApplyFilters);
+    const filterForm = document.getElementById('nxEmailOrdersFilterForm');
+    const statusFilter = document.getElementById('nxEmailOrderStatusFilter');
+    const perPageFilter = document.getElementById('nxEmailOrderPerPage');
+    const searchInput = document.getElementById('nxEmailOrderSearch');
+
+    statusFilter?.addEventListener('change', function() {
+        filterForm?.requestSubmit();
+    });
+    perPageFilter?.addEventListener('change', function() {
+        filterForm?.requestSubmit();
+    });
+    searchInput?.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            filterForm?.requestSubmit();
+        }
+    });
+
     document.getElementById('nxEmailOrdersToolbarRefresh')?.addEventListener('click', function() { location.reload(); });
     document.getElementById('nxEmailOrdersHeadRefresh')?.addEventListener('click', function() { location.reload(); });
     
