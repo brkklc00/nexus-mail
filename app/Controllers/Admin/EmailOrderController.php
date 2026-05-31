@@ -1865,17 +1865,10 @@ class EmailOrderController
             ->getQuery()
             ->getResult();
 
-        $activeCountRows = $this->em->getConnection()->executeQuery(
-            'SELECT pool_list_id, COUNT(id) AS active_count FROM email_data_pool WHERE is_active = 1 GROUP BY pool_list_id'
-        )->fetchAllAssociative();
-        $activeCountMap = [];
-        foreach ($activeCountRows as $row) {
-            $activeCountMap[(int) ($row['pool_list_id'] ?? 0)] = (int) ($row['active_count'] ?? 0);
-        }
-
         $poolListsPayload = [];
         foreach ($listEntities as $listEntity) {
-            $activeCount = (int) ($activeCountMap[$listEntity->getId()] ?? 0);
+            // Fast path: use precomputed counters on list table to avoid heavy GROUP BY on large pools.
+            $activeCount = (int) $listEntity->getActiveCount();
             $poolListsPayload[] = [
                 'id' => $listEntity->getId(),
                 'name' => $listEntity->getName(),
