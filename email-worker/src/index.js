@@ -51,6 +51,7 @@ class EmailWorker {
         Logger.info('Yapılandırma:');
         Logger.info(`API URL          : ${config.api.baseUrl}`);
         Logger.info(`Poll Interval    : ${config.worker.pollInterval}ms`);
+        Logger.info(`Kampanya eşzamanlı: ${config.worker.campaignConcurrency}`);
         Logger.info(`DB               : ${config.database.host}:${config.database.port} / ${config.database.database}`);
         try {
             await this.apiClient.refreshRuntimeSendingConfig();
@@ -105,7 +106,7 @@ class EmailWorker {
             await this.apiClient.refreshRuntimeSendingConfig();
 
             // Bekleyen kampanyaları getir
-            const campaigns = await this.apiClient.getPendingEmailCampaigns();
+            const campaigns = await this.apiClient.getPendingEmailCampaigns(config.worker.pendingFetchLimit);
 
             if (campaigns.length === 0) {
                 // Kampanya yoksa sessiz kal (log yazma)
@@ -113,27 +114,51 @@ class EmailWorker {
             }
 
             console.log('');
-            Logger.info(`${campaigns.length} bekleyen kampanya bulundu`);
+            const dispatchStartedAt = Date.now();
+            const concurrency = Math.max(1, config.worker.campaignConcurrency);
+            Logger.info(`${campaigns.length} bekleyen kampanya bulundu (eşzamanlı hedef: ${concurrency})`);
 
-            // Her kampanyayı işle
-            for (const campaign of campaigns) {
-                try {
-                    const claimResult = await this.apiClient.claimEmailCampaign(campaign.id, config.worker.workerId);
-                    if (!claimResult.claimed) {
-                        Logger.info(`Kampanya #${campaign.id} claim alınamadı, atlandı (${claimResult.reason || 'locked'})`);
-                        continue;
+            const chunks = [];
+            for (let i = 0; i < campaigns.length; i += concurrency) {
+                chunks.push(campaigns.slice(i, i + concurrency));
+            }
+
+            let claimedCount = 0;
+            let skippedCount = 0;
+            let failedCount = 0;
+
+            for (const chunk of chunks) {
+                const chunkResults = await Promise.allSettled(
+                    chunk.map(async (campaign) => {
+                        const claimResult = await this.apiClient.claimEmailCampaign(campaign.id, config.worker.workerId);
+                        if (!claimResult.claimed) {
+                            Logger.info(`Kampanya #${campaign.id} claim alınamadı, atlandı (${claimResult.reason || 'locked'})`);
+                            return { campaignId: campaign.id, claimed: false };
+                        }
+
+                        await this.processor.processCampaign(campaign);
+                        return { campaignId: campaign.id, claimed: true };
+                    })
+                );
+
+                for (const item of chunkResults) {
+                    if (item.status === 'fulfilled') {
+                        if (item.value.claimed) {
+                            claimedCount++;
+                        } else {
+                            skippedCount++;
+                        }
+                    } else {
+                        failedCount++;
+                        Logger.error(`Kampanya paralel işleme hatası: ${item.reason?.message || item.reason}`);
                     }
-
-                    // Kampanyayı işle
-                    await this.processor.processCampaign(campaign);
-
-                    // Not: Email'de report tracking yok (SMTP gerçek zamanlı delivery confirmation vermez)
-                    // Report checker sadece timeout kontrolü için çalışır, şimdilik devre dışı
-
-                } catch (error) {
-                    Logger.error(`Kampanya #${campaign.id} işlenirken hata: ${error.message}`);
                 }
             }
+
+            const dispatchLatencyMs = Date.now() - dispatchStartedAt;
+            Logger.info(
+                `Kampanya dispatch özeti | toplam=${campaigns.length} | claim=${claimedCount} | skipped=${skippedCount} | failed=${failedCount} | campaigns_dispatched_total=${claimedCount} | campaign_dispatch_latency_ms=${dispatchLatencyMs}`
+            );
 
         } catch (error) {
             Logger.error(`Poll error: ${error.message}`);

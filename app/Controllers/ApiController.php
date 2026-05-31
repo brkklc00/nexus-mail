@@ -136,6 +136,8 @@ class ApiController
         }
 
         try {
+            $params = $request->getQueryParams();
+            $limit = max(1, min(1000, (int) ($params['limit'] ?? 100)));
             // Claim edilebilir kayıtları DB saatine göre seç.
             // PHP/DB timezone farkı lock filtresinde yanlış pozitif üretebiliyor.
             $claimTtlSeconds = max(60, (int) ($_ENV['EMAIL_CLAIM_TTL_SECONDS'] ?? 900));
@@ -154,8 +156,8 @@ class ApiController
                         )
                     )
                  ORDER BY created_at ASC
-                 LIMIT 5",
-                [$claimTtlSeconds]
+                 LIMIT ?",
+                [$claimTtlSeconds, $limit]
             );
 
             if (empty($claimableIds)) {
@@ -215,6 +217,7 @@ class ApiController
                     'id' => $order->getId(),
                     'user_id' => $order->getUser()->getId(),
                     'user_name' => $order->getUser()->getName(),
+                    'status' => $order->getStatus()->value,
                     'subject' => $order->getSubject(),
                     'body' => $order->getBody(),
                     'from_name' => 'Nexus',
@@ -768,6 +771,7 @@ class ApiController
         $deliveredIncrements = 0;
         $failedIncrements = 0;
         $bouncedIncrements = 0;
+        $terminalStatuses = ['delivered', 'failed', 'bounced', 'skipped_blacklist', 'suppressed'];
 
         $resultMap = [];
         foreach ($emailResults as $result) {
@@ -803,6 +807,11 @@ class ApiController
                     $messageId = $result['message_id'] ?? null;
                     $error = $result['error'] ?? null;
                     $previousStatus = $emailEntity->getStatus()->value;
+
+                    // Idempotency: terminal durumdaki satırlar tekrar güncellenmez.
+                    if (in_array($previousStatus, $terminalStatuses, true)) {
+                        continue;
+                    }
 
                     try {
                         $statusEnum = \App\Domain\Enum\EmailStatus::from($status);

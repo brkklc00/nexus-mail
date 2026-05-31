@@ -341,6 +341,7 @@ export class CampaignProcessor {
             Logger.info(`│ Başarısız       : ${failedCount.toLocaleString()}`);
             Logger.info(`│ Karaliste        : ${blacklistedCount.toLocaleString()}`);
             Logger.info(`│ Geçersiz adres   : ${invalidEmailCount.toLocaleString()}`);
+            Logger.info(`│ campaigns_dispatched_total=${1} campaign_send_failures_total=${failedCount}`);
             Logger.info('└──────────────────────────────────────────────────────────────────────');
             
             // SMTP health report
@@ -365,6 +366,7 @@ export class CampaignProcessor {
                 }
             } else {
                 Logger.error(`❌ Kampanya #${campaign.id} başarısız oldu: ${error.message}`);
+                Logger.error(`campaign_send_failures_total=1 campaign_id=${campaign.id}`);
                 await this.apiClient.updateEmailCampaignStatus(campaign.id, 'failed');
             }
         } finally {

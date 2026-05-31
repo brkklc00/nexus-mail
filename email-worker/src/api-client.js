@@ -47,9 +47,13 @@ export class ApiClient {
     /**
      * Bekleyen email kampanyalarını getir
      */
-    async getPendingEmailCampaigns() {
+    async getPendingEmailCampaigns(limit = null) {
         try {
-            const response = await this.client.get('/email-campaigns/pending');
+            const params = {};
+            if (Number.isFinite(limit) && limit > 0) {
+                params.limit = Math.floor(limit);
+            }
+            const response = await this.client.get('/email-campaigns/pending', { params });
             
             if (response.status !== 200) {
                 Logger.error(`API Error: ${response.status} - ${JSON.stringify(response.data)}`);
