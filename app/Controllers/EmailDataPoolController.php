@@ -52,7 +52,7 @@ class EmailDataPoolController
         $listIdParam = (int) ($params['list_id'] ?? 0);
         $listSearch = trim((string) ($params['list_search'] ?? ''));
         $listPage = max(1, (int) ($params['list_page'] ?? 1));
-        $listPerPage = 50;
+        $listPerPage = 30;
 
         $listQb = $this->em->createQueryBuilder()
             ->select('l')
@@ -91,9 +91,13 @@ class EmailDataPoolController
         }
 
         $totalAllPoolsEntries = (int) $this->em->getConnection()->fetchOne('SELECT COALESCE(SUM(total_count), 0) FROM email_data_pool_lists');
+        $analysisByListId = $this->fetchListAnalysisSummaries(
+            array_values(array_unique(array_map(static fn (EmailDataPoolList $list): int => (int) $list->getId(), $visibleLists)))
+        );
         $listSummaries = [];
         foreach ($visibleLists as $pl) {
             $lid = $pl->getId();
+            $analysis = $analysisByListId[$lid] ?? [];
             $listSummaries[] = [
                 'id' => $lid,
                 'name' => $pl->getName(),
@@ -102,6 +106,12 @@ class EmailDataPoolController
                 'active_count' => $pl->getActiveCount(),
                 'passive_count' => $pl->getPassiveCount(),
                 'updated_count_at' => $pl->getUpdatedCountAt()?->format('Y-m-d H:i:s'),
+                'analysis_status' => (string) ($analysis['status'] ?? 'idle'),
+                'gmail_ratio' => isset($analysis['gmail_ratio']) ? (float) $analysis['gmail_ratio'] : null,
+                'invalid_gmail_count' => isset($analysis['invalid_gmail_count']) ? (int) $analysis['invalid_gmail_count'] : 0,
+                'duplicate_count' => isset($analysis['duplicate_count']) ? (int) $analysis['duplicate_count'] : 0,
+                'non_gmail_count' => isset($analysis['non_gmail_count']) ? (int) $analysis['non_gmail_count'] : 0,
+                'last_analyzed_at' => isset($analysis['last_analyzed_at']) ? (string) $analysis['last_analyzed_at'] : null,
             ];
         }
 
@@ -143,6 +153,44 @@ class EmailDataPoolController
         
         $response->getBody()->write($html);
         return $response;
+    }
+
+    /**
+     * @param array<int, int> $listIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchListAnalysisSummaries(array $listIds): array
+    {
+        $listIds = array_values(array_filter(array_map('intval', $listIds), static fn (int $id): bool => $id > 0));
+        if ($listIds === []) {
+            return [];
+        }
+
+        try {
+            $this->ensureAnalysisTables();
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $conn = $this->em->getConnection();
+        $rowsById = [];
+        foreach (array_chunk($listIds, 1000) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+            $rows = $conn->fetchAllAssociative(
+                "SELECT list_id, status, gmail_ratio, invalid_gmail_count, duplicate_count, non_gmail_count, last_analyzed_at
+                   FROM email_data_pool_analysis_cache
+                  WHERE list_id IN ($placeholders)",
+                $chunk
+            );
+            foreach ($rows as $row) {
+                $lid = (int) ($row['list_id'] ?? 0);
+                if ($lid > 0) {
+                    $rowsById[$lid] = $row;
+                }
+            }
+        }
+
+        return $rowsById;
     }
 
     /**
@@ -1258,12 +1306,58 @@ class EmailDataPoolController
         }
     }
 
+    public function cleanerPreview(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $operation = (string) ($data['operation'] ?? '');
+            $stats = $this->buildCachedListStats((int) $poolList->getId(), 0);
+            $nonGmail = (int) ($stats['non_gmail_count'] ?? 0);
+            $typo = (int) ($stats['typo_gmail_count'] ?? 0);
+            $duplicate = (int) ($stats['duplicate_count'] ?? 0);
+
+            return match ($operation) {
+                'delete_non_gmail' => $this->jsonResponse($response, [
+                    'success' => true,
+                    'operation' => $operation,
+                    'count' => $nonGmail,
+                    'message' => $nonGmail > 0 ? 'Gmail dışı kayıtlar silinecek.' : 'Silinecek Gmail dışı kayıt bulunamadı.',
+                ]),
+                'fix_typo_gmail' => $this->jsonResponse($response, [
+                    'success' => true,
+                    'operation' => $operation,
+                    'count' => $typo,
+                    'message' => $typo > 0 ? 'Hatalı Gmail alan adları düzeltilecek.' : 'Düzeltilecek hatalı Gmail kaydı bulunamadı.',
+                ]),
+                'remove_duplicates' => $this->jsonResponse($response, [
+                    'success' => true,
+                    'operation' => $operation,
+                    'count' => $duplicate,
+                    'message' => $duplicate > 0 ? 'Duplicate kayıtlar silinecek.' : 'Silinecek duplicate kayıt bulunamadı.',
+                ]),
+                default => $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz preview işlemi.'], 400),
+            };
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 404;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::cleanerPreview error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Önizleme alınamadı.'], 500);
+        }
+    }
+
     public function cleanerExportNonGmail(Request $request, Response $response, array $args): Response
     {
         @set_time_limit(0);
         if (function_exists('ini_set')) {
             @ini_set('max_execution_time', '0');
-            @ini_set('memory_limit', '512M');
+            @ini_set('memory_limit', (string) ($_ENV['EMAIL_POOL_EXPORT_MEMORY_LIMIT'] ?? '1024M'));
+        }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
         }
 
         try {
@@ -1298,6 +1392,49 @@ class EmailDataPoolController
         }
     }
 
+    public function cleanerExportTypoGmail(Request $request, Response $response, array $args): Response
+    {
+        @set_time_limit(0);
+        if (function_exists('ini_set')) {
+            @ini_set('max_execution_time', '0');
+            @ini_set('memory_limit', (string) ($_ENV['EMAIL_POOL_EXPORT_MEMORY_LIMIT'] ?? '1024M'));
+        }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
+        }
+
+        try {
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $tmpPath = $this->writeTypoGmailTxtToTempFile((int) $poolList->getId());
+            $resource = fopen($tmpPath, 'rb');
+            if ($resource === false) {
+                @unlink($tmpPath);
+                throw new \RuntimeException('Dosya açılamadı.');
+            }
+
+            register_shutdown_function(static function () use ($tmpPath): void {
+                @unlink($tmpPath);
+            });
+
+            $stream = new \Slim\Psr7\Stream($resource);
+            $filename = sprintf('gmail-hatali-domain-%d-%s.txt', (int) $poolList->getId(), date('Y-m-d'));
+
+            return $response
+                ->withBody($stream)
+                ->withHeader('Content-Type', 'text/plain; charset=utf-8')
+                ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+                ->withHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+                ->withHeader('Pragma', 'no-cache')
+                ->withHeader('Expires', '0');
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 404);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::cleanerExportTypoGmail error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Dışa aktarma sırasında hata oluştu.'], 500);
+        }
+    }
+
     public function cleanerDeleteNonGmail(Request $request, Response $response, array $args): Response
     {
         try {
@@ -1309,10 +1446,7 @@ class EmailDataPoolController
                 $this->recalculateListCounts([(int) $poolList->getId()]);
                 $this->invalidateAnalysisCache((int) $poolList->getId());
             }
-            $remainingTotal = (int) $this->em->getConnection()->fetchOne(
-                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
-                [(int) $poolList->getId()]
-            );
+            $remainingTotal = $this->getListTotalCountFast((int) $poolList->getId(), (int) $poolList->getTotalCount());
 
             return $this->jsonResponse($response, [
                 'success' => true,
@@ -1365,10 +1499,7 @@ class EmailDataPoolController
                 $this->recalculateListCounts([(int) $poolList->getId()]);
                 $this->invalidateAnalysisCache((int) $poolList->getId());
             }
-            $remainingTotal = (int) $this->em->getConnection()->fetchOne(
-                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
-                [(int) $poolList->getId()]
-            );
+            $remainingTotal = $this->getListTotalCountFast((int) $poolList->getId(), (int) $poolList->getTotalCount());
 
             return $this->jsonResponse($response, [
                 'success' => true,
@@ -2803,6 +2934,53 @@ class EmailDataPoolController
                   ORDER BY id ASC
                   LIMIT $batchSize",
                 [$poolListId, $lastId]
+            );
+            foreach ($rows as $row) {
+                $lastId = (int) ($row['id'] ?? 0);
+                $email = trim((string) ($row['email'] ?? ''));
+                if ($email !== '') {
+                    fwrite($fp, $email . PHP_EOL);
+                }
+            }
+        } while (count($rows) === $batchSize);
+
+        if (fclose($fp) === false) {
+            @unlink($tmpPath);
+            throw new \RuntimeException('Dosya kapatılamadı.');
+        }
+
+        return $tmpPath;
+    }
+
+    private function writeTypoGmailTxtToTempFile(int $poolListId): string
+    {
+        $tmpPath = tempnam(sys_get_temp_dir(), 'edptypogmail');
+        if ($tmpPath === false) {
+            throw new \RuntimeException('Geçici dosya oluşturulamadı.');
+        }
+
+        $fp = fopen($tmpPath, 'wb');
+        if ($fp === false) {
+            @unlink($tmpPath);
+            throw new \RuntimeException('Geçici dosya açılamadı.');
+        }
+
+        $conn = $this->em->getConnection();
+        $batchSize = max(2000, min(20000, (int) ($_ENV['EMAIL_POOL_TXT_EXPORT_BATCH'] ?? 10000)));
+        $lastId = 0;
+        $typoInPlaceholders = implode(',', array_fill(0, count(self::GMAIL_TYPO_DOMAINS), '?'));
+        $baseParams = array_merge([$poolListId], self::GMAIL_TYPO_DOMAINS);
+
+        do {
+            $rows = $conn->fetchAllAssociative(
+                "SELECT id, email
+                   FROM email_data_pool
+                  WHERE pool_list_id = ?
+                    AND LOWER(SUBSTRING_INDEX(email, '@', -1)) IN ($typoInPlaceholders)
+                    AND id > ?
+                  ORDER BY id ASC
+                  LIMIT $batchSize",
+                array_merge($baseParams, [$lastId])
             );
             foreach ($rows as $row) {
                 $lastId = (int) ($row['id'] ?? 0);

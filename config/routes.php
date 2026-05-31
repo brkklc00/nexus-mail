@@ -621,6 +621,10 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/{listId}/cleaner/export-non-gmail', [\App\Controllers\EmailDataPoolController::class, 'cleanerExportNonGmail'])->setName('admin.email-data-pool.cleaner.export-non-gmail')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/{listId}/cleaner/export-typo-gmail', [\App\Controllers\EmailDataPoolController::class, 'cleanerExportTypoGmail'])->setName('admin.email-data-pool.cleaner.export-typo-gmail')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/{listId}/cleaner/preview', [\App\Controllers\EmailDataPoolController::class, 'cleanerPreview'])->setName('admin.email-data-pool.cleaner.preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/{listId}/cleaner/delete-non-gmail', [\App\Controllers\EmailDataPoolController::class, 'cleanerDeleteNonGmail'])->setName('admin.email-data-pool.cleaner.delete-non-gmail')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'delete'));
             $group->post('/{listId}/cleaner/fix-gmail-typos', [\App\Controllers\EmailDataPoolController::class, 'cleanerFixGmailTypos'])->setName('admin.email-data-pool.cleaner.fix-gmail-typos')
