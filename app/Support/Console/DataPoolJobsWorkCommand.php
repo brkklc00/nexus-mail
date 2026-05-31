@@ -722,8 +722,9 @@ class DataPoolJobsWorkCommand extends Command
         $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dedup_keep_ids');
         $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dedup_dup_ids');
         $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dup_norms (norm VARCHAR(320) NOT NULL PRIMARY KEY) ENGINE=InnoDB');
-        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_keep_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=MEMORY');
-        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_dup_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=MEMORY');
+        // MEMORY tabloları 15M+ datasetlerde "table is full" hatasına düşebildiği için InnoDB kullan.
+        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_keep_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=InnoDB');
+        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_dup_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=InnoDB');
         $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.05), $declaredTotal, 0, 0);
 
         $conn->executeStatement(
