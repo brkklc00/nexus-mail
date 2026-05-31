@@ -47,8 +47,8 @@
             close: true,
             closeOnEscape: true,
             displayMode: 2,
-            maxWidth: 420,
-            layout: 2,
+            maxWidth: 460,
+            layout: 1,
             transitionIn: 'fadeInDown',
             transitionOut: 'fadeOutUp',
             pauseOnHover: true
