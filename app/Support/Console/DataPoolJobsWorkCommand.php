@@ -628,67 +628,60 @@ class DataPoolJobsWorkCommand extends Command
     {
         $conn = $em->getConnection();
         $where = $this->globalActiveWhereClause($conn);
+        $progressTotal = 100;
+        $jobService->updateProgress($jobId, 5, $progressTotal, 0, 0);
 
         $totalRows = (int) $conn->fetchOne(
             "SELECT COUNT(*) FROM email_data_pool WHERE {$where} AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''"
         );
-        $jobService->updateProgress($jobId, 1, max(1, $totalRows), 1, 0);
+        $jobService->updateProgress($jobId, 15, $progressTotal, 0, 0);
 
         $uniqueEmails = (int) $conn->fetchOne(
             "SELECT COUNT(DISTINCT COALESCE(normalized_email, LOWER(TRIM(email)))) FROM email_data_pool WHERE {$where} AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''"
         );
         $duplicateRows = max(0, $totalRows - $uniqueEmails);
-        $duplicateGroups = (int) $conn->fetchOne(
-            "SELECT COUNT(*) FROM (
-                SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
-                  FROM email_data_pool
-                 WHERE {$where}
-                   AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
-                 GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
-                HAVING COUNT(*) > 1
-            ) x"
+        $jobService->updateProgress($jobId, 30, $progressTotal, 0, 0);
+
+        // Duplicate norm setini tek seferde üretip sonraki tüm sorgularda reuse ederek preview süresini düşür.
+        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dup_norms');
+        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dup_norms (norm VARCHAR(320) NOT NULL PRIMARY KEY) ENGINE=InnoDB');
+        $conn->executeStatement(
+            "INSERT INTO tmp_global_dup_norms (norm)
+             SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+               FROM email_data_pool
+              WHERE {$where}
+                AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
+              GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+             HAVING COUNT(*) > 1"
         );
+        $duplicateGroups = (int) $conn->fetchOne('SELECT COUNT(*) FROM tmp_global_dup_norms');
+        $jobService->updateProgress($jobId, 55, $progressTotal, 0, 0);
 
         $topDomains = $conn->fetchAllAssociative(
             "SELECT COALESCE(domain, SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1)) AS domain_name, COUNT(*) AS cnt
                FROM email_data_pool
               WHERE {$where}
-                AND COALESCE(normalized_email, LOWER(TRIM(email))) IN (
-                    SELECT norm FROM (
-                        SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
-                          FROM email_data_pool
-                         WHERE {$where}
-                           AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
-                         GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
-                        HAVING COUNT(*) > 1
-                    ) d
-                )
+                AND COALESCE(normalized_email, LOWER(TRIM(email))) IN (SELECT norm FROM tmp_global_dup_norms)
               GROUP BY domain_name
               ORDER BY cnt DESC
               LIMIT 10"
         );
+        $jobService->updateProgress($jobId, 75, $progressTotal, 0, 0);
 
         $byList = $conn->fetchAllAssociative(
             "SELECT p.pool_list_id, l.name AS list_name, COUNT(*) AS duplicate_rows
                FROM email_data_pool p
                JOIN email_data_pool_lists l ON l.id = p.pool_list_id
               WHERE {$where}
-                AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) IN (
-                    SELECT norm FROM (
-                        SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
-                          FROM email_data_pool
-                         WHERE {$where}
-                           AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
-                         GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
-                        HAVING COUNT(*) > 1
-                    ) d
-                )
+                AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) IN (SELECT norm FROM tmp_global_dup_norms)
               GROUP BY p.pool_list_id, l.name
               ORDER BY duplicate_rows DESC
               LIMIT 100"
         );
+        $jobService->updateProgress($jobId, 90, $progressTotal, 0, 0);
 
-        $jobService->updateProgress($jobId, $totalRows, max(1, $totalRows), $totalRows, 0);
+        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dup_norms');
+        $jobService->updateProgress($jobId, 100, $progressTotal, 100, 0);
 
         return [
             'processed_count' => $totalRows,
