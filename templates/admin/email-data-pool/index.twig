@@ -176,6 +176,43 @@
         gap: 22px;
         align-items: stretch;
     }
+    .pool-ops-tabs {
+        border-bottom: 1px solid #dbe4f1;
+        padding-bottom: 10px;
+        margin-bottom: 14px;
+    }
+    .pool-ops-tabs .nav-link {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        color: #1f3b67;
+        font-weight: 600;
+        padding: 8px 12px;
+    }
+    .pool-ops-tabs .nav-link.active {
+        color: #fff;
+        background: linear-gradient(135deg, #10203d 0%, #1e3a70 100%);
+        border-color: #1e3a70;
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
+    }
+    .pool-ops-tabs .nav-link:not(.active):hover {
+        border-color: #c6d5ea;
+        background: #f8fbff;
+    }
+    .ops-pane-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: var(--nx-shadow-sm);
+    }
+    .ops-pane-card .card-body {
+        padding: 16px 18px;
+    }
+    .job-history-table th,
+    .job-history-table td {
+        font-size: 0.8rem;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
     .tool-card {
         border: 1px solid var(--nx-border);
         border-radius: 20px;
@@ -656,7 +693,7 @@
                         </div>
                     </div>
 
-                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top" id="summaryInfoBar">
                         <p class="small text-muted mb-0">
                             Bu listeden çıkarma veya <strong>tüm havuz listelerinden</strong> silme için <strong>Mail çıkar</strong> içinde kapsam seçin. Listenin tamamı için <strong>Tümünü sil</strong>.
                             {% if updated_count_at %}
@@ -689,7 +726,49 @@
                     </div>
                     {% endif %}
 
-                    <div class="tools-grid mt-2">
+                    <div class="pool-ops-tabs mt-3">
+                        <ul class="nav nav-pills flex-nowrap overflow-auto gap-2" id="poolOpsTabNav">
+                            <li class="nav-item"><button class="nav-link active" type="button" data-pool-tab="overview">Genel Bakış</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="cleaner">Mail Temizleme</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="balance">Liste Dengeleme</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="split">Liste Eşitle / Böl</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="bulk">Toplu İşlemler</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="history">İşlem Geçmişi</button></li>
+                        </ul>
+                    </div>
+
+                    <div class="card ops-pane-card mb-3" id="overviewPaneCard">
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="small text-muted mb-1">Seçili liste adı</div>
+                                    <div class="fw-semibold">{{ current_list_name|default('-') }}</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="small text-muted mb-1">Liste ID</div>
+                                    <div class="fw-semibold">{{ current_list_id|default('-') }}</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="small text-muted mb-1">Aktif kayıt</div>
+                                    <div class="fw-semibold">{{ active_count|default(0)|number_format }}</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="small text-muted mb-1">Hedef limit</div>
+                                    <div class="fw-semibold">{{ default_target_limit|default(250000)|number_format }}</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="small text-muted mb-1">Son güncelleme</div>
+                                    <div class="fw-semibold">{{ updated_count_at|default('-') }}</div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="small text-muted mb-1">Son işlem durumu</div>
+                                    <div class="fw-semibold" id="overviewLastOperation">Bekleniyor</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tools-grid mt-2" id="toolsGridWrap">
                     <div class="card tool-card" id="mailCleanerCard">
                         <div class="card-header py-3">
                             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -802,9 +881,12 @@
                     </div>
                             <div class="card tool-card" id="mailBalanceCard">
                                 <div class="card-header py-3">
-                                    <h5 class="mb-1 d-flex align-items-center gap-2">
-                                        <span class="tool-icon-wrap"><i data-feather="sliders" class="icon-xs"></i></span> Liste Dengeleme Araçları
-                                    </h5>
+                                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                        <h5 class="mb-1 d-flex align-items-center gap-2">
+                                            <span class="tool-icon-wrap"><i data-feather="sliders" class="icon-xs"></i></span> Liste Dengeleme Araçları
+                                        </h5>
+                                        <button type="button" class="btn btn-sm btn-soft-secondary" id="openBalanceHistoryBtn">İşlem Durumunu Gör</button>
+                                    </div>
                                     <small class="opacity-75">Bir listenin hedef adede tamamlanması, fazla kayıtların başka listeye aktarılması veya listeler arası veri taşınması için kullanılır.</small>
                                 </div>
                                 <div class="card-body">
@@ -844,7 +926,7 @@
                                                 <div class="col-12">
                                                     <div class="section-actions">
                                                         <button type="button" class="btn btn-sm btn-soft-primary balance-action-btn" id="previewFillBtn">Önizleme</button>
-                                                        <button type="button" class="btn btn-sm btn-primary balance-action-btn" id="runFillBtn">Uygula</button>
+                                                        <button type="button" class="btn btn-sm btn-primary balance-action-btn" id="runFillBtn">Worker ile Başlat</button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -872,7 +954,7 @@
                                                 <div class="col-12">
                                                     <div class="section-actions">
                                                         <button type="button" class="btn btn-sm btn-soft-warning balance-action-btn" id="previewOverflowBtn">Önizleme</button>
-                                                        <button type="button" class="btn btn-sm btn-warning balance-action-btn" id="runOverflowBtn">Fazlayı Aktar</button>
+                                                        <button type="button" class="btn btn-sm btn-warning balance-action-btn" id="runOverflowBtn">Worker ile Başlat</button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -884,7 +966,7 @@
                                             <textarea class="form-control form-control-sm mb-2" id="fillManualPayload" rows="3" placeholder="Mail listesi veya CSV içeriği"></textarea>
                                             <div class="section-actions">
                                                 <button type="button" class="btn btn-sm btn-soft-success balance-action-btn" id="previewManualFillBtn">Önizleme</button>
-                                                <button type="button" class="btn btn-sm btn-success balance-action-btn" id="runManualFillBtn">Tamamla</button>
+                                                <button type="button" class="btn btn-sm btn-success balance-action-btn" id="runManualFillBtn">Worker ile Başlat</button>
                                             </div>
                                             <div class="balance-preview-summary mt-2" id="manualFillPreviewSummary">Önizleme bekleniyor.</div>
                                         </div>
@@ -932,7 +1014,7 @@
                                                             <div class="col-12">
                                                                 <div class="section-actions">
                                                                     <button type="button" class="btn btn-sm btn-soft-info balance-action-btn" id="previewSplitBtn">Önizleme</button>
-                                                                    <button type="button" class="btn btn-sm btn-info balance-action-btn" id="runSplitBtn">Böl</button>
+                                                                    <button type="button" class="btn btn-sm btn-info balance-action-btn" id="runSplitBtn">Worker ile Başlat</button>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -941,9 +1023,134 @@
                                                 </div>
                                             </div>
                                         </div>
+
+                                        <div class="section-card">
+                                            <h6 class="mb-2">Listeleri Eşitle</h6>
+                                            <p class="text-muted small mb-2">Birden fazla listeyi hedef limite göre otomatik dengeler.</p>
+                                            <div class="row g-2">
+                                                <div class="col-md-8">
+                                                    <label class="form-label form-label-sm">Liste ID'leri (virgülle)</label>
+                                                    <input type="text" class="form-control form-control-sm" id="equalizePoolIds" placeholder="örn: 1,2,3,4">
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label form-label-sm">Hedef Limit</label>
+                                                    <input type="number" class="form-control form-control-sm" id="equalizeTargetLimit" min="1" value="{{ default_target_limit|default(250000) }}">
+                                                </div>
+                                                <div class="col-12">
+                                                    <div class="section-actions">
+                                                        <button type="button" class="btn btn-sm btn-soft-secondary balance-action-btn" id="previewEqualizeBtn">Önizle</button>
+                                                        <button type="button" class="btn btn-sm btn-secondary balance-action-btn" id="runEqualizeBtn">Worker ile Başlat</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="balance-preview-summary mt-2" id="equalizePreviewSummary">Önizleme bekleniyor.</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                    </div>
+
+                    <div class="card ops-pane-card mt-3 d-none" id="globalBulkCard">
+                        <div class="card-body">
+                            <h5 class="mb-1 d-flex align-items-center gap-2"><i data-feather="layers" class="icon-xs"></i> Toplu İşlemler</h5>
+                            <p class="text-muted small mb-3">Tüm listelerde global mükerrer önizleme/temizlik işlemleri worker üzerinden çalışır.</p>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-3"><div class="small text-muted">Toplam liste</div><div class="fw-semibold">{{ list_total|default(pool_lists|length) }}</div></div>
+                                <div class="col-md-3"><div class="small text-muted">Toplam kayıt</div><div class="fw-semibold">{{ total_all_pools_entries|default(0)|number_format }}</div></div>
+                                <div class="col-md-3"><div class="small text-muted">Son global önizleme</div><div class="fw-semibold" id="globalLastPreview">-</div></div>
+                                <div class="col-md-3"><div class="small text-muted">Son global temizlik</div><div class="fw-semibold" id="globalLastApply">-</div></div>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label form-label-sm">Koruma stratejisi</label>
+                                    <select class="form-select form-select-sm" id="globalDedupStrategy">
+                                        <option value="keep_first">İlk görülen kaydı koru</option>
+                                        <option value="keep_oldest">En eski kaydı koru</option>
+                                        <option value="keep_newest">En yeni kaydı koru</option>
+                                        <option value="keep_priority">Öncelikli listeyi koru</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label form-label-sm">İşlem modu</label>
+                                    <select class="form-select form-select-sm" id="globalDedupMode">
+                                        <option value="mark_duplicate">Pasife al / duplicate işaretle</option>
+                                        <option value="delete">Sil</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label form-label-sm">Öncelikli liste ID(virgülle)</label>
+                                    <input type="text" class="form-control form-control-sm" id="globalPriorityListIds" placeholder="örn: 1,5,9">
+                                </div>
+                            </div>
+                            <div class="form-check mt-2 mb-3">
+                                <input class="form-check-input" type="checkbox" id="globalDedupConfirmCheck">
+                                <label class="form-check-label small" for="globalDedupConfirmCheck">Bu işlemin tüm listeleri etkileyeceğini anlıyorum.</label>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button class="btn btn-sm btn-soft-info" type="button" id="globalAnalyzeAllBtn">Tüm Listeleri Analiz Et</button>
+                                <button class="btn btn-sm btn-soft-primary" type="button" id="globalDedupPreviewBtn">Global Mükerrer Önizleme</button>
+                                <button class="btn btn-sm btn-primary" type="button" id="globalDedupApplyBtn" disabled>Global Mükerrer Temizliği Başlat</button>
+                                <a class="btn btn-sm btn-soft-secondary disabled" href="#" id="globalDedupReportBtn">Global Temizlik Raporunu İndir</a>
+                            </div>
+                            <div id="globalDedupProgressWrap" class="mt-3 d-none">
+                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                    <span id="globalDedupProgressText">Global işlem hazırlanıyor...</span>
+                                    <span id="globalDedupProgressPercent">0%</span>
+                                </div>
+                                <div class="progress cleaner-progress">
+                                    <div id="globalDedupProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <pre class="mt-3 mb-0 small bg-light border rounded p-2 d-none" id="globalDedupPreviewResult"></pre>
+                        </div>
+                    </div>
+
+                    <div class="card ops-pane-card mt-3 d-none" id="jobHistoryCard">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h5 class="mb-0">İşlem Geçmişi</h5>
+                                <button type="button" class="btn btn-sm btn-soft-primary" id="refreshJobHistoryBtn">Yenile</button>
+                            </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-4">
+                                <select class="form-select form-select-sm" id="jobHistoryTypeFilter">
+                                    <option value="">Tüm işlem tipleri</option>
+                                    <option value="complete_to_target">complete_to_target</option>
+                                    <option value="copy_to_target">copy_to_target</option>
+                                    <option value="move_overflow">move_overflow</option>
+                                    <option value="split_pool">split_pool</option>
+                                    <option value="balance_pools">balance_pools</option>
+                                    <option value="global_analyze_all_pools">global_analyze_all_pools</option>
+                                    <option value="global_deduplicate_preview">global_deduplicate_preview</option>
+                                    <option value="global_deduplicate_apply">global_deduplicate_apply</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <select class="form-select form-select-sm" id="jobHistoryStatusFilter">
+                                    <option value="">Tüm durumlar</option>
+                                    <option value="queued">queued</option>
+                                    <option value="running">running</option>
+                                    <option value="completed">completed</option>
+                                    <option value="failed">failed</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <input type="date" class="form-control form-control-sm" id="jobHistoryDateFilter">
+                            </div>
+                        </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle job-history-table mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Job ID</th><th>Tip</th><th>Kapsam</th><th>Durum</th><th>Toplam</th><th>İşlenen</th><th>Başarılı</th><th>Hatalı</th><th>%</th><th>Başlama</th><th>Bitiş</th><th>Hata</th><th>Rapor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="jobHistoryTbody">
+                                        <tr><td colspan="13" class="text-center text-muted py-3">Yükleniyor...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1872,9 +2079,11 @@ const balancePreviewState = {
     fill_manual: false,
     move_overflow: false,
     split_list: false,
+    balance_pools: false,
     fill_to_target_payload: null,
     fill_manual_payload: null,
-    move_overflow_payload: null
+    move_overflow_payload: null,
+    balance_pools_payload: null
 };
 
 function cleanerUrl(action) {
@@ -2291,6 +2500,264 @@ async function waitForBackgroundJob(jobId, label = 'İşlem sürüyor...') {
     }
 }
 
+function setGlobalDedupProgress(text, percentValue) {
+    const wrap = document.getElementById('globalDedupProgressWrap');
+    const bar = document.getElementById('globalDedupProgressBar');
+    const label = document.getElementById('globalDedupProgressText');
+    const percent = document.getElementById('globalDedupProgressPercent');
+    if (!wrap || !bar || !label || !percent) return;
+    const safe = Math.max(0, Math.min(100, Number(percentValue || 0)));
+    wrap.classList.remove('d-none');
+    label.textContent = text || 'Global işlem çalışıyor...';
+    percent.textContent = `${safe}%`;
+    bar.style.width = `${safe}%`;
+}
+
+function hideGlobalDedupProgress() {
+    const wrap = document.getElementById('globalDedupProgressWrap');
+    const bar = document.getElementById('globalDedupProgressBar');
+    const percent = document.getElementById('globalDedupProgressPercent');
+    if (wrap) wrap.classList.add('d-none');
+    if (bar) bar.style.width = '0%';
+    if (percent) percent.textContent = '0%';
+}
+
+async function waitForGlobalJob(jobId, label) {
+    const safeJobId = Number(jobId || 0);
+    if (!safeJobId) throw new Error('Geçersiz global job.');
+    const maxWaitMs = 60 * 60 * 1000;
+    const startedAt = Date.now();
+    while (true) {
+        const data = await poolFetch(jobStatusUrl(safeJobId), {}, 'Global job durumu alınamadı.');
+        const percent = Number(data.percent || data?.data?.percent || 0);
+        setGlobalDedupProgress(label || 'Global işlem çalışıyor...', percent);
+        const status = String(data.status || data?.data?.status || 'queued');
+        if (status === 'completed') return data;
+        if (status === 'failed') throw new Error(data.error || data.message || 'Global job başarısız.');
+        if ((Date.now() - startedAt) > maxWaitMs) throw new Error('Global job zaman aşımına uğradı.');
+        await new Promise(resolve => setTimeout(resolve, 2500));
+    }
+}
+
+function renderGlobalPreviewResult(data) {
+    const box = document.getElementById('globalDedupPreviewResult');
+    if (!box) return;
+    const result = data?.result || {};
+    const text = [
+        `Toplam kayıt: ${Number(result.total_rows || 0).toLocaleString('tr-TR')}`,
+        `Unique email: ${Number(result.unique_emails || 0).toLocaleString('tr-TR')}`,
+        `Duplicate grup: ${Number(result.duplicate_groups || 0).toLocaleString('tr-TR')}`,
+        `Etkilenecek kayıt: ${Number(result.affected_rows || 0).toLocaleString('tr-TR')}`,
+        `Temizlik sonrası tahmini: ${Number(result.estimated_after_cleanup || 0).toLocaleString('tr-TR')}`,
+    ].join('\n');
+    box.textContent = text;
+    box.classList.remove('d-none');
+}
+
+async function runGlobalDedupPreview() {
+    const btn = document.getElementById('globalDedupPreviewBtn');
+    setButtonLoading(btn, true, 'Önizleme kuyruğa alınıyor...');
+    try {
+        hideGlobalDedupProgress();
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+        const data = await poolFetch('/admin/email-data-pool/global-deduplicate/preview', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body
+        }, 'Global önizleme başlatılamadı.');
+        const jobId = Number(data?.data?.jobId || data?.job_id || 0);
+        if (!jobId) throw new Error(data.message || 'Önizleme job id alınamadı.');
+        const done = await waitForGlobalJob(jobId, 'Global mükerrer önizleme çalışıyor...');
+        renderGlobalPreviewResult(done);
+        document.getElementById('globalLastPreview').textContent = new Date().toLocaleString('tr-TR');
+        showCleanerToast('success', 'Global önizleme tamamlandı.');
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setButtonLoading(btn, false);
+        hideGlobalDedupProgress();
+    }
+}
+
+async function runGlobalDedupApply() {
+    const check = document.getElementById('globalDedupConfirmCheck');
+    if (check && !check.checked) {
+        showCleanerToast('warning', 'Önce onay kutusunu işaretleyin.');
+        return;
+    }
+    const btn = document.getElementById('globalDedupApplyBtn');
+    setButtonLoading(btn, true, 'Temizlik kuyruğa alınıyor...');
+    try {
+        hideGlobalDedupProgress();
+        const strategy = document.getElementById('globalDedupStrategy')?.value || 'keep_first';
+        const mode = document.getElementById('globalDedupMode')?.value || 'mark_duplicate';
+        const priority = document.getElementById('globalPriorityListIds')?.value || '';
+        const body = new URLSearchParams({
+            _csrf: CLEANER_CSRF_TOKEN,
+            strategy,
+            mode,
+            priority_list_ids: priority
+        });
+        const data = await poolFetch('/admin/email-data-pool/global-deduplicate/apply', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body
+        }, 'Global temizlik başlatılamadı.');
+        const jobId = Number(data?.data?.jobId || data?.job_id || 0);
+        if (!jobId) throw new Error(data.message || 'Temizlik job id alınamadı.');
+        const done = await waitForGlobalJob(jobId, 'Global mükerrer temizliği çalışıyor...');
+        document.getElementById('globalLastApply').textContent = new Date().toLocaleString('tr-TR');
+        const reportUrl = String(done?.result?.report_url || done?.data?.downloadUrl || '');
+        const reportBtn = document.getElementById('globalDedupReportBtn');
+        if (reportBtn && reportUrl) {
+            reportBtn.href = reportUrl;
+            reportBtn.classList.remove('disabled');
+        }
+        showCleanerToast('success', 'Global mükerrer temizliği tamamlandı.');
+        await loadTopStats(false);
+        await loadJobHistory();
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setButtonLoading(btn, false);
+        hideGlobalDedupProgress();
+    }
+}
+
+async function runGlobalAnalyzeAll() {
+    const btn = document.getElementById('globalAnalyzeAllBtn');
+    setButtonLoading(btn, true, 'Analiz kuyruğa alınıyor...');
+    try {
+        if (!confirm('Tüm listeleri analiz etmek istiyor musunuz? Bu işlem uzun sürebilir.')) {
+            return;
+        }
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+        const data = await poolFetch('/admin/email-data-pool/global-analysis/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body
+        }, 'Toplu analiz başlatılamadı.');
+        const jobId = Number(data?.data?.jobId || data?.job_id || 0);
+        if (!jobId) throw new Error(data.message || 'Toplu analiz job id alınamadı.');
+        const done = await waitForGlobalJob(jobId, 'Tüm listeler analiz ediliyor...');
+        const processedPools = Number(done?.result?.processedPools || 0);
+        const totalPools = Number(done?.result?.totalPools || 0);
+        showCleanerToast('success', `Toplu analiz tamamlandı. ${processedPools}/${totalPools} liste işlendi.`);
+        await loadTopStats(false);
+        await loadJobHistory();
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setButtonLoading(btn, false);
+        hideGlobalDedupProgress();
+    }
+}
+
+async function loadJobHistory() {
+    const tbody = document.getElementById('jobHistoryTbody');
+    if (!tbody) return;
+    try {
+        const type = document.getElementById('jobHistoryTypeFilter')?.value || '';
+        const status = document.getElementById('jobHistoryStatusFilter')?.value || '';
+        const date = document.getElementById('jobHistoryDateFilter')?.value || '';
+        const params = new URLSearchParams({ per_page: '50' });
+        if (type) params.set('type', type);
+        if (status) params.set('status', status);
+        const data = await poolFetch(`/admin/email-data-pool/jobs?${params.toString()}`, {}, 'Job geçmişi alınamadı.');
+        const rows = Array.isArray(data.data) ? data.data : [];
+        const filteredRows = date
+            ? rows.filter(item => String(item.created_at || '').startsWith(date))
+            : rows;
+        if (!filteredRows.length) {
+            tbody.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-3">Kayıt bulunamadı.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = filteredRows.map(item => {
+            const status = String(item.status || 'queued');
+            const badgeClass = status === 'completed' ? 'bg-success' : (status === 'failed' ? 'bg-danger' : (status === 'running' ? 'bg-primary' : 'bg-secondary'));
+            const reportUrl = String(item?.result?.report_url || item?.result?.download_url || '');
+            const reportHtml = reportUrl
+                ? `<a href="${reportUrl}" class="btn btn-sm btn-soft-secondary py-0 px-2">İndir</a>`
+                : '-';
+            return `<tr>
+                <td>${Number(item.job_id || 0)}</td>
+                <td>${item.type || '-'}</td>
+                <td>${item.scope || '-'}</td>
+                <td><span class="badge ${badgeClass}">${status}</span></td>
+                <td>${Number(item.total || 0).toLocaleString('tr-TR')}</td>
+                <td>${Number(item.processed || 0).toLocaleString('tr-TR')}</td>
+                <td>${Number(item.success_count || item.result?.affected_rows || 0).toLocaleString('tr-TR')}</td>
+                <td>${Number(item.failed_count || 0).toLocaleString('tr-TR')}</td>
+                <td>%${Number(item.percent || 0)}</td>
+                <td>${item.started_at || '-'}</td>
+                <td>${item.finished_at || '-'}</td>
+                <td>${item.error || '-'}</td>
+                <td>${reportHtml}</td>
+            </tr>`;
+        }).join('');
+    } catch (error) {
+        tbody.innerHTML = `<tr><td colspan="13" class="text-center text-danger py-3">${error.message}</td></tr>`;
+    }
+}
+
+function activatePoolOpsTab(tabName) {
+    const tab = String(tabName || 'overview');
+    document.querySelectorAll('#poolOpsTabNav .nav-link').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.poolTab === tab);
+    });
+    const overviewCard = document.getElementById('overviewPaneCard');
+    const toolsWrap = document.getElementById('toolsGridWrap') || document.querySelector('.tools-grid');
+    const cleanerCard = document.getElementById('mailCleanerCard');
+    const balanceCard = document.getElementById('mailBalanceCard');
+    const bulkCard = document.getElementById('globalBulkCard');
+    const historyCard = document.getElementById('jobHistoryCard');
+    [overviewCard, bulkCard, historyCard].forEach(el => el?.classList.add('d-none'));
+    [cleanerCard, balanceCard].forEach(el => el?.classList.remove('d-none'));
+    if (toolsWrap) toolsWrap.classList.add('d-none');
+
+    if (tab === 'overview') {
+        overviewCard?.classList.remove('d-none');
+        return;
+    }
+    if (tab === 'cleaner') {
+        if (toolsWrap) toolsWrap.classList.remove('d-none');
+        balanceCard?.classList.add('d-none');
+        return;
+    }
+    if (tab === 'balance') {
+        if (toolsWrap) toolsWrap.classList.remove('d-none');
+        cleanerCard?.classList.add('d-none');
+        return;
+    }
+    if (tab === 'split') {
+        if (toolsWrap) toolsWrap.classList.remove('d-none');
+        cleanerCard?.classList.add('d-none');
+        const splitAccordion = document.getElementById('splitAccordionBody');
+        if (splitAccordion && !splitAccordion.classList.contains('show')) {
+            new bootstrap.Collapse(splitAccordion, { toggle: true });
+        }
+        return;
+    }
+    if (tab === 'bulk') {
+        bulkCard?.classList.remove('d-none');
+        return;
+    }
+    if (tab === 'history') {
+        historyCard?.classList.remove('d-none');
+        loadJobHistory();
+        return;
+    }
+}
+
 async function runCleanerAnalyze(showSuccess = true) {
     if (!CURRENT_POOL_LIST_ID || cleanerState.busy) return;
     cleanerState.busy = true;
@@ -2552,6 +3019,12 @@ async function loadTopStats(showToast = false) {
         const fmt = v => Number(v || 0).toLocaleString('tr-TR');
         document.getElementById('statTopTotal').textContent = fmt(total);
         const completed = data.analysis_status === 'completed';
+        const lastOpEl = document.getElementById('overviewLastOperation');
+        if (lastOpEl) {
+            lastOpEl.textContent = completed
+                ? `Son analiz tamamlandı${data.last_analyzed_at ? ` (${data.last_analyzed_at})` : ''}`
+                : (data.analysis_status === 'running' ? 'Analiz çalışıyor' : 'Analiz bekleniyor');
+        }
         document.getElementById('statTopGmailRatio').textContent = completed ? `${fmt(gmailCount)} / %${gmailRatio}` : 'Analiz bekliyor';
         document.getElementById('statTopGmailDesc').textContent = completed
             ? `${fmt(total)} kayıt içinde Gmail${data.last_analyzed_at ? ` · Son analiz: ${data.last_analyzed_at}` : ''}`
@@ -2626,6 +3099,7 @@ function setBalanceButtonsDisabled(disabled) {
     document.getElementById('runManualFillBtn').disabled = disabled || !balancePreviewState.fill_manual;
     document.getElementById('runOverflowBtn').disabled = disabled || !balancePreviewState.move_overflow;
     document.getElementById('runSplitBtn').disabled = disabled || !balancePreviewState.split_list;
+    document.getElementById('runEqualizeBtn').disabled = disabled || !balancePreviewState.balance_pools;
 }
 
 function setButtonLoading(button, loading, loadingText = 'İşleniyor...') {
@@ -2662,6 +3136,22 @@ async function postTools(path, payload) {
         },
         body
     }, 'İşlem yanıtı okunamadı.');
+}
+
+async function postBalance(path, payload) {
+    const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+    Object.entries(payload || {}).forEach(([k, v]) => {
+        if (v === null || typeof v === 'undefined') return;
+        body.append(k, String(v));
+    });
+    return poolFetch(`/admin/email-data-pool/balance/${path}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-CSRF-Token': CLEANER_CSRF_TOKEN
+        },
+        body
+    }, 'Dengeleme yanıtı okunamadı.');
 }
 
 function previewToText(data) {
@@ -2739,17 +3229,18 @@ async function previewFill(sourceType, triggerBtn = null) {
     try {
         setButtonLoading(triggerBtn, true, 'Önizleniyor...');
         setBalanceButtonsDisabled(true);
-        const payload = Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType));
-        const data = await postTools('preview', payload);
+        const payload = getFillPayload(sourceType);
+        const response = await postBalance('complete-preview', payload);
+        const data = response?.data || response;
         openPreviewModal(data);
         if (sourceType === 'list') {
             balancePreviewState.fill_to_target = true;
             balancePreviewState.fill_to_target_payload = data;
-            setPreviewSummary('fillPreviewSummary', `Eklenecek: ${Number(data.will_process || 0).toLocaleString('tr-TR')} | Kalan: ${Number(data.estimated_leftover || 0).toLocaleString('tr-TR')}`);
+            setPreviewSummary('fillPreviewSummary', `Eklenecek: ${Number(data.willMove || 0).toLocaleString('tr-TR')} | Eksik: ${Number(data.missingCount || 0).toLocaleString('tr-TR')}`);
         } else {
             balancePreviewState.fill_manual = true;
             balancePreviewState.fill_manual_payload = data;
-            setPreviewSummary('manualFillPreviewSummary', `Eklenecek: ${Number(data.will_process || 0).toLocaleString('tr-TR')} | Kalan: ${Number(data.estimated_leftover || 0).toLocaleString('tr-TR')}`);
+            setPreviewSummary('manualFillPreviewSummary', `Eklenecek: ${Number(data.willMove || 0).toLocaleString('tr-TR')} | Eksik: ${Number(data.missingCount || 0).toLocaleString('tr-TR')}`);
         }
     } catch (error) {
         showCleanerToast('error', error.message);
@@ -2762,21 +3253,24 @@ async function previewFill(sourceType, triggerBtn = null) {
 async function runFill(sourceType, triggerBtn = null) {
     try {
         const previewPayload = sourceType === 'list'
-            ? (balancePreviewState.fill_to_target_payload || await postTools('preview', Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType))))
-            : (balancePreviewState.fill_manual_payload || await postTools('preview', Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType))));
-        const willProcess = Number(previewPayload?.will_process || 0);
+            ? (balancePreviewState.fill_to_target_payload || (await postBalance('complete-preview', getFillPayload(sourceType)))?.data || {})
+            : (balancePreviewState.fill_manual_payload || (await postBalance('complete-preview', getFillPayload(sourceType)))?.data || {});
+        const willProcess = Number(previewPayload?.willMove || 0);
         if (!confirm(`Seçili ayarlarla hedef tamamlama işlemi başlatılsın mı?\nİşlenecek kayıt: ${willProcess.toLocaleString('tr-TR')}`)) return;
         setButtonLoading(triggerBtn, true, 'Uygulanıyor...');
         setBalanceButtonsDisabled(true);
         startCleanerProgress('Hedefe tamamlama çalışıyor...');
         startOperationProgressTracker({
             mode: 'increase',
-            startTotal: Number(previewPayload?.current_total || cleanerState?.stats?.total || 0),
+            startTotal: Number(previewPayload?.targetCurrent || cleanerState?.stats?.total || 0),
             expectedDelta: willProcess,
             label: 'Hedefe tamamlama çalışıyor'
         });
-        const data = await postTools('fill-to-target', getFillPayload(sourceType));
-        openResultModal(data.summary || {});
+        const queued = await postBalance('complete-apply', getFillPayload(sourceType));
+        const jobId = Number(queued?.data?.jobId || queued?.job_id || 0);
+        if (!jobId) throw new Error(queued.message || 'Job başlatılamadı.');
+        const done = await waitForBackgroundJob(jobId, 'Hedefe tamamlama işlemi çalışıyor...');
+        openResultModal(done.result || {});
         await loadTopStats(false);
         if (sourceType === 'list') {
             balancePreviewState.fill_to_target = false;
@@ -2810,11 +3304,12 @@ async function previewOverflow(triggerBtn = null) {
     try {
         setButtonLoading(triggerBtn, true, 'Önizleniyor...');
         setBalanceButtonsDisabled(true);
-        const data = await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
+        const response = await postBalance('overflow-preview', getOverflowPayload());
+        const data = response?.data || response;
         openPreviewModal(data);
         balancePreviewState.move_overflow = true;
         balancePreviewState.move_overflow_payload = data;
-        setPreviewSummary('overflowPreviewSummary', `Taşınacak: ${Number(data.overflow || 0).toLocaleString('tr-TR')} kayıt`);
+        setPreviewSummary('overflowPreviewSummary', `Taşınacak: ${Number(data.overflowCount || 0).toLocaleString('tr-TR')} kayıt`);
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -2825,8 +3320,8 @@ async function previewOverflow(triggerBtn = null) {
 
 async function runOverflow(triggerBtn = null) {
     try {
-        const dataPreview = balancePreviewState.move_overflow_payload || await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
-        const overflow = Number(dataPreview.overflow || 0).toLocaleString('tr-TR');
+        const dataPreview = balancePreviewState.move_overflow_payload || ((await postBalance('overflow-preview', getOverflowPayload()))?.data || {});
+        const overflow = Number(dataPreview.overflowCount || 0).toLocaleString('tr-TR');
         const targetName = document.getElementById('overflowNewListName')?.value?.trim() || document.getElementById('overflowTargetListId')?.selectedOptions?.[0]?.text || 'hedef liste';
         if (!confirm(`Bu işlem ${overflow} kaydı seçili listeden ${targetName} listesine taşıyacak. Devam edilsin mi?`)) return;
         setButtonLoading(triggerBtn, true, 'Taşınıyor...');
@@ -2835,11 +3330,14 @@ async function runOverflow(triggerBtn = null) {
         startOperationProgressTracker({
             mode: 'decrease',
             startTotal: Number(dataPreview?.current_total || cleanerState?.stats?.total || 0),
-            expectedDelta: Number(dataPreview?.overflow || 0),
+            expectedDelta: Number(dataPreview?.overflowCount || 0),
             label: 'Fazla kayıtlar aktarılıyor'
         });
-        const data = await postTools('move-overflow', getOverflowPayload());
-        openResultModal(data.summary || {});
+        const queued = await postBalance('overflow-apply', getOverflowPayload());
+        const jobId = Number(queued?.data?.jobId || queued?.job_id || 0);
+        if (!jobId) throw new Error(queued.message || 'Job başlatılamadı.');
+        const done = await waitForBackgroundJob(jobId, 'Fazla aktarım işlemi çalışıyor...');
+        openResultModal(done.result || {});
         await loadTopStats(false);
         balancePreviewState.move_overflow = false;
         setPreviewSummary('overflowPreviewSummary', 'Önizleme bekleniyor.');
@@ -2865,11 +3363,19 @@ function getSplitPayload() {
     };
 }
 
+function getEqualizePayload() {
+    return {
+        pool_ids: document.getElementById('equalizePoolIds')?.value || '',
+        target_limit: Number(document.getElementById('equalizeTargetLimit')?.value || currentTargetLimit() || 0)
+    };
+}
+
 async function previewSplit(triggerBtn = null) {
     try {
         setButtonLoading(triggerBtn, true, 'Önizleniyor...');
         setBalanceButtonsDisabled(true);
-        const data = await postTools('preview', Object.assign({ tool: 'split_list' }, getSplitPayload()));
+        const response = await postBalance('split-preview', getSplitPayload());
+        const data = response?.data || response;
         openPreviewModal(data);
         balancePreviewState.split_list = true;
         setPreviewSummary('splitPreviewSummary', `Tahmini parça: ${Number(data.estimated_parts || 0).toLocaleString('tr-TR')} | İşlenecek: ${Number(data.will_process || 0).toLocaleString('tr-TR')}`);
@@ -2887,11 +3393,57 @@ async function runSplit(triggerBtn = null) {
         setButtonLoading(triggerBtn, true, 'Bölünüyor...');
         setBalanceButtonsDisabled(true);
         startCleanerProgress('Liste bölme işlemi çalışıyor...');
-        const data = await postTools('split-list', getSplitPayload());
-        openResultModal(data.summary || {});
+        const queued = await postBalance('split-apply', getSplitPayload());
+        const jobId = Number(queued?.data?.jobId || queued?.job_id || 0);
+        if (!jobId) throw new Error(queued.message || 'Job başlatılamadı.');
+        const done = await waitForBackgroundJob(jobId, 'Liste bölme işlemi çalışıyor...');
+        openResultModal(done.result || {});
         await loadTopStats(false);
         balancePreviewState.split_list = false;
         setPreviewSummary('splitPreviewSummary', 'Önizleme bekleniyor.');
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setButtonLoading(triggerBtn, false);
+        finishCleanerProgress();
+        setBalanceButtonsDisabled(false);
+    }
+}
+
+async function previewEqualize(triggerBtn = null) {
+    try {
+        setButtonLoading(triggerBtn, true, 'Önizleniyor...');
+        setBalanceButtonsDisabled(true);
+        const response = await postBalance('equalize-preview', getEqualizePayload());
+        const data = response?.data || response;
+        openPreviewModal(data);
+        balancePreviewState.balance_pools = true;
+        balancePreviewState.balance_pools_payload = data;
+        setPreviewSummary('equalizePreviewSummary', `Toplam eksik: ${Number(data.totalDeficit || 0).toLocaleString('tr-TR')} | Toplam fazla: ${Number(data.totalOverflow || 0).toLocaleString('tr-TR')} | Taşınacak: ${Number(data.willMove || 0).toLocaleString('tr-TR')}`);
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setButtonLoading(triggerBtn, false);
+        setBalanceButtonsDisabled(false);
+    }
+}
+
+async function runEqualize(triggerBtn = null) {
+    try {
+        const preview = balancePreviewState.balance_pools_payload || ((await postBalance('equalize-preview', getEqualizePayload()))?.data || {});
+        if (!confirm(`Eşitleme işlemi başlatılsın mı?\nTaşınacak kayıt: ${Number(preview.willMove || 0).toLocaleString('tr-TR')}`)) return;
+        setButtonLoading(triggerBtn, true, 'Kuyruğa alınıyor...');
+        setBalanceButtonsDisabled(true);
+        startCleanerProgress('Listeler worker ile dengeleniyor...');
+        const queued = await postBalance('equalize-apply', getEqualizePayload());
+        const jobId = Number(queued?.data?.jobId || queued?.job_id || 0);
+        if (!jobId) throw new Error(queued.message || 'Job başlatılamadı.');
+        const done = await waitForBackgroundJob(jobId, 'Listeler dengeleniyor...');
+        openResultModal(done.result || {});
+        balancePreviewState.balance_pools = false;
+        balancePreviewState.balance_pools_payload = null;
+        setPreviewSummary('equalizePreviewSummary', 'Önizleme bekleniyor.');
+        await loadTopStats(false);
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
@@ -3024,7 +3576,36 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('runOverflowBtn')?.addEventListener('click', e => runOverflow(e.currentTarget));
     document.getElementById('previewSplitBtn')?.addEventListener('click', e => previewSplit(e.currentTarget));
     document.getElementById('runSplitBtn')?.addEventListener('click', e => runSplit(e.currentTarget));
+    document.getElementById('previewEqualizeBtn')?.addEventListener('click', e => previewEqualize(e.currentTarget));
+    document.getElementById('runEqualizeBtn')?.addEventListener('click', e => runEqualize(e.currentTarget));
+    document.getElementById('openBalanceHistoryBtn')?.addEventListener('click', () => activatePoolOpsTab('history'));
+    document.querySelectorAll('#poolOpsTabNav [data-pool-tab]').forEach(btn => {
+        btn.addEventListener('click', () => activatePoolOpsTab(btn.dataset.poolTab || 'overview'));
+    });
+    document.getElementById('globalAnalyzeAllBtn')?.addEventListener('click', runGlobalAnalyzeAll);
+    document.getElementById('globalDedupPreviewBtn')?.addEventListener('click', runGlobalDedupPreview);
+    document.getElementById('globalDedupApplyBtn')?.addEventListener('click', runGlobalDedupApply);
+    document.getElementById('refreshJobHistoryBtn')?.addEventListener('click', () => loadJobHistory());
+    document.getElementById('jobHistoryTypeFilter')?.addEventListener('change', () => loadJobHistory());
+    document.getElementById('jobHistoryStatusFilter')?.addEventListener('change', () => loadJobHistory());
+    document.getElementById('jobHistoryDateFilter')?.addEventListener('change', () => loadJobHistory());
+    document.getElementById('globalDedupConfirmCheck')?.addEventListener('change', function () {
+        const applyBtn = document.getElementById('globalDedupApplyBtn');
+        if (!applyBtn) return;
+        applyBtn.disabled = !this.checked;
+    });
+    document.getElementById('globalDedupStrategy')?.addEventListener('change', function () {
+        const priorityInput = document.getElementById('globalPriorityListIds');
+        if (!priorityInput) return;
+        priorityInput.disabled = this.value !== 'keep_priority';
+        if (priorityInput.disabled) priorityInput.value = '';
+    });
+    const priorityInput = document.getElementById('globalPriorityListIds');
+    if (priorityInput) {
+        priorityInput.disabled = true;
+    }
     setBalanceButtonsDisabled(false);
+    activatePoolOpsTab('overview');
     loadTopStats(false);
 });
 </script>

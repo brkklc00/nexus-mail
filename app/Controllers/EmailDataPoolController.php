@@ -16,6 +16,18 @@ class EmailDataPoolController
     private const CLEANER_CSRF_SESSION_KEY = 'email_pool_cleaner_csrf';
     private const LEFTOVER_FILES_SESSION_KEY = 'email_pool_leftover_files';
     private const DEFAULT_TARGET_LIMIT = 250000;
+    private const BALANCE_JOB_TYPES = [
+        'complete_to_target',
+        'move_overflow',
+        'copy_to_target',
+        'split_pool',
+        'balance_pools',
+        'fill_new_pool',
+    ];
+    private const GLOBAL_BLOCKING_JOB_TYPES = [
+        'global_analyze_all_pools',
+        'global_deduplicate_apply',
+    ];
     private ?bool $hasNormalizationColumns = null;
     private ?bool $analysisTablesReady = null;
 
@@ -1829,6 +1841,180 @@ class EmailDataPoolController
         }
     }
 
+    public function balanceCompletePreview(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            return $this->jsonResponse($response, ['success' => true, 'data' => $this->previewFillToTargetDetailed($data)]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::balanceCompletePreview error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Önizleme alınamadı.'], 500);
+        }
+    }
+
+    public function balanceCompleteApply(Request $request, Response $response): Response
+    {
+        return $this->toolsFillToTarget($request, $response);
+    }
+
+    public function balanceOverflowPreview(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            return $this->jsonResponse($response, ['success' => true, 'data' => $this->previewMoveOverflowDetailed($data)]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::balanceOverflowPreview error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Önizleme alınamadı.'], 500);
+        }
+    }
+
+    public function balanceOverflowApply(Request $request, Response $response): Response
+    {
+        return $this->toolsMoveOverflow($request, $response);
+    }
+
+    public function balanceSplitPreview(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $preview = $this->previewSplitList($data);
+            return $this->jsonResponse($response, ['success' => true, 'data' => $preview]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::balanceSplitPreview error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Önizleme alınamadı.'], 500);
+        }
+    }
+
+    public function balanceSplitApply(Request $request, Response $response): Response
+    {
+        return $this->toolsSplitList($request, $response);
+    }
+
+    public function balanceEqualizePreview(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $poolIdsRaw = (string) ($data['pool_ids'] ?? '');
+            $poolIds = array_values(array_filter(array_unique(array_map('intval', preg_split('/[,\s]+/', $poolIdsRaw) ?: [])), static fn (int $id): bool => $id > 0));
+            $targetLimit = max(1, (int) ($data['target_limit'] ?? self::DEFAULT_TARGET_LIMIT));
+            if ($poolIds === []) {
+                throw new \RuntimeException('En az bir liste seçin.');
+            }
+            $conn = $this->em->getConnection();
+            $placeholders = implode(',', array_fill(0, count($poolIds), '?'));
+            $rows = $conn->fetchAllAssociative(
+                "SELECT id, name, total_count FROM email_data_pool_lists WHERE id IN ($placeholders) ORDER BY id ASC",
+                $poolIds
+            );
+            $items = [];
+            $totalDeficit = 0;
+            $totalOverflow = 0;
+            foreach ($rows as $row) {
+                $current = (int) ($row['total_count'] ?? 0);
+                $deficit = max(0, $targetLimit - $current);
+                $overflow = max(0, $current - $targetLimit);
+                $totalDeficit += $deficit;
+                $totalOverflow += $overflow;
+                $items[] = [
+                    'poolId' => (int) ($row['id'] ?? 0),
+                    'poolName' => (string) ($row['name'] ?? ''),
+                    'current' => $current,
+                    'targetLimit' => $targetLimit,
+                    'deficit' => $deficit,
+                    'overflow' => $overflow,
+                ];
+            }
+            return $this->jsonResponse($response, ['success' => true, 'data' => [
+                'operation' => 'balance_pools',
+                'targetLimit' => $targetLimit,
+                'items' => $items,
+                'totalDeficit' => $totalDeficit,
+                'totalOverflow' => $totalOverflow,
+                'willMove' => min($totalDeficit, $totalOverflow),
+            ]]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::balanceEqualizePreview error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Önizleme alınamadı.'], 500);
+        }
+    }
+
+    public function balanceEqualizeApply(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $poolIdsRaw = (string) ($data['pool_ids'] ?? '');
+            $poolIds = array_values(array_filter(array_unique(array_map('intval', preg_split('/[,\s]+/', $poolIdsRaw) ?: [])), static fn (int $id): bool => $id > 0));
+            $targetLimit = max(1, (int) ($data['target_limit'] ?? self::DEFAULT_TARGET_LIMIT));
+            if ($poolIds === []) {
+                throw new \RuntimeException('En az bir liste seçin.');
+            }
+            $this->assertNoConflictingJobs($poolIds, self::BALANCE_JOB_TYPES);
+            $jobId = $this->createDataPoolJob(
+                $poolIds[0],
+                'balance_pools',
+                [
+                    'operation' => 'balance_pools',
+                    'pool_ids' => $poolIds,
+                    'target_limit' => $targetLimit,
+                    'requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                ],
+                0
+            );
+            return $this->jsonResponse($response, ['success' => true, 'message' => 'Liste dengeleme işlemi kuyruğa alındı.', 'data' => ['jobId' => $jobId, 'type' => 'balance_pools']]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::balanceEqualizeApply error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Dengeleme kuyruğa alınamadı.'], 500);
+        }
+    }
+
+    public function globalAnalysisStart(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $this->ensureDataPoolJobTables();
+            $this->assertNoConflictingJobs([], self::BALANCE_JOB_TYPES);
+            $conn = $this->em->getConnection();
+            $totalPools = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_data_pool_lists');
+            $totalRecords = (int) $conn->fetchOne('SELECT COALESCE(SUM(total_count), 0) FROM email_data_pool_lists');
+            $jobId = $this->createDataPoolJob(
+                0,
+                'global_analyze_all_pools',
+                ['requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s')],
+                $totalRecords
+            );
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'message' => 'Tüm listeler için analiz kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'type' => 'global_analyze_all_pools',
+                    'totalPools' => $totalPools,
+                    'totalRecords' => $totalRecords,
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::globalAnalysisStart error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Toplu analiz kuyruğa alınamadı.'], 500);
+        }
+    }
+
     public function jobStatus(Request $request, Response $response, array $args): Response
     {
         try {
@@ -1847,6 +2033,167 @@ class EmailDataPoolController
             error_log('EmailDataPoolController::jobStatus error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Job durumu alınamadı.'], 500);
         }
+    }
+
+    public function jobs(Request $request, Response $response): Response
+    {
+        try {
+            $this->ensureDataPoolJobTables();
+            $query = $request->getQueryParams();
+            $page = max(1, (int) ($query['page'] ?? 1));
+            $perPage = max(10, min(100, (int) ($query['per_page'] ?? 25)));
+            $offset = ($page - 1) * $perPage;
+            $status = trim((string) ($query['status'] ?? ''));
+            $type = trim((string) ($query['type'] ?? ''));
+
+            $where = [];
+            $params = [];
+            if ($status !== '') {
+                $where[] = 'status = ?';
+                $params[] = $status;
+            }
+            if ($type !== '') {
+                $where[] = 'type = ?';
+                $params[] = $type;
+            }
+            $whereSql = $where === [] ? '' : (' WHERE ' . implode(' AND ', $where));
+
+            $conn = $this->em->getConnection();
+            $total = (int) $conn->fetchOne("SELECT COUNT(*) FROM data_pool_jobs{$whereSql}", $params);
+            $rows = $conn->fetchAllAssociative(
+                "SELECT id, pool_id, type, status, total_count, processed_count, success_count, failed_count, progress_percent, result, error_message, started_at, finished_at, created_at, updated_at
+                   FROM data_pool_jobs{$whereSql}
+               ORDER BY id DESC
+                  LIMIT {$perPage} OFFSET {$offset}",
+                $params
+            );
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => array_map(function (array $row): array {
+                    $job = $this->getDataPoolJob((int) ($row['id'] ?? 0));
+                    return $job ? $this->formatDataPoolJobPayload($job) : [];
+                }, $rows),
+                'meta' => [
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $total,
+                    'last_page' => max(1, (int) ceil($total / max(1, $perPage))),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::jobs error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Job listesi alınamadı.'], 500);
+        }
+    }
+
+    public function globalDeduplicatePreview(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $this->ensureDataPoolJobTables();
+            $this->assertNoConflictingJobs([], self::BALANCE_JOB_TYPES);
+            $running = $this->getRunningGlobalDedupJob();
+            if ($running !== null) {
+                $payload = $this->formatDataPoolJobPayload($running);
+                $payload['already_running'] = true;
+                $payload['message'] = 'Global mükerrer işlemi zaten çalışıyor.';
+                return $this->jsonResponse($response, $payload);
+            }
+
+            $total = (int) $this->em->getConnection()->fetchOne('SELECT COALESCE(SUM(total_count), 0) FROM email_data_pool_lists');
+            $jobId = $this->createDataPoolJob(0, 'global_deduplicate_preview', [
+                'requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+            ], $total);
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'message' => 'Global mükerrer önizleme kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'status' => 'queued',
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::globalDeduplicatePreview error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Global önizleme kuyruğa alınamadı.'], 500);
+        }
+    }
+
+    public function globalDeduplicateApply(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $this->ensureDataPoolJobTables();
+            $this->assertNoConflictingJobs([], self::BALANCE_JOB_TYPES);
+            $running = $this->getRunningGlobalDedupJob();
+            if ($running !== null) {
+                $payload = $this->formatDataPoolJobPayload($running);
+                $payload['already_running'] = true;
+                $payload['message'] = 'Global mükerrer işlemi zaten çalışıyor.';
+                return $this->jsonResponse($response, $payload);
+            }
+
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $strategy = (string) ($data['strategy'] ?? 'keep_first');
+            $mode = (string) ($data['mode'] ?? 'mark_duplicate');
+            $priorityRaw = (string) ($data['priority_list_ids'] ?? '');
+            $priorityListIds = array_values(array_filter(array_unique(array_map('intval', preg_split('/[,\s]+/', $priorityRaw) ?: [])), static fn (int $id): bool => $id > 0));
+
+            if (!in_array($strategy, ['keep_first', 'keep_oldest', 'keep_newest', 'keep_priority'], true)) {
+                throw new \RuntimeException('Geçersiz koruma stratejisi.');
+            }
+            if (!in_array($mode, ['mark_duplicate', 'delete'], true)) {
+                throw new \RuntimeException('Geçersiz işlem modu.');
+            }
+            if ($strategy === 'keep_priority' && $priorityListIds === []) {
+                throw new \RuntimeException('Öncelikli strateji için en az bir liste seçin.');
+            }
+
+            $total = (int) $this->em->getConnection()->fetchOne('SELECT COALESCE(SUM(total_count), 0) FROM email_data_pool_lists');
+            $jobId = $this->createDataPoolJob(0, 'global_deduplicate_apply', [
+                'strategy' => $strategy,
+                'mode' => $mode,
+                'priority_list_ids' => $priorityListIds,
+                'requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+            ], $total);
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'message' => 'Global mükerrer temizliği kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'status' => 'queued',
+                    'strategy' => $strategy,
+                    'mode' => $mode,
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::globalDeduplicateApply error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Global temizleme kuyruğa alınamadı.'], 500);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function getRunningGlobalDedupJob(): ?array
+    {
+        $conn = $this->em->getConnection();
+        $row = $conn->fetchAssociative(
+            "SELECT id FROM data_pool_jobs WHERE type IN ('global_deduplicate_preview', 'global_deduplicate_apply') AND status IN ('queued', 'running') ORDER BY id DESC LIMIT 1"
+        );
+        if (!$row) {
+            return null;
+        }
+
+        return $this->getDataPoolJob((int) ($row['id'] ?? 0));
     }
 
     public function poolListCollection(Request $request, Response $response): Response
@@ -1914,10 +2261,9 @@ class EmailDataPoolController
 
     public function toolsFillToTarget(Request $request, Response $response): Response
     {
-        $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
-        $locks = [];
         try {
             $this->assertCleanerCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
             $targetListId = (int) ($data['target_list_id'] ?? 0);
             $targetList = $this->resolveExistingPoolListById($targetListId);
             $sourceType = (string) ($data['source_type'] ?? 'list');
@@ -1926,158 +2272,46 @@ class EmailDataPoolController
             if ($targetCount < 1) {
                 throw new \RuntimeException('Hedef adet zorunludur.');
             }
-
-            $locks[] = $this->acquireListLock((int) $targetList->getId());
             $sourceList = null;
             if ($sourceType === 'list') {
                 $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
                 if ((int) $sourceList->getId() === (int) $targetList->getId()) {
                     throw new \RuntimeException('Kaynak ve hedef liste aynı olamaz.');
                 }
-                $locks[] = $this->acquireListLock((int) $sourceList->getId());
             }
-
-            $currentTotal = $this->getListTotalCountFast((int) $targetList->getId(), (int) $targetList->getTotalCount());
-            $missing = max(0, $targetCount - $currentTotal);
-            if ($missing < 1) {
-                return $this->jsonResponse($response, [
-                    'success' => true,
-                    'summary' => [
-                        'operation_type' => 'fill_to_target',
-                        'source_list' => $sourceList?->getName(),
-                        'target_list' => $targetList->getName(),
-                        'read_records' => 0,
-                        'added_records' => 0,
-                        'moved_records' => 0,
-                        'deleted_records' => 0,
-                        'duplicate_skipped' => 0,
-                        'non_gmail_skipped' => 0,
-                        'typo_fixed' => 0,
-                        'leftover_records' => 0,
-                        'download_url' => null,
-                        'message' => 'Hedef liste zaten hedef dolulukta veya üzerinde.',
-                    ],
-                ]);
-            }
-
-            $onlyGmail = filter_var((string) ($data['only_gmail'] ?? '0'), FILTER_VALIDATE_BOOLEAN);
-            $cleanTypos = filter_var((string) ($data['clean_gmail_typos'] ?? '0'), FILTER_VALIDATE_BOOLEAN);
-            $removeDuplicates = filter_var((string) ($data['remove_duplicates'] ?? '1'), FILTER_VALIDATE_BOOLEAN);
-            $leftoverAction = (string) ($data['leftover_action'] ?? 'ignore');
-            $newListName = trim((string) ($data['new_list_name'] ?? ''));
-
-            $sourceEmails = [];
-            $sourceRowsForMove = [];
-            if ($sourceType === 'list' && $sourceList) {
-                $sourceEmails = $this->readEmailsFromList((int) $sourceList->getId(), max($missing * 2, $missing + 5000), $onlyGmail);
-                if ($mode === 'move') {
-                    $sourceRowsForMove = $sourceEmails;
-                }
-            } else {
-                $raw = (string) ($data['source_payload'] ?? $data['emails'] ?? '');
-                $parsed = $this->parseImportInput($raw, false);
-                foreach ($parsed['records'] as $record) {
-                    $sourceEmails[] = ['id' => 0, 'email' => (string) ($record['email'] ?? ''), 'name' => (string) ($record['name'] ?? '')];
-                }
-            }
-
-            $readRecords = count($sourceEmails);
-            $prepared = [];
-            $typoFixed = 0;
-            $nonGmailSkipped = 0;
-            $seenSource = [];
-            foreach ($sourceEmails as $row) {
-                $email = strtolower(trim((string) ($row['email'] ?? '')));
-                if ($email === '') {
-                    continue;
-                }
-                [$normalized, $fixed] = $this->normalizeMaybeTypoGmail($email, $cleanTypos);
-                if ($fixed) {
-                    $typoFixed++;
-                }
-                if ($onlyGmail && !$this->isGmailEmail($normalized)) {
-                    $nonGmailSkipped++;
-                    continue;
-                }
-                if ($removeDuplicates && isset($seenSource[$normalized])) {
-                    continue;
-                }
-                $seenSource[$normalized] = true;
-                $prepared[] = [
-                    'source_id' => (int) ($row['id'] ?? 0),
-                    'email' => $normalized,
-                    'name' => (string) ($row['name'] ?? ''),
-                ];
-            }
-
-            $availableEmails = array_column($prepared, 'email');
-            $existingTargetSet = $this->fetchExistingEmailSet((int) $targetList->getId(), $availableEmails);
-            $selected = [];
-            $duplicateSkipped = 0;
-            $selectedSourceIds = [];
-            foreach ($prepared as $item) {
-                if (isset($existingTargetSet[$item['email']])) {
-                    $duplicateSkipped++;
-                    continue;
-                }
-                $selected[] = ['email' => $item['email'], 'name' => $item['name'] !== '' ? $item['name'] : null];
-                if ($item['source_id'] > 0) {
-                    $selectedSourceIds[] = $item['source_id'];
-                }
-                if (count($selected) >= $missing) {
-                    break;
-                }
-            }
-
-            $added = $selected === [] ? 0 : $this->bulkInsertEmails($selected, (int) $targetList->getId());
-            if ($added > 0) {
-                $this->incrementListCounts((int) $targetList->getId(), $added, $added, 0);
-            }
-
-            $moved = 0;
-            if ($mode === 'move' && $sourceType === 'list' && $selectedSourceIds !== [] && $sourceList) {
-                $moved = $this->deleteRowsByIds((int) $sourceList->getId(), $selectedSourceIds);
-                if ($moved > 0) {
-                    $this->recalculateListCounts([(int) $sourceList->getId()]);
-                    $this->invalidateAnalysisCache((int) $sourceList->getId());
-                }
-            }
-
-            $leftovers = array_slice($prepared, count($selected));
-            $leftoverEmails = array_values(array_filter(array_map(static fn (array $r): string => (string) ($r['email'] ?? ''), $leftovers)));
-            $downloadUrl = null;
-            if ($leftoverEmails !== []) {
-                if ($leftoverAction === 'download') {
-                    $token = $this->storeLeftoverFile($leftoverEmails, 'fill-to-target');
-                    $downloadUrl = '/admin/email-data-pool/tools/leftovers/' . $token;
-                } elseif ($leftoverAction === 'create_list' && $newListName !== '') {
-                    $newList = $this->createPoolList($newListName);
-                    $rows = array_map(static fn (string $mail): array => ['email' => $mail, 'name' => null], $leftoverEmails);
-                    $inserted = $rows === [] ? 0 : $this->bulkInsertEmails($rows, (int) $newList->getId());
-                    if ($inserted > 0) {
-                        $this->incrementListCounts((int) $newList->getId(), $inserted, $inserted, 0);
-                    }
-                }
-            }
-
-            $this->recalculateListCounts([(int) $targetList->getId()]);
-            $this->invalidateAnalysisCache((int) $targetList->getId());
-
+            $this->assertNoConflictingJobs(
+                array_values(array_filter([(int) $targetList->getId(), $sourceList ? (int) $sourceList->getId() : 0])),
+                ['complete_to_target', 'copy_to_target', 'move_overflow', 'split_pool', 'balance_pools', 'fill_new_pool']
+            );
+            $preview = $this->previewFillToTarget($data);
+            $jobType = $mode === 'move' ? 'complete_to_target' : 'copy_to_target';
+            $jobId = $this->createDataPoolJob(
+                (int) $targetList->getId(),
+                $jobType,
+                [
+                    'operation' => 'fill_to_target',
+                    'target_list_id' => (int) $targetList->getId(),
+                    'source_type' => $sourceType,
+                    'source_list_id' => $sourceList ? (int) $sourceList->getId() : null,
+                    'mode' => $mode,
+                    'target_count' => $targetCount,
+                    'only_gmail' => (int) filter_var((string) ($data['only_gmail'] ?? '0'), FILTER_VALIDATE_BOOLEAN),
+                    'clean_gmail_typos' => (int) filter_var((string) ($data['clean_gmail_typos'] ?? '0'), FILTER_VALIDATE_BOOLEAN),
+                    'remove_duplicates' => (int) filter_var((string) ($data['remove_duplicates'] ?? '1'), FILTER_VALIDATE_BOOLEAN),
+                    'leftover_action' => (string) ($data['leftover_action'] ?? 'ignore'),
+                    'new_list_name' => trim((string) ($data['new_list_name'] ?? '')),
+                    'source_payload' => (string) ($data['source_payload'] ?? ''),
+                    'requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                ],
+                (int) ($preview['will_process'] ?? 0)
+            );
             return $this->jsonResponse($response, [
                 'success' => true,
-                'summary' => [
-                    'operation_type' => 'fill_to_target',
-                    'source_list' => $sourceList?->getName() ?? strtoupper($sourceType),
-                    'target_list' => $targetList->getName(),
-                    'read_records' => $readRecords,
-                    'added_records' => $added,
-                    'moved_records' => $moved,
-                    'deleted_records' => $moved,
-                    'duplicate_skipped' => $duplicateSkipped,
-                    'non_gmail_skipped' => $nonGmailSkipped,
-                    'typo_fixed' => $typoFixed,
-                    'leftover_records' => count($leftoverEmails),
-                    'download_url' => $downloadUrl,
+                'message' => 'Liste dengeleme işlemi kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'type' => $jobType,
+                    'operation' => 'fill_to_target',
                 ],
             ]);
         } catch (\RuntimeException $e) {
@@ -2086,16 +2320,11 @@ class EmailDataPoolController
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::toolsFillToTarget error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Tamamlama işlemi başarısız oldu.'], 500);
-        } finally {
-            foreach ($locks as $lockName) {
-                $this->releaseListLock($lockName);
-            }
         }
     }
 
     public function toolsMoveOverflow(Request $request, Response $response): Response
     {
-        $locks = [];
         try {
             $this->assertCleanerCsrf($request);
             $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
@@ -2112,108 +2341,27 @@ class EmailDataPoolController
             if ((int) $targetList->getId() === (int) $sourceList->getId()) {
                 throw new \RuntimeException('Fazla aktarımda hedef liste kaynak ile aynı olamaz.');
             }
-
-            $locks[] = $this->acquireListLock((int) $sourceList->getId());
-            $locks[] = $this->acquireListLock((int) $targetList->getId());
-
-            $currentTotal = $this->getListTotalCountFast((int) $sourceList->getId(), (int) $sourceList->getTotalCount());
-            $overflow = max(0, $currentTotal - $targetCount);
-            if ($overflow < 1) {
-                return $this->jsonResponse($response, [
-                    'success' => true,
-                    'summary' => [
-                        'operation_type' => 'move_overflow',
-                        'source_list' => $sourceList->getName(),
-                        'target_list' => $targetList->getName(),
-                        'read_records' => 0,
-                        'added_records' => 0,
-                        'moved_records' => 0,
-                        'deleted_records' => 0,
-                        'duplicate_skipped' => 0,
-                        'non_gmail_skipped' => 0,
-                        'typo_fixed' => 0,
-                        'leftover_records' => 0,
-                        'download_url' => null,
-                        'message' => 'Kaynak listede taşınacak fazla kayıt yok.',
-                    ],
-                ]);
-            }
-
-            $removeDuplicates = filter_var((string) ($data['remove_duplicates'] ?? '1'), FILTER_VALIDATE_BOOLEAN);
-            $remaining = $overflow;
-            $lastId = PHP_INT_MAX;
-            $batchSize = 5000;
-            $readRecords = 0;
-            $added = 0;
-            $moved = 0;
-            $duplicateSkipped = 0;
-            while ($remaining > 0) {
-                $limit = min($batchSize, $remaining);
-                $rows = $this->em->getConnection()->fetchAllAssociative(
-                    "SELECT id, email, COALESCE(name, '') AS name
-                       FROM email_data_pool
-                      WHERE pool_list_id = ?
-                        AND id < ?
-                      ORDER BY id DESC
-                      LIMIT $limit",
-                    [(int) $sourceList->getId(), $lastId]
-                );
-                if ($rows === []) {
-                    break;
-                }
-                $readRecords += count($rows);
-                $lastId = (int) ($rows[count($rows) - 1]['id'] ?? $lastId);
-                $existingSet = $this->fetchExistingEmailSet((int) $targetList->getId(), array_column($rows, 'email'));
-                $insertRows = [];
-                $moveIds = [];
-                foreach ($rows as $row) {
-                    $email = strtolower(trim((string) ($row['email'] ?? '')));
-                    if ($email === '') {
-                        continue;
-                    }
-                    if ($removeDuplicates && isset($existingSet[$email])) {
-                        $duplicateSkipped++;
-                        continue;
-                    }
-                    $insertRows[] = ['email' => $email, 'name' => (string) ($row['name'] ?? '')];
-                    $moveIds[] = (int) ($row['id'] ?? 0);
-                    $existingSet[$email] = true;
-                }
-                if ($insertRows !== []) {
-                    $added += $this->bulkInsertEmails($insertRows, (int) $targetList->getId());
-                }
-                if ($moveIds !== []) {
-                    $moved += $this->deleteRowsByIds((int) $sourceList->getId(), $moveIds);
-                }
-                $remaining -= count($rows);
-            }
-
-            if ($added > 0) {
-                $this->incrementListCounts((int) $targetList->getId(), $added, $added, 0);
-            }
-            if ($moved > 0) {
-                $this->recalculateListCounts([(int) $sourceList->getId()]);
-                $this->invalidateAnalysisCache((int) $sourceList->getId());
-            }
-            if ($added > 0) {
-                $this->invalidateAnalysisCache((int) $targetList->getId());
-            }
-
+            $this->assertNoConflictingJobs([(int) $sourceList->getId(), (int) $targetList->getId()], self::BALANCE_JOB_TYPES);
+            $preview = $this->previewMoveOverflow($data);
+            $jobId = $this->createDataPoolJob(
+                (int) $sourceList->getId(),
+                'move_overflow',
+                [
+                    'operation' => 'move_overflow',
+                    'source_list_id' => (int) $sourceList->getId(),
+                    'target_list_id' => (int) $targetList->getId(),
+                    'target_count' => $targetCount,
+                    'remove_duplicates' => (int) filter_var((string) ($data['remove_duplicates'] ?? '1'), FILTER_VALIDATE_BOOLEAN),
+                    'requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                ],
+                (int) ($preview['overflow'] ?? 0)
+            );
             return $this->jsonResponse($response, [
                 'success' => true,
-                'summary' => [
-                    'operation_type' => 'move_overflow',
-                    'source_list' => $sourceList->getName(),
-                    'target_list' => $targetList->getName(),
-                    'read_records' => $readRecords,
-                    'added_records' => $added,
-                    'moved_records' => $moved,
-                    'deleted_records' => $moved,
-                    'duplicate_skipped' => $duplicateSkipped,
-                    'non_gmail_skipped' => 0,
-                    'typo_fixed' => 0,
-                    'leftover_records' => max(0, $overflow - $moved),
-                    'download_url' => null,
+                'message' => 'Liste dengeleme işlemi kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'type' => 'move_overflow',
                 ],
             ]);
         } catch (\RuntimeException $e) {
@@ -2222,16 +2370,11 @@ class EmailDataPoolController
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::toolsMoveOverflow error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Fazla aktarım işlemi başarısız oldu.'], 500);
-        } finally {
-            foreach ($locks as $lockName) {
-                $this->releaseListLock($lockName);
-            }
         }
     }
 
     public function toolsSplitList(Request $request, Response $response): Response
     {
-        $locks = [];
         try {
             $this->assertCleanerCsrf($request);
             $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
@@ -2245,129 +2388,30 @@ class EmailDataPoolController
             if ($prefix === '') {
                 throw new \RuntimeException('Liste adı prefix zorunlu.');
             }
-
-            $locks[] = $this->acquireListLock((int) $sourceList->getId());
-            $conn = $this->em->getConnection();
-            $batchSize = 3000;
-            $lastId = 0;
-            $partNo = 0;
-            $currentTargetList = null;
-            $currentCount = 0;
-            $totalRead = 0;
-            $totalAdded = 0;
-            $totalMoved = 0;
-            $duplicateSkipped = 0;
-            $nonGmailSkipped = 0;
-            $typoFixed = 0;
-            $sourceDeleteIds = [];
-            $seenForCurrentList = [];
-            $targetListNames = [];
-            $pendingInsertRows = [];
-            $pendingInsertListId = 0;
-
-            $flushPendingInsert = function () use (&$pendingInsertRows, &$pendingInsertListId, &$totalAdded, &$currentCount): void {
-                if ($pendingInsertRows === [] || $pendingInsertListId < 1) {
-                    return;
-                }
-                $addedNow = $this->bulkInsertEmails($pendingInsertRows, $pendingInsertListId);
-                if ($addedNow > 0) {
-                    $totalAdded += $addedNow;
-                    $currentCount += $addedNow;
-                    $this->incrementListCounts($pendingInsertListId, $addedNow, $addedNow, 0);
-                }
-                $pendingInsertRows = [];
-                $pendingInsertListId = 0;
-            };
-
-            while (true) {
-                $rows = $conn->fetchAllAssociative(
-                    "SELECT id, email, name
-                       FROM email_data_pool
-                      WHERE pool_list_id = ?
-                        AND id > ?
-                      ORDER BY id ASC
-                      LIMIT $batchSize",
-                    [(int) $sourceList->getId(), $lastId]
-                );
-                if ($rows === []) {
-                    break;
-                }
-
-                $prepared = [];
-                foreach ($rows as $row) {
-                    $totalRead++;
-                    $id = (int) ($row['id'] ?? 0);
-                    $lastId = max($lastId, $id);
-                    $email = strtolower(trim((string) ($row['email'] ?? '')));
-                    if ($email === '') {
-                        continue;
-                    }
-                    [$email, $fixed] = $this->normalizeMaybeTypoGmail($email, $cleanTypos);
-                    if ($fixed) {
-                        $typoFixed++;
-                    }
-                    if ($onlyGmail && !$this->isGmailEmail($email)) {
-                        $nonGmailSkipped++;
-                        continue;
-                    }
-                    $prepared[] = ['id' => $id, 'email' => $email, 'name' => (string) ($row['name'] ?? '')];
-                }
-
-                foreach ($prepared as $row) {
-                    if ($currentTargetList === null || $currentCount >= $chunkSize) {
-                        $flushPendingInsert();
-                        $partNo++;
-                        $currentTargetList = $this->createPoolList($prefix . ' ' . $partNo);
-                        $targetListNames[] = $currentTargetList->getName();
-                        $currentCount = 0;
-                        $seenForCurrentList = [];
-                    }
-
-                    if ($removeDuplicates && isset($seenForCurrentList[$row['email']])) {
-                        $duplicateSkipped++;
-                        continue;
-                    }
-                    $seenForCurrentList[$row['email']] = true;
-                    $pendingInsertRows[] = ['email' => $row['email'], 'name' => $row['name'] !== '' ? $row['name'] : null];
-                    $pendingInsertListId = (int) $currentTargetList->getId();
-                    if (count($pendingInsertRows) >= 1000) {
-                        $flushPendingInsert();
-                    }
-                    if ($mode === 'move') {
-                        $sourceDeleteIds[] = $row['id'];
-                        if (count($sourceDeleteIds) >= 2000) {
-                            $totalMoved += $this->deleteRowsByIds((int) $sourceList->getId(), $sourceDeleteIds);
-                            $sourceDeleteIds = [];
-                        }
-                    }
-                }
-            }
-
-            $flushPendingInsert();
-
-            if ($mode === 'move' && $sourceDeleteIds !== []) {
-                $totalMoved += $this->deleteRowsByIds((int) $sourceList->getId(), $sourceDeleteIds);
-            }
-            if ($mode === 'move' && $totalMoved > 0) {
-                $this->recalculateListCounts([(int) $sourceList->getId()]);
-                $this->invalidateAnalysisCache((int) $sourceList->getId());
-            }
-
+            $this->assertNoConflictingJobs([(int) $sourceList->getId()], self::BALANCE_JOB_TYPES);
+            $preview = $this->previewSplitList($data);
+            $jobId = $this->createDataPoolJob(
+                (int) $sourceList->getId(),
+                'split_pool',
+                [
+                    'operation' => 'split_pool',
+                    'source_list_id' => (int) $sourceList->getId(),
+                    'chunk_size' => $chunkSize,
+                    'new_list_prefix' => $prefix,
+                    'mode' => $mode,
+                    'only_gmail' => $onlyGmail ? 1 : 0,
+                    'clean_gmail_typos' => $cleanTypos ? 1 : 0,
+                    'remove_duplicates' => $removeDuplicates ? 1 : 0,
+                    'requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                ],
+                (int) ($preview['will_process'] ?? 0)
+            );
             return $this->jsonResponse($response, [
                 'success' => true,
-                'summary' => [
-                    'operation_type' => 'split_list',
-                    'source_list' => $sourceList->getName(),
-                    'target_list' => implode(', ', $targetListNames),
-                    'read_records' => $totalRead,
-                    'added_records' => $totalAdded,
-                    'moved_records' => $totalMoved,
-                    'deleted_records' => $totalMoved,
-                    'duplicate_skipped' => $duplicateSkipped,
-                    'non_gmail_skipped' => $nonGmailSkipped,
-                    'typo_fixed' => $typoFixed,
-                    'leftover_records' => 0,
-                    'download_url' => null,
+                'message' => 'Liste dengeleme işlemi kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'type' => 'split_pool',
                 ],
             ]);
         } catch (\RuntimeException $e) {
@@ -2376,10 +2420,6 @@ class EmailDataPoolController
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::toolsSplitList error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Liste bölme işlemi başarısız oldu.'], 500);
-        } finally {
-            foreach ($locks as $lockName) {
-                $this->releaseListLock($lockName);
-            }
         }
     }
 
@@ -2484,6 +2524,104 @@ class EmailDataPoolController
             'estimated_parts' => max(0, $parts),
             'will_process' => $total,
         ];
+    }
+
+    private function previewFillToTargetDetailed(array $data): array
+    {
+        $sourceType = (string) ($data['source_type'] ?? 'list');
+        $targetList = $this->resolveExistingPoolListById((int) ($data['target_list_id'] ?? 0));
+        $targetCurrent = $this->getListTotalCountFast((int) $targetList->getId(), (int) $targetList->getTotalCount());
+        $targetLimit = max(1, (int) ($data['target_count'] ?? self::DEFAULT_TARGET_LIMIT));
+        $needed = max(0, $targetLimit - $targetCurrent);
+        $sourcePoolId = 0;
+        $sourcePoolName = strtoupper($sourceType);
+        $sourceCurrent = 0;
+        if ($sourceType === 'list') {
+            $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
+            $sourcePoolId = (int) $sourceList->getId();
+            $sourcePoolName = (string) $sourceList->getName();
+            $sourceCurrent = $this->getListTotalCountFast((int) $sourceList->getId(), (int) $sourceList->getTotalCount());
+        } else {
+            $raw = (string) ($data['source_payload'] ?? $data['emails'] ?? '');
+            $parsed = $this->parseImportInput($raw, false);
+            $sourceCurrent = count((array) ($parsed['records'] ?? []));
+        }
+
+        return [
+            'operation' => 'complete_to_target',
+            'sourcePoolId' => $sourcePoolId,
+            'sourcePoolName' => $sourcePoolName,
+            'targetPoolId' => (int) $targetList->getId(),
+            'targetPoolName' => (string) $targetList->getName(),
+            'sourceCurrent' => $sourceCurrent,
+            'targetCurrent' => $targetCurrent,
+            'targetLimit' => $targetLimit,
+            'missingCount' => $needed,
+            'willMove' => min($needed, max(0, $sourceCurrent)),
+            'mode' => (string) ($data['mode'] ?? 'copy'),
+            'warnings' => [
+                sprintf('Bu işlem hedef listeye en fazla %s kayıt aktaracaktır.', number_format(min($needed, max(0, $sourceCurrent)))),
+            ],
+        ];
+    }
+
+    private function previewMoveOverflowDetailed(array $data): array
+    {
+        $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
+        $targetType = (string) ($data['overflow_target_type'] ?? 'existing');
+        $targetList = $targetType === 'new'
+            ? null
+            : $this->resolveExistingPoolListById((int) ($data['overflow_target_list_id'] ?? 0));
+        $targetLimit = max(1, (int) ($data['target_count'] ?? self::DEFAULT_TARGET_LIMIT));
+        $sourceCurrent = $this->getListTotalCountFast((int) $sourceList->getId(), (int) $sourceList->getTotalCount());
+        $targetCurrent = $targetList ? $this->getListTotalCountFast((int) $targetList->getId(), (int) $targetList->getTotalCount()) : 0;
+        $overflowCount = max(0, $sourceCurrent - $targetLimit);
+        $targetPoolName = $targetList ? (string) $targetList->getName() : trim((string) ($data['new_list_name'] ?? 'Yeni Liste'));
+
+        return [
+            'operation' => 'move_overflow',
+            'sourcePoolId' => (int) $sourceList->getId(),
+            'sourcePoolName' => (string) $sourceList->getName(),
+            'targetPoolId' => $targetList ? (int) $targetList->getId() : 0,
+            'targetPoolName' => $targetPoolName,
+            'sourceCurrent' => $sourceCurrent,
+            'targetCurrent' => $targetCurrent,
+            'targetLimit' => $targetLimit,
+            'overflowCount' => $overflowCount,
+            'willMove' => $overflowCount,
+            'mode' => 'move',
+            'warnings' => [
+                sprintf('Bu işlem kaynak listeden %s kaydı hedef listeye aktaracak.', number_format($overflowCount)),
+            ],
+        ];
+    }
+
+    /**
+     * @param array<int, int> $poolIds
+     * @param array<int, string> $requestedTypes
+     */
+    private function assertNoConflictingJobs(array $poolIds, array $requestedTypes): void
+    {
+        $this->ensureDataPoolJobTables();
+        $conn = $this->em->getConnection();
+        $allTypes = array_values(array_unique(array_merge($requestedTypes, self::GLOBAL_BLOCKING_JOB_TYPES)));
+        $typePlaceholders = implode(',', array_fill(0, count($allTypes), '?'));
+        $params = $allTypes;
+        $sql = "SELECT COUNT(*) FROM data_pool_jobs WHERE status IN ('queued', 'running') AND type IN ($typePlaceholders)";
+        if ($poolIds !== []) {
+            $poolIds = array_values(array_filter(array_map('intval', $poolIds), static fn (int $id): bool => $id > 0));
+            if ($poolIds !== []) {
+                $poolPlaceholders = implode(',', array_fill(0, count($poolIds), '?'));
+                $sql .= " AND (pool_id IN ($poolPlaceholders) OR pool_id IS NULL)";
+                foreach ($poolIds as $pid) {
+                    $params[] = $pid;
+                }
+            }
+        }
+        $count = (int) $conn->fetchOne($sql, $params);
+        if ($count > 0) {
+            throw new \RuntimeException('Bu liste için devam eden bir işlem var. Lütfen önce mevcut işlemin bitmesini bekleyin.');
+        }
     }
 
     private function buildCachedListStats(int $poolListId, int $targetLimit): array
@@ -2770,10 +2908,13 @@ class EmailDataPoolController
             'success' => true,
             'job_id' => (int) ($job['id'] ?? 0),
             'list_id' => $poolId,
+            'scope' => $poolId > 0 ? 'list' : 'global',
             'type' => (string) ($job['type'] ?? ''),
             'status' => $status,
             'total' => (int) ($job['total_count'] ?? 0),
             'processed' => (int) ($job['processed_count'] ?? 0),
+            'success_count' => (int) ($job['success_count'] ?? 0),
+            'failed_count' => (int) ($job['failed_count'] ?? 0),
             'percent' => (int) ($job['progress_percent'] ?? 0),
             'gmail_count' => (int) ($result['gmail_count'] ?? 0),
             'non_gmail_count' => (int) ($result['non_gmail_count'] ?? 0),
@@ -2783,6 +2924,13 @@ class EmailDataPoolController
             'message' => $status === 'failed' ? 'İşlem başarısız oldu.' : ($status === 'completed' ? 'İşlem tamamlandı.' : 'İşlem sürüyor...'),
             'error' => (string) ($job['error_message'] ?? ''),
             'result' => $result,
+            'started_at' => $job['started_at'] ?? null,
+            'finished_at' => $job['finished_at'] ?? null,
+            'created_at' => $job['created_at'] ?? null,
+            'updated_at' => $job['updated_at'] ?? null,
+            'duplicate_groups' => (int) ($result['duplicate_groups'] ?? 0),
+            'removed_count' => (int) ($result['removed_count'] ?? 0),
+            'affected_rows' => (int) ($result['affected_rows'] ?? 0),
         ];
         $payload['data'] = [
             'jobId' => (int) ($payload['job_id'] ?? 0),
@@ -2796,6 +2944,12 @@ class EmailDataPoolController
             'invalidCount' => (int) ($payload['invalid_gmail_count'] ?? 0),
             'duplicateCount' => (int) ($payload['duplicate_count'] ?? 0),
             'downloadUrl' => (string) ($result['download_url'] ?? ''),
+            'currentPoolId' => (int) ($result['currentPoolId'] ?? 0),
+            'currentPoolName' => (string) ($result['currentPoolName'] ?? ''),
+            'processedPools' => (int) ($result['processedPools'] ?? 0),
+            'totalPools' => (int) ($result['totalPools'] ?? 0),
+            'processedRecords' => (int) ($result['processedRecords'] ?? 0),
+            'totalRecords' => (int) ($result['totalRecords'] ?? 0),
         ];
 
         return $payload;

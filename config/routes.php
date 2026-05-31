@@ -649,6 +649,12 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/jobs/{jobId}/status', [\App\Controllers\EmailDataPoolController::class, 'jobStatus'])->setName('admin.email-data-pool.jobs.status')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/jobs', [\App\Controllers\EmailDataPoolController::class, 'jobs'])->setName('admin.email-data-pool.jobs')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/global-deduplicate/preview', [\App\Controllers\EmailDataPoolController::class, 'globalDeduplicatePreview'])->setName('admin.email-data-pool.global-deduplicate.preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/global-deduplicate/apply', [\App\Controllers\EmailDataPoolController::class, 'globalDeduplicateApply'])->setName('admin.email-data-pool.global-deduplicate.apply')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/tools/preview', [\App\Controllers\EmailDataPoolController::class, 'toolsPreview'])->setName('admin.email-data-pool.tools.preview')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/tools/fill-to-target', [\App\Controllers\EmailDataPoolController::class, 'toolsFillToTarget'])->setName('admin.email-data-pool.tools.fill-to-target')
@@ -657,6 +663,24 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/tools/split-list', [\App\Controllers\EmailDataPoolController::class, 'toolsSplitList'])->setName('admin.email-data-pool.tools.split-list')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/balance/complete-preview', [\App\Controllers\EmailDataPoolController::class, 'balanceCompletePreview'])->setName('admin.email-data-pool.balance.complete-preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/balance/complete-apply', [\App\Controllers\EmailDataPoolController::class, 'balanceCompleteApply'])->setName('admin.email-data-pool.balance.complete-apply')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/balance/overflow-preview', [\App\Controllers\EmailDataPoolController::class, 'balanceOverflowPreview'])->setName('admin.email-data-pool.balance.overflow-preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/balance/overflow-apply', [\App\Controllers\EmailDataPoolController::class, 'balanceOverflowApply'])->setName('admin.email-data-pool.balance.overflow-apply')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/balance/split-preview', [\App\Controllers\EmailDataPoolController::class, 'balanceSplitPreview'])->setName('admin.email-data-pool.balance.split-preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/balance/split-apply', [\App\Controllers\EmailDataPoolController::class, 'balanceSplitApply'])->setName('admin.email-data-pool.balance.split-apply')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/balance/equalize-preview', [\App\Controllers\EmailDataPoolController::class, 'balanceEqualizePreview'])->setName('admin.email-data-pool.balance.equalize-preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/balance/equalize-apply', [\App\Controllers\EmailDataPoolController::class, 'balanceEqualizeApply'])->setName('admin.email-data-pool.balance.equalize-apply')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/global-analysis/start', [\App\Controllers\EmailDataPoolController::class, 'globalAnalysisStart'])->setName('admin.email-data-pool.global-analysis.start')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/tools/leftovers/{token}', [\App\Controllers\EmailDataPoolController::class, 'downloadLeftoverFile'])->setName('admin.email-data-pool.tools.leftovers.download')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
         });

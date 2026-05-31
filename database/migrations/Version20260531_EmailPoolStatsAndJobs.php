@@ -17,7 +17,7 @@ final class Version20260531_EmailPoolStatsAndJobs extends AbstractMigration
     public function up(Schema $schema): void
     {
         $conn = $this->connection;
-        $dbName = (string) $conn->getDatabase();
+        $dbName = (string) ($conn->getDatabase() ?: $conn->fetchOne('SELECT DATABASE()'));
 
         $tableExists = static function (string $table) use ($conn, $dbName): bool {
             return (int) $conn->fetchOne(

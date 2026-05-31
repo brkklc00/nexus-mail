@@ -77,10 +77,21 @@ class DataPoolJobsWorkCommand extends Command
                     'remove_duplicates' => $this->processRemoveDuplicates($em, $jobService, $jobId, $poolId, $batchSize),
                     'fix_gmail_typos' => $this->processFixGmailTypos($em, $jobService, $jobId, $poolId, $batchSize),
                     'export_pool' => $this->processExportPool($em, $jobService, $jobId, $job, $poolId, $batchSize),
+                    'complete_to_target' => $this->processCompleteToTarget($em, $jobService, $jobId, $job, $batchSize),
+                    'copy_to_target' => $this->processCopyToTarget($em, $jobService, $jobId, $job, $batchSize),
+                    'move_overflow' => $this->processMoveOverflowBalance($em, $jobService, $jobId, $job, $batchSize),
+                    'split_pool' => $this->processSplitPool($em, $jobService, $jobId, $job, $batchSize),
+                    'balance_pools' => $this->processBalancePools($em, $jobService, $jobId, $job, $batchSize),
+                    'fill_new_pool' => $this->processFillNewPool($em, $jobService, $jobId, $job, $batchSize),
+                    'global_analyze_all_pools' => $this->processGlobalAnalyzeAllPools($em, $jobService, $jobId, $batchSize),
+                    'global_deduplicate_preview' => $this->processGlobalDeduplicatePreview($em, $jobService, $jobId, $batchSize),
+                    'global_deduplicate_apply' => $this->processGlobalDeduplicateApply($em, $jobService, $jobId, $job, $batchSize),
                     default => throw new \RuntimeException('Desteklenmeyen job tipi: ' . $type),
                 };
 
-                $statsService->refreshFromPoolCache($poolId);
+                if ($poolId > 0) {
+                    $statsService->refreshFromPoolCache($poolId);
+                }
                 $jobService->markCompleted(
                     $jobId,
                     (int) ($result['processed_count'] ?? 0),
@@ -564,6 +575,743 @@ class DataPoolJobsWorkCommand extends Command
             'filename' => $filename,
             'scope' => $scope,
             'label' => $safeList,
+        ];
+    }
+
+    /**
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processGlobalDeduplicatePreview(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, int $batchSize): array
+    {
+        $conn = $em->getConnection();
+        $where = $this->globalActiveWhereClause($conn);
+
+        $totalRows = (int) $conn->fetchOne(
+            "SELECT COUNT(*) FROM email_data_pool WHERE {$where} AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''"
+        );
+        $jobService->updateProgress($jobId, 1, max(1, $totalRows), 1, 0);
+
+        $uniqueEmails = (int) $conn->fetchOne(
+            "SELECT COUNT(DISTINCT COALESCE(normalized_email, LOWER(TRIM(email)))) FROM email_data_pool WHERE {$where} AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''"
+        );
+        $duplicateRows = max(0, $totalRows - $uniqueEmails);
+        $duplicateGroups = (int) $conn->fetchOne(
+            "SELECT COUNT(*) FROM (
+                SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+                  FROM email_data_pool
+                 WHERE {$where}
+                   AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
+                 GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+                HAVING COUNT(*) > 1
+            ) x"
+        );
+
+        $topDomains = $conn->fetchAllAssociative(
+            "SELECT COALESCE(domain, SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1)) AS domain_name, COUNT(*) AS cnt
+               FROM email_data_pool
+              WHERE {$where}
+                AND COALESCE(normalized_email, LOWER(TRIM(email))) IN (
+                    SELECT norm FROM (
+                        SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+                          FROM email_data_pool
+                         WHERE {$where}
+                           AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
+                         GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+                        HAVING COUNT(*) > 1
+                    ) d
+                )
+              GROUP BY domain_name
+              ORDER BY cnt DESC
+              LIMIT 10"
+        );
+
+        $byList = $conn->fetchAllAssociative(
+            "SELECT p.pool_list_id, l.name AS list_name, COUNT(*) AS duplicate_rows
+               FROM email_data_pool p
+               JOIN email_data_pool_lists l ON l.id = p.pool_list_id
+              WHERE {$where}
+                AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) IN (
+                    SELECT norm FROM (
+                        SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+                          FROM email_data_pool
+                         WHERE {$where}
+                           AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
+                         GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+                        HAVING COUNT(*) > 1
+                    ) d
+                )
+              GROUP BY p.pool_list_id, l.name
+              ORDER BY duplicate_rows DESC
+              LIMIT 100"
+        );
+
+        $jobService->updateProgress($jobId, $totalRows, max(1, $totalRows), $totalRows, 0);
+
+        return [
+            'processed_count' => $totalRows,
+            'success_count' => $totalRows,
+            'failed_count' => 0,
+            'total_rows' => $totalRows,
+            'unique_emails' => $uniqueEmails,
+            'duplicate_groups' => $duplicateGroups,
+            'affected_rows' => $duplicateRows,
+            'estimated_after_cleanup' => $uniqueEmails,
+            'top_domains' => $topDomains,
+            'by_list' => $byList,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processGlobalDeduplicateApply(
+        EntityManagerInterface $em,
+        EmailDataPoolJobService $jobService,
+        int $jobId,
+        array $job,
+        int $batchSize
+    ): array {
+        $conn = $em->getConnection();
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $strategy = (string) ($payload['strategy'] ?? 'keep_first');
+        $mode = (string) ($payload['mode'] ?? 'mark_duplicate');
+        $priorityListIds = array_values(array_filter(array_map('intval', (array) ($payload['priority_list_ids'] ?? [])), static fn (int $id): bool => $id > 0));
+        $where = $this->globalActiveWhereClause($conn, 'p');
+
+        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dedup_keep_ids');
+        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dedup_dup_ids');
+        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_keep_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=MEMORY');
+        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_dup_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=MEMORY');
+
+        if ($strategy === 'keep_newest') {
+            $conn->executeStatement(
+                "INSERT INTO tmp_global_dedup_keep_ids (id)
+                 SELECT MAX(p.id) AS keep_id
+                   FROM email_data_pool p
+                  WHERE {$where}
+                    AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) <> ''
+                  GROUP BY COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
+                 HAVING COUNT(*) > 1"
+            );
+        } elseif ($strategy === 'keep_priority' && $priorityListIds !== []) {
+            $inPriority = implode(',', array_fill(0, count($priorityListIds), '?'));
+            $conn->executeStatement(
+                "INSERT INTO tmp_global_dedup_keep_ids (id)
+                 SELECT COALESCE(
+                            MIN(CASE WHEN p.pool_list_id IN ($inPriority) THEN p.id END),
+                            MIN(p.id)
+                        ) AS keep_id
+                   FROM email_data_pool p
+                  WHERE {$where}
+                    AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) <> ''
+                  GROUP BY COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
+                 HAVING COUNT(*) > 1",
+                $priorityListIds
+            );
+        } else {
+            $conn->executeStatement(
+                "INSERT INTO tmp_global_dedup_keep_ids (id)
+                 SELECT MIN(p.id) AS keep_id
+                   FROM email_data_pool p
+                  WHERE {$where}
+                    AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) <> ''
+                  GROUP BY COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
+                 HAVING COUNT(*) > 1"
+            );
+        }
+
+        $conn->executeStatement(
+            "INSERT INTO tmp_global_dedup_dup_ids (id)
+             SELECT p.id
+               FROM email_data_pool p
+          LEFT JOIN tmp_global_dedup_keep_ids k ON k.id = p.id
+              WHERE {$where}
+                AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) <> ''
+                AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) IN (
+                    SELECT norm FROM (
+                        SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+                          FROM email_data_pool
+                         WHERE " . $this->globalActiveWhereClause($conn) . "
+                           AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
+                         GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+                        HAVING COUNT(*) > 1
+                    ) d
+                )
+                AND k.id IS NULL"
+        );
+
+        $totalToAffect = (int) $conn->fetchOne('SELECT COUNT(*) FROM tmp_global_dedup_dup_ids');
+        $processed = 0;
+        $affected = 0;
+        $hasStatus = $this->hasColumn($conn, 'email_data_pool', 'status');
+        $hasIsDuplicate = $this->hasColumn($conn, 'email_data_pool', 'is_duplicate');
+        $globalBatchSize = max(5000, (int) ($_ENV['DATA_POOL_GLOBAL_DEDUP_BATCH_SIZE'] ?? $batchSize));
+        $limit = max(1000, min(100000, $globalBatchSize));
+
+        while (true) {
+            $ids = $conn->fetchFirstColumn("SELECT id FROM tmp_global_dedup_dup_ids ORDER BY id ASC LIMIT {$limit}");
+            if ($ids === []) {
+                break;
+            }
+            $ids = array_values(array_map('intval', $ids));
+            $in = implode(',', array_fill(0, count($ids), '?'));
+
+            if ($mode === 'delete') {
+                $affected += $conn->executeStatement(
+                    "DELETE FROM email_data_pool WHERE id IN ($in)",
+                    $ids
+                );
+            } else {
+                $setParts = ['updated_at = NOW()'];
+                if ($hasIsDuplicate) {
+                    $setParts[] = 'is_duplicate = 1';
+                }
+                if ($hasStatus) {
+                    $setParts[] = "status = 'duplicate'";
+                } else {
+                    $setParts[] = 'is_active = 0';
+                }
+                $setSql = implode(', ', $setParts);
+                $affected += $conn->executeStatement(
+                    "UPDATE email_data_pool SET {$setSql} WHERE id IN ($in)",
+                    $ids
+                );
+            }
+
+            $conn->executeStatement(
+                "DELETE FROM tmp_global_dedup_dup_ids WHERE id IN ($in)",
+                $ids
+            );
+            $processed += count($ids);
+            $jobService->updateProgress($jobId, $processed, max(1, $totalToAffect), $affected, 0);
+        }
+
+        $this->refreshAllListCounts($conn);
+        $preview = $this->processGlobalDeduplicatePreview($em, $jobService, $jobId, $batchSize);
+        $reportUrl = $this->writeGlobalDedupReport([
+            'mode' => $mode,
+            'strategy' => $strategy,
+            'priority_list_ids' => $priorityListIds,
+            'affected_rows' => $affected,
+            'duplicate_groups' => (int) ($preview['duplicate_groups'] ?? 0),
+            'total_rows' => (int) ($preview['total_rows'] ?? 0),
+            'unique_emails' => (int) ($preview['unique_emails'] ?? 0),
+            'top_domains' => $preview['top_domains'] ?? [],
+            'by_list' => $preview['by_list'] ?? [],
+            'finished_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+        ]);
+
+        return [
+            'processed_count' => $processed,
+            'success_count' => $affected,
+            'failed_count' => 0,
+            'affected_rows' => $affected,
+            'removed_count' => $mode === 'delete' ? $affected : 0,
+            'duplicate_groups' => (int) ($preview['duplicate_groups'] ?? 0),
+            'total_rows' => (int) ($preview['total_rows'] ?? 0),
+            'unique_emails' => (int) ($preview['unique_emails'] ?? 0),
+            'mode' => $mode,
+            'strategy' => $strategy,
+            'report_url' => $reportUrl,
+        ];
+    }
+
+    private function refreshAllListCounts(\Doctrine\DBAL\Connection $conn): void
+    {
+        $rows = $conn->fetchAllAssociative('SELECT id FROM email_data_pool_lists');
+        foreach ($rows as $row) {
+            $listId = (int) ($row['id'] ?? 0);
+            if ($listId > 0) {
+                $this->refreshListCounts($conn, $listId);
+            }
+        }
+    }
+
+    private function globalActiveWhereClause(\Doctrine\DBAL\Connection $conn, string $alias = ''): string
+    {
+        $prefix = $alias !== '' ? ($alias . '.') : '';
+        if ($this->hasColumn($conn, 'email_data_pool', 'status')) {
+            return "{$prefix}status = 'active'";
+        }
+        return "{$prefix}is_active = 1";
+    }
+
+    private function hasColumn(\Doctrine\DBAL\Connection $conn, string $table, string $column): bool
+    {
+        try {
+            $dbName = (string) $conn->getDatabase();
+            return (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                [$dbName, $table, $column]
+            ) > 0;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function writeGlobalDedupReport(array $payload): string
+    {
+        $exportPath = rtrim((string) ($_ENV['DATA_POOL_EXPORT_PATH'] ?? 'storage/exports'), '/');
+        $baseDir = dirname(__DIR__, 3) . '/' . ltrim($exportPath, '/');
+        if (!is_dir($baseDir)) {
+            @mkdir($baseDir, 0775, true);
+        }
+        $filename = 'global_dedup_report_' . date('Ymd_His') . '.json';
+        $path = $baseDir . '/' . $filename;
+        @file_put_contents($path, (string) json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+        return '/admin/email-data-pool/exports/' . rawurlencode($filename);
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processCompleteToTarget(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $batchSize): array
+    {
+        $payload = is_array(json_decode((string) ($job['payload'] ?? ''), true)) ? json_decode((string) ($job['payload'] ?? ''), true) : [];
+        $payload = is_array($payload) ? $payload : [];
+        $payload['mode'] = 'move';
+        return $this->processCopyLikeToTarget($em, $jobService, $jobId, $payload, max(5000, $batchSize));
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processCopyToTarget(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $batchSize): array
+    {
+        $payload = is_array(json_decode((string) ($job['payload'] ?? ''), true)) ? json_decode((string) ($job['payload'] ?? ''), true) : [];
+        $payload = is_array($payload) ? $payload : [];
+        $payload['mode'] = 'copy';
+        return $this->processCopyLikeToTarget($em, $jobService, $jobId, $payload, max(5000, $batchSize));
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processCopyLikeToTarget(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $payload, int $batchSize): array
+    {
+        $conn = $em->getConnection();
+        $targetListId = (int) ($payload['target_list_id'] ?? 0);
+        $sourceType = (string) ($payload['source_type'] ?? 'list');
+        $sourceListId = (int) ($payload['source_list_id'] ?? 0);
+        $mode = (string) ($payload['mode'] ?? 'copy');
+        $targetCount = max(1, (int) ($payload['target_count'] ?? 0));
+        $removeDuplicates = ((int) ($payload['remove_duplicates'] ?? 1)) === 1;
+        if ($targetListId < 1) {
+            throw new \RuntimeException('Hedef liste bulunamadı.');
+        }
+        if ($sourceType === 'list' && $sourceListId < 1) {
+            throw new \RuntimeException('Kaynak liste bulunamadı.');
+        }
+
+        $currentTarget = (int) $conn->fetchOne('SELECT total_count FROM email_data_pool_lists WHERE id = ?', [$targetListId]);
+        $need = max(0, $targetCount - $currentTarget);
+        $total = max(0, $need);
+        if ($need < 1) {
+            return [
+                'processed_count' => 0,
+                'success_count' => 0,
+                'failed_count' => 0,
+                'operation_type' => 'complete_to_target',
+                'message' => 'Hedef liste zaten dolu.',
+            ];
+        }
+
+        $inserted = 0;
+        $moved = 0;
+        $processed = 0;
+        $lastId = 0;
+        $safeBatch = max(1000, min(100000, (int) ($_ENV['DATA_POOL_BALANCE_BATCH_SIZE'] ?? $batchSize)));
+
+        while ($inserted < $need) {
+            $limit = min($safeBatch, $need - $inserted);
+            $rows = [];
+            if ($sourceType === 'list') {
+                $rows = $conn->fetchAllAssociative(
+                    "SELECT id, email, COALESCE(name, '') AS name, COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+                       FROM email_data_pool
+                      WHERE pool_list_id = ?
+                        AND id > ?
+                      ORDER BY id ASC
+                      LIMIT $limit",
+                    [$sourceListId, $lastId]
+                );
+            } else {
+                $raw = (string) ($payload['source_payload'] ?? '');
+                $lines = preg_split('/\r\n|\r|\n/', $raw) ?: [];
+                $slice = array_slice($lines, $processed, $limit);
+                foreach ($slice as $line) {
+                    $mail = strtolower(trim((string) $line));
+                    if ($mail === '' || !str_contains($mail, '@')) {
+                        continue;
+                    }
+                    $rows[] = ['id' => 0, 'email' => $mail, 'name' => '', 'norm' => $mail];
+                }
+            }
+
+            if ($rows === []) {
+                break;
+            }
+            $lastId = max($lastId, (int) ($rows[count($rows) - 1]['id'] ?? $lastId));
+            $processed += count($rows);
+            $insertValues = [];
+            $insertParams = [];
+            $moveIds = [];
+            $norms = array_values(array_unique(array_filter(array_map(static fn (array $r): string => (string) ($r['norm'] ?? ''), $rows))));
+            $existing = [];
+            if ($removeDuplicates && $norms !== []) {
+                foreach (array_chunk($norms, 1500) as $chunk) {
+                    $in = implode(',', array_fill(0, count($chunk), '?'));
+                    $found = $conn->fetchFirstColumn(
+                        "SELECT COALESCE(normalized_email, LOWER(TRIM(email))) FROM email_data_pool WHERE pool_list_id = ? AND COALESCE(normalized_email, LOWER(TRIM(email))) IN ($in)",
+                        array_merge([$targetListId], $chunk)
+                    );
+                    foreach ($found as $f) {
+                        $existing[(string) $f] = true;
+                    }
+                }
+            }
+            foreach ($rows as $row) {
+                $norm = (string) ($row['norm'] ?? '');
+                if ($norm === '') {
+                    continue;
+                }
+                if ($removeDuplicates && isset($existing[$norm])) {
+                    continue;
+                }
+                $email = (string) ($row['email'] ?? '');
+                $name = (string) ($row['name'] ?? '');
+                $domain = strtolower((string) substr(strrchr($email, '@') ?: '', 1));
+                $isGmail = $domain === 'gmail.com' ? 1 : 0;
+                $insertValues[] = '(?, ?, ?, ?, ?, 0, 0, 1, NOW(), NOW())';
+                $insertParams[] = $targetListId;
+                $insertParams[] = $email;
+                $insertParams[] = $norm;
+                $insertParams[] = $domain;
+                $insertParams[] = $name;
+                $insertParams[] = $isGmail;
+                $existing[$norm] = true;
+                if ($sourceType === 'list' && $mode === 'move' && (int) ($row['id'] ?? 0) > 0) {
+                    $moveIds[] = (int) $row['id'];
+                }
+            }
+            if ($insertValues !== []) {
+                $sql = 'INSERT INTO email_data_pool (pool_list_id, email, normalized_email, domain, name, is_gmail, is_duplicate, is_invalid, is_active, created_at, updated_at) VALUES ' . implode(',', $insertValues);
+                $insertedNow = $conn->executeStatement($sql, $insertParams);
+                $inserted += $insertedNow;
+            }
+            if ($moveIds !== []) {
+                $in = implode(',', array_fill(0, count($moveIds), '?'));
+                $conn->executeStatement("DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)", array_merge([$sourceListId], $moveIds));
+                $moved += count($moveIds);
+            }
+            $jobService->updateProgress($jobId, $inserted, max(1, $total), $inserted, 0);
+            if ($sourceType !== 'list' && $processed >= count(preg_split('/\r\n|\r|\n/', (string) ($payload['source_payload'] ?? '')) ?: [])) {
+                break;
+            }
+        }
+
+        $this->refreshListCounts($conn, $targetListId);
+        if ($sourceType === 'list' && $sourceListId > 0) {
+            $this->refreshListCounts($conn, $sourceListId);
+        }
+
+        return [
+            'processed_count' => $inserted,
+            'success_count' => $inserted,
+            'failed_count' => 0,
+            'operation_type' => $mode === 'move' ? 'complete_to_target' : 'copy_to_target',
+            'added_records' => $inserted,
+            'moved_records' => $moved,
+            'deleted_records' => $moved,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processMoveOverflowBalance(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $batchSize): array
+    {
+        $conn = $em->getConnection();
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $sourceListId = (int) ($payload['source_list_id'] ?? 0);
+        $targetListId = (int) ($payload['target_list_id'] ?? 0);
+        $targetCount = max(1, (int) ($payload['target_count'] ?? 0));
+        if ($sourceListId < 1 || $targetListId < 1) {
+            throw new \RuntimeException('Kaynak/hedef liste bilgisi eksik.');
+        }
+        $sourceCurrent = (int) $conn->fetchOne('SELECT total_count FROM email_data_pool_lists WHERE id = ?', [$sourceListId]);
+        $overflow = max(0, $sourceCurrent - $targetCount);
+        if ($overflow < 1) {
+            return ['processed_count' => 0, 'success_count' => 0, 'failed_count' => 0, 'operation_type' => 'move_overflow', 'message' => 'Fazla kayıt yok.'];
+        }
+
+        $moved = 0;
+        $safeBatch = max(1000, min(100000, (int) ($_ENV['DATA_POOL_BALANCE_BATCH_SIZE'] ?? $batchSize)));
+        while ($moved < $overflow) {
+            $limit = min($safeBatch, $overflow - $moved);
+            $affected = $conn->executeStatement(
+                "UPDATE email_data_pool
+                    SET pool_list_id = ?, updated_at = NOW()
+                  WHERE pool_list_id = ?
+                  ORDER BY id DESC
+                  LIMIT $limit",
+                [$targetListId, $sourceListId]
+            );
+            if ($affected < 1) {
+                break;
+            }
+            $moved += $affected;
+            $jobService->updateProgress($jobId, $moved, max(1, $overflow), $moved, 0);
+        }
+        $this->refreshListCounts($conn, $sourceListId);
+        $this->refreshListCounts($conn, $targetListId);
+
+        return [
+            'processed_count' => $moved,
+            'success_count' => $moved,
+            'failed_count' => 0,
+            'operation_type' => 'move_overflow',
+            'moved_records' => $moved,
+            'deleted_records' => $moved,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processSplitPool(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $batchSize): array
+    {
+        $conn = $em->getConnection();
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $sourceListId = (int) ($payload['source_list_id'] ?? 0);
+        $chunkSize = max(1000, (int) ($payload['chunk_size'] ?? 0));
+        $prefix = trim((string) ($payload['new_list_prefix'] ?? 'Parca'));
+        $mode = (string) ($payload['mode'] ?? 'copy');
+        if ($sourceListId < 1 || $chunkSize < 1) {
+            throw new \RuntimeException('Split payload geçersiz.');
+        }
+        $total = (int) $conn->fetchOne('SELECT total_count FROM email_data_pool_lists WHERE id = ?', [$sourceListId]);
+        $processed = 0;
+        $createdLists = [];
+        $part = 0;
+        $lastId = 0;
+        $safeBatch = max(1000, min(100000, (int) ($_ENV['DATA_POOL_BALANCE_BATCH_SIZE'] ?? $batchSize)));
+        $currentTargetId = 0;
+        $currentCount = 0;
+
+        while ($processed < $total) {
+            if ($currentTargetId < 1 || $currentCount >= $chunkSize) {
+                $part++;
+                $name = $prefix . ' - ' . $part;
+                $conn->executeStatement(
+                    'INSERT INTO email_data_pool_lists (name, sort_order, total_count, active_count, passive_count, updated_count_at) VALUES (?, 0, 0, 0, 0, NOW())',
+                    [$name]
+                );
+                $currentTargetId = (int) $conn->lastInsertId();
+                $currentCount = 0;
+                $createdLists[] = $name;
+            }
+            $limit = min($safeBatch, $chunkSize - $currentCount);
+            $rows = $conn->fetchAllAssociative(
+                "SELECT id, email, COALESCE(normalized_email, LOWER(TRIM(email))) AS norm, COALESCE(domain, SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1)) AS domain_name, COALESCE(name, '') AS name
+                   FROM email_data_pool
+                  WHERE pool_list_id = ?
+                    AND id > ?
+                  ORDER BY id ASC
+                  LIMIT $limit",
+                [$sourceListId, $lastId]
+            );
+            if ($rows === []) {
+                break;
+            }
+            $insertValues = [];
+            $insertParams = [];
+            $ids = [];
+            foreach ($rows as $row) {
+                $ids[] = (int) ($row['id'] ?? 0);
+                $lastId = max($lastId, (int) ($row['id'] ?? 0));
+                $insertValues[] = '(?, ?, ?, ?, ?, ?, 0, 0, 1, NOW(), NOW())';
+                $insertParams[] = $currentTargetId;
+                $insertParams[] = (string) ($row['email'] ?? '');
+                $insertParams[] = (string) ($row['norm'] ?? '');
+                $insertParams[] = (string) ($row['domain_name'] ?? '');
+                $insertParams[] = (string) ($row['name'] ?? '');
+                $insertParams[] = ((string) ($row['domain_name'] ?? '') === 'gmail.com') ? 1 : 0;
+            }
+            if ($insertValues !== []) {
+                $conn->executeStatement(
+                    'INSERT INTO email_data_pool (pool_list_id, email, normalized_email, domain, name, is_gmail, is_duplicate, is_invalid, is_active, created_at, updated_at) VALUES ' . implode(',', $insertValues),
+                    $insertParams
+                );
+            }
+            if ($mode === 'move' && $ids !== []) {
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $conn->executeStatement("DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)", array_merge([$sourceListId], $ids));
+            }
+            $processed += count($rows);
+            $currentCount += count($rows);
+            $jobService->updateProgress($jobId, $processed, max(1, $total), $processed, 0);
+        }
+        $this->refreshListCounts($conn, $sourceListId);
+        if ($createdLists !== []) {
+            $newIds = $conn->fetchFirstColumn(
+                'SELECT id FROM email_data_pool_lists WHERE name IN (' . implode(',', array_fill(0, count($createdLists), '?')) . ')',
+                $createdLists
+            );
+            foreach ($newIds as $newId) {
+                $this->refreshListCounts($conn, (int) $newId);
+            }
+        }
+        return [
+            'processed_count' => $processed,
+            'success_count' => $processed,
+            'failed_count' => 0,
+            'operation_type' => 'split_pool',
+            'target_list' => implode(', ', $createdLists),
+            'added_records' => $processed,
+            'moved_records' => $mode === 'move' ? $processed : 0,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processBalancePools(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $batchSize): array
+    {
+        $conn = $em->getConnection();
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $poolIds = array_values(array_filter(array_map('intval', (array) ($payload['pool_ids'] ?? [])), static fn (int $id): bool => $id > 0));
+        $targetLimit = max(1, (int) ($payload['target_limit'] ?? 250000));
+        if ($poolIds === []) {
+            throw new \RuntimeException('Dengelenecek liste yok.');
+        }
+
+        $processed = 0;
+        $operations = 0;
+        foreach ($poolIds as $poolId) {
+            $current = (int) $conn->fetchOne('SELECT total_count FROM email_data_pool_lists WHERE id = ?', [$poolId]);
+            if ($current > $targetLimit) {
+                $overflow = $current - $targetLimit;
+                foreach ($poolIds as $targetId) {
+                    if ($targetId === $poolId) {
+                        continue;
+                    }
+                    $targetCurrent = (int) $conn->fetchOne('SELECT total_count FROM email_data_pool_lists WHERE id = ?', [$targetId]);
+                    $deficit = max(0, $targetLimit - $targetCurrent);
+                    if ($deficit < 1 || $overflow < 1) {
+                        continue;
+                    }
+                    $move = min($overflow, $deficit, max(1000, min(100000, (int) ($_ENV['DATA_POOL_BALANCE_BATCH_SIZE'] ?? $batchSize))));
+                    $affected = $conn->executeStatement(
+                        "UPDATE email_data_pool SET pool_list_id = ?, updated_at = NOW() WHERE pool_list_id = ? ORDER BY id DESC LIMIT $move",
+                        [$targetId, $poolId]
+                    );
+                    if ($affected > 0) {
+                        $overflow -= $affected;
+                        $processed += $affected;
+                        $operations++;
+                    }
+                    if ($overflow < 1) {
+                        break;
+                    }
+                }
+            }
+            $jobService->updateProgress($jobId, $processed, max(1, count($poolIds) * $targetLimit), $processed, 0);
+        }
+        foreach ($poolIds as $poolId) {
+            $this->refreshListCounts($conn, $poolId);
+        }
+
+        return [
+            'processed_count' => $processed,
+            'success_count' => $processed,
+            'failed_count' => 0,
+            'operation_type' => 'balance_pools',
+            'moved_records' => $processed,
+            'operations' => $operations,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processFillNewPool(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $batchSize): array
+    {
+        return $this->processBalancePools($em, $jobService, $jobId, $job, $batchSize);
+    }
+
+    /**
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processGlobalAnalyzeAllPools(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, int $batchSize): array
+    {
+        $conn = $em->getConnection();
+        $pools = $conn->fetchAllAssociative('SELECT id, name FROM email_data_pool_lists ORDER BY id ASC');
+        $totalPools = count($pools);
+        $totalRecords = (int) $conn->fetchOne('SELECT COALESCE(SUM(total_count), 0) FROM email_data_pool_lists');
+        $processedPools = 0;
+        $processedRecords = 0;
+        $result = [
+            'totalCount' => 0,
+            'gmailCount' => 0,
+            'nonGmailCount' => 0,
+            'invalidCount' => 0,
+            'duplicateCount' => 0,
+        ];
+
+        foreach ($pools as $pool) {
+            $poolId = (int) ($pool['id'] ?? 0);
+            if ($poolId < 1) {
+                continue;
+            }
+            $analyzeResult = $this->processAnalyzePool($em, $jobService, $jobId, $poolId, $batchSize);
+            $processedPools++;
+            $processedRecords += (int) ($analyzeResult['processed_count'] ?? 0);
+            $result['totalCount'] += (int) ($analyzeResult['processed_count'] ?? 0);
+            $result['gmailCount'] += (int) ($analyzeResult['gmail_count'] ?? 0);
+            $result['nonGmailCount'] += (int) ($analyzeResult['non_gmail_count'] ?? 0);
+            $result['invalidCount'] += (int) ($analyzeResult['invalid_gmail_count'] ?? 0);
+            $result['duplicateCount'] += (int) ($analyzeResult['duplicate_count'] ?? 0);
+            $jobService->updateProgress($jobId, $processedRecords, max(1, $totalRecords), $processedRecords, 0);
+            $conn->executeStatement(
+                'UPDATE data_pool_jobs SET result = ? WHERE id = ?',
+                [json_encode(array_merge($result, [
+                    'currentPoolId' => $poolId,
+                    'currentPoolName' => (string) ($pool['name'] ?? ''),
+                    'processedPools' => $processedPools,
+                    'totalPools' => $totalPools,
+                    'processedRecords' => $processedRecords,
+                    'totalRecords' => $totalRecords,
+                ]), JSON_UNESCAPED_UNICODE), $jobId]
+            );
+        }
+
+        return [
+            'processed_count' => $processedRecords,
+            'success_count' => $processedRecords,
+            'failed_count' => 0,
+            'type' => 'global_analyze_all_pools',
+            'processedPools' => $processedPools,
+            'totalPools' => $totalPools,
+            'processedRecords' => $processedRecords,
+            'totalRecords' => $totalRecords,
+            'result' => $result,
         ];
     }
 
