@@ -183,10 +183,12 @@
     }
     .pool-ops-tabs .nav-link {
         border: 1px solid transparent;
-        border-radius: 10px;
+        border-radius: 12px;
         color: #1f3b67;
         font-weight: 600;
-        padding: 8px 12px;
+        padding: 9px 14px;
+        background: #f8fafc;
+        transition: all .15s ease;
     }
     .pool-ops-tabs .nav-link.active {
         color: #fff;
@@ -197,6 +199,15 @@
     .pool-ops-tabs .nav-link:not(.active):hover {
         border-color: #c6d5ea;
         background: #f8fbff;
+        transform: translateY(-1px);
+    }
+    .job-status-badge {
+        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
+        font-weight: 600;
+        font-size: 0.72rem;
+        text-transform: lowercase;
+        letter-spacing: .2px;
     }
     .ops-pane-card {
         border: 1px solid #e2e8f0;
@@ -728,12 +739,11 @@
 
                     <div class="pool-ops-tabs mt-3">
                         <ul class="nav nav-pills flex-nowrap overflow-auto gap-2" id="poolOpsTabNav">
-                            <li class="nav-item"><button class="nav-link active" type="button" data-pool-tab="overview">Genel Bakış</button></li>
-                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="cleaner">Mail Temizleme</button></li>
-                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="balance">Liste Dengeleme</button></li>
-                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="split">Liste Eşitle / Böl</button></li>
-                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="bulk">Toplu İşlemler</button></li>
-                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="history">İşlem Geçmişi</button></li>
+                            <li class="nav-item"><button class="nav-link active" type="button" data-pool-tab="overview"><i data-feather="pie-chart" class="icon-xs me-1"></i>Genel Bakış</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="operations"><i data-feather="tool" class="icon-xs me-1"></i>Liste İşlemleri</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="bulk"><i data-feather="layers" class="icon-xs me-1"></i>Toplu İşlemler</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="alibaba"><i data-feather="cloud" class="icon-xs me-1"></i>Alibaba Invalid</button></li>
+                            <li class="nav-item"><button class="nav-link" type="button" data-pool-tab="history"><i data-feather="clock" class="icon-xs me-1"></i>İşlem Geçmişi</button></li>
                         </ul>
                     </div>
 
@@ -773,7 +783,7 @@
                         <div class="card-header py-3">
                             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                                 <h5 class="mb-0 d-flex align-items-center gap-2">
-                                    <span class="tool-icon-wrap"><i data-feather="shield" class="icon-xs"></i></span> Mail Temizleme Araçları
+                                    <span class="tool-icon-wrap"><i data-feather="shield" class="icon-xs"></i></span> A) Analiz ve Temizlik
                                 </h5>
                                 <small class="opacity-75">Seçili liste: {{ current_list_name|default('Yok') }}</small>
                             </div>
@@ -883,7 +893,7 @@
                                 <div class="card-header py-3">
                                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                                         <h5 class="mb-1 d-flex align-items-center gap-2">
-                                            <span class="tool-icon-wrap"><i data-feather="sliders" class="icon-xs"></i></span> Liste Dengeleme Araçları
+                                            <span class="tool-icon-wrap"><i data-feather="sliders" class="icon-xs"></i></span> B/C) Liste İşlemleri (Tamamlama / Aktarma / Bölme / Eşitleme)
                                         </h5>
                                         <button type="button" class="btn btn-sm btn-soft-secondary" id="openBalanceHistoryBtn">İşlem Durumunu Gör</button>
                                     </div>
@@ -1050,6 +1060,34 @@
                             </div>
                     </div>
 
+                    <div class="card tool-card" id="listOpsStatusCard">
+                        <div class="card-header py-3">
+                            <h5 class="mb-0 d-flex align-items-center gap-2">
+                                <span class="tool-icon-wrap"><i data-feather="activity" class="icon-xs"></i></span> D) Preview ve Job Durumu
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-2">Önizleme yaptıktan sonra yalnızca worker job başlatılır. Aşağıdaki kart son iş durumunu gösterir.</p>
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <div class="small text-muted">Son Job ID</div>
+                                    <div class="fw-semibold" id="listOpsLastJobId">-</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="small text-muted">Durum</div>
+                                    <div><span class="badge bg-secondary" id="listOpsLastJobStatus">idle</span></div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="small text-muted">İşlenen / Toplam</div>
+                                    <div class="fw-semibold" id="listOpsLastJobProgress">0 / 0</div>
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end">
+                                    <button type="button" class="btn btn-sm btn-soft-primary w-100" id="listOpsRefreshStatusBtn">İşlem Durumunu Gör</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="card ops-pane-card mt-3 d-none" id="globalBulkCard">
                         <div class="card-body">
                             <h5 class="mb-1 d-flex align-items-center gap-2"><i data-feather="layers" class="icon-xs"></i> Toplu İşlemler</h5>
@@ -1088,9 +1126,10 @@
                             </div>
                             <div class="d-flex flex-wrap gap-2">
                                 <button class="btn btn-sm btn-soft-info" type="button" id="globalAnalyzeAllBtn">Tüm Listeleri Analiz Et</button>
+                                <button class="btn btn-sm btn-soft-secondary" type="button" id="globalRefreshStatsBtn">Tüm Liste Stats Yenile</button>
                                 <button class="btn btn-sm btn-soft-primary" type="button" id="globalDedupPreviewBtn">Global Mükerrer Önizleme</button>
                                 <button class="btn btn-sm btn-primary" type="button" id="globalDedupApplyBtn" disabled>Global Mükerrer Temizliği Başlat</button>
-                                <a class="btn btn-sm btn-soft-secondary disabled" href="#" id="globalDedupReportBtn">Global Temizlik Raporunu İndir</a>
+                                <a class="btn btn-sm btn-soft-dark disabled" href="#" id="globalDedupReportBtn">Raporu İndir</a>
                             </div>
                             <div id="globalDedupProgressWrap" class="mt-3 d-none">
                                 <div class="d-flex justify-content-between small text-muted mb-1">
@@ -1102,6 +1141,104 @@
                                 </div>
                             </div>
                             <pre class="mt-3 mb-0 small bg-light border rounded p-2 d-none" id="globalDedupPreviewResult"></pre>
+                        </div>
+                    </div>
+
+                    <div class="card ops-pane-card mt-3 d-none" id="alibabaInvalidCard">
+                        <div class="card-body">
+                            <h5 class="mb-2 d-flex align-items-center gap-2"><i data-feather="cloud-drizzle" class="icon-xs"></i> Alibaba Invalid Temizliği</h5>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-4">
+                                    <div class="small text-muted">Endpoint</div>
+                                    <div class="fw-semibold" id="alibabaEndpoint">https://dm.aliyuncs.com/</div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="small text-muted">Action</div>
+                                    <div class="fw-semibold" id="alibabaAction">QueryInvalidAddress</div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="small text-muted">AccessKey</div>
+                                    <div class="fw-semibold" id="alibabaKeyStatus">-</div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="small text-muted">Secret</div>
+                                    <div class="fw-semibold" id="alibabaSecretStatus">-</div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="small text-muted">Maskeli Key</div>
+                                    <div class="fw-semibold" id="alibabaMaskedKey">-</div>
+                                </div>
+                            </div>
+
+                            <div class="section-card mb-3">
+                                <h6 class="mb-2">Invalid Çekme Formu</h6>
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label form-label-sm">Başlangıç</label>
+                                        <input type="date" class="form-control form-control-sm" id="alibabaStartDate">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label form-label-sm">Bitiş</label>
+                                        <input type="date" class="form-control form-control-sm" id="alibabaEndDate">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label form-label-sm">Length</label>
+                                        <input type="number" class="form-control form-control-sm" id="alibabaLength" min="1" max="500" value="500">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label form-label-sm">Kapsam</label>
+                                        <select class="form-select form-select-sm" id="alibabaScope">
+                                            <option value="all_lists">Tüm listeler</option>
+                                            <option value="selected_list">Seçili liste</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label form-label-sm">Mod</label>
+                                        <select class="form-select form-select-sm" id="alibabaMode">
+                                            <option value="fetch_only">Sadece çek ve kaydet</option>
+                                            <option value="mark_invalid" selected>Pasife al / invalid işaretle</option>
+                                            <option value="hard_delete">Hard delete</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="form-check mt-4">
+                                            <input class="form-check-input" type="checkbox" id="alibabaDryRun">
+                                            <label class="form-check-label small" for="alibabaDryRun">Dry-run / önizleme</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-9">
+                                        <div class="form-check mt-4">
+                                            <input class="form-check-input" type="checkbox" id="alibabaHardDeleteConfirm">
+                                            <label class="form-check-label small" for="alibabaHardDeleteConfirm">Bu işlemin Alibaba invalid adresleriyle eşleşen kayıtları kalıcı olarak sileceğini anlıyorum.</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-wrap gap-2 mt-3">
+                                    <button class="btn btn-sm btn-soft-primary" type="button" id="alibabaFetchBtn">Alibaba’dan Invalid Çek</button>
+                                    <button class="btn btn-sm btn-soft-secondary" type="button" id="alibabaPreviewBtn">Önizleme Yap</button>
+                                    <button class="btn btn-sm btn-primary" type="button" id="alibabaCleanBtn">Worker ile Temizliği Başlat</button>
+                                    <button class="btn btn-sm btn-soft-dark" type="button" id="alibabaFetchCleanBtn">Fetch + Clean Başlat</button>
+                                    <a class="btn btn-sm btn-soft-info disabled" href="#" id="alibabaLastReportBtn">Son Çekim Raporunu İndir</a>
+                                </div>
+                            </div>
+
+                            <div id="alibabaProgressWrap" class="mb-3 d-none">
+                                <div class="d-flex justify-content-between small text-muted mb-1">
+                                    <span id="alibabaProgressText">Alibaba job hazırlanıyor...</span>
+                                    <span id="alibabaProgressPercent">0%</span>
+                                </div>
+                                <div class="progress cleaner-progress">
+                                    <div id="alibabaProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-info" role="progressbar" style="width: 0%"></div>
+                                </div>
+                            </div>
+
+                            <div class="row g-2">
+                                <div class="col-md-3"><div class="small text-muted">Çekilen Invalid</div><div class="fw-semibold" id="alibabaFetchedCount">0</div></div>
+                                <div class="col-md-3"><div class="small text-muted">Havuzda Eşleşen</div><div class="fw-semibold" id="alibabaMatchedCount">0</div></div>
+                                <div class="col-md-3"><div class="small text-muted">Temizlenen</div><div class="fw-semibold" id="alibabaCleanedCount">0</div></div>
+                                <div class="col-md-3"><div class="small text-muted">Retry</div><div class="fw-semibold" id="alibabaRetryCount">0</div></div>
+                            </div>
+                            <pre class="mt-3 mb-0 small bg-light border rounded p-2" id="alibabaLastStatusText">Henüz işlem başlatılmadı.</pre>
                         </div>
                     </div>
 
@@ -1123,6 +1260,11 @@
                                     <option value="global_analyze_all_pools">global_analyze_all_pools</option>
                                     <option value="global_deduplicate_preview">global_deduplicate_preview</option>
                                     <option value="global_deduplicate_apply">global_deduplicate_apply</option>
+                                    <option value="refresh_all_pool_stats">refresh_all_pool_stats</option>
+                                    <option value="alibaba_invalid_fetch">alibaba_invalid_fetch</option>
+                                    <option value="alibaba_invalid_match_preview">alibaba_invalid_match_preview</option>
+                                    <option value="alibaba_invalid_clean_apply">alibaba_invalid_clean_apply</option>
+                                    <option value="alibaba_invalid_fetch_and_clean">alibaba_invalid_fetch_and_clean</option>
                                 </select>
                             </div>
                             <div class="col-md-4">
@@ -1136,6 +1278,9 @@
                             </div>
                             <div class="col-md-4">
                                 <input type="date" class="form-control form-control-sm" id="jobHistoryDateFilter">
+                            </div>
+                            <div class="col-md-4">
+                                <input type="number" class="form-control form-control-sm" id="jobHistoryListFilter" min="1" placeholder="Liste ID">
                             </div>
                         </div>
                             <div class="table-responsive">
@@ -2487,10 +2632,12 @@ async function waitForBackgroundJob(jobId, label = 'İşlem sürüyor...') {
         setCleanerProgress(label, percent);
         const status = String(data.status || data?.data?.status || 'queued');
         if (status === 'completed') {
+            refreshListOpsJobStatus();
             finishCleanerProgress();
             return data;
         }
         if (status === 'failed') {
+            refreshListOpsJobStatus();
             throw new Error(data.error || data.message || 'Arkaplan işlemi başarısız oldu.');
         }
         if ((Date.now() - startedAt) > maxWaitMs) {
@@ -2662,6 +2809,192 @@ async function runGlobalAnalyzeAll() {
     }
 }
 
+async function runGlobalRefreshStats() {
+    const btn = document.getElementById('globalRefreshStatsBtn');
+    setButtonLoading(btn, true, 'Stats kuyruğa alınıyor...');
+    try {
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+        const data = await poolFetch('/admin/email-data-pool/global-stats/refresh', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body
+        }, 'Global stats yenileme başlatılamadı.');
+        const jobId = Number(data?.data?.jobId || data?.job_id || 0);
+        if (!jobId) throw new Error(data.message || 'Stats refresh job id alınamadı.');
+        await waitForGlobalJob(jobId, 'Tüm liste istatistikleri yenileniyor...');
+        showCleanerToast('success', 'Tüm liste istatistikleri yenilendi.');
+        await loadTopStats(false);
+        await loadJobHistory();
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setButtonLoading(btn, false);
+        hideGlobalDedupProgress();
+    }
+}
+
+function alibabaFormPayload() {
+    return {
+        start_date: document.getElementById('alibabaStartDate')?.value || '',
+        end_date: document.getElementById('alibabaEndDate')?.value || '',
+        length: Number(document.getElementById('alibabaLength')?.value || 500),
+        scope: document.getElementById('alibabaScope')?.value || 'all_lists',
+        selected_pool_id: CURRENT_POOL_LIST_ID || 0,
+        mode: document.getElementById('alibabaMode')?.value || 'mark_invalid',
+        dry_run: document.getElementById('alibabaDryRun')?.checked ? 1 : 0,
+        hard_delete_confirmed: document.getElementById('alibabaHardDeleteConfirm')?.checked ? 1 : 0
+    };
+}
+
+function setAlibabaProgress(text, percentValue) {
+    const wrap = document.getElementById('alibabaProgressWrap');
+    const bar = document.getElementById('alibabaProgressBar');
+    const label = document.getElementById('alibabaProgressText');
+    const percent = document.getElementById('alibabaProgressPercent');
+    if (!wrap || !bar || !label || !percent) return;
+    const safe = Math.max(0, Math.min(100, Number(percentValue || 0)));
+    wrap.classList.remove('d-none');
+    label.textContent = text || 'Alibaba job çalışıyor...';
+    percent.textContent = `${safe}%`;
+    bar.style.width = `${safe}%`;
+}
+
+function hideAlibabaProgress() {
+    const wrap = document.getElementById('alibabaProgressWrap');
+    if (wrap) wrap.classList.add('d-none');
+}
+
+function renderAlibabaJobStatus(data) {
+    document.getElementById('alibabaFetchedCount').textContent = Number(data?.fetched_count || data?.data?.fetchedCount || 0).toLocaleString('tr-TR');
+    document.getElementById('alibabaMatchedCount').textContent = Number(data?.matched_count || data?.data?.matchedCount || 0).toLocaleString('tr-TR');
+    document.getElementById('alibabaCleanedCount').textContent = Number(data?.cleaned_count || data?.data?.cleanedCount || 0).toLocaleString('tr-TR');
+    document.getElementById('alibabaRetryCount').textContent = Number(data?.retry_count || data?.data?.retryCount || 0).toLocaleString('tr-TR');
+    const summary = [
+        `Job ID: ${Number(data?.job_id || data?.data?.jobId || 0) || '-'}`,
+        `Durum: ${String(data?.status || data?.data?.status || 'queued')}`,
+        `Tarih: ${(alibabaFormPayload().start_date || '-') } -> ${(alibabaFormPayload().end_date || '-')}`,
+        `Sayfa: ${Number(data?.current_page || data?.data?.currentPage || 0)}`,
+        `NextStart: ${String(data?.next_start || data?.data?.nextStart || '-')}`,
+        `Hata: ${String(data?.error || '-')}`,
+    ].join('\n');
+    const statusEl = document.getElementById('alibabaLastStatusText');
+    if (statusEl) statusEl.textContent = summary;
+}
+
+async function waitForAlibabaJob(jobId, label = 'Alibaba job çalışıyor...') {
+    const safeJobId = Number(jobId || 0);
+    if (!safeJobId) throw new Error('Geçersiz Alibaba job.');
+    const startedAt = Date.now();
+    const maxWaitMs = 90 * 60 * 1000;
+    while (true) {
+        const data = await poolFetch(jobStatusUrl(safeJobId), {}, 'Alibaba job durumu alınamadı.');
+        setAlibabaProgress(label, Number(data.percent || data?.data?.percent || 0));
+        renderAlibabaJobStatus(data);
+        const status = String(data.status || data?.data?.status || 'queued');
+        if (status === 'completed') return data;
+        if (status === 'failed') throw new Error(data.error || data.message || 'Alibaba job başarısız.');
+        if ((Date.now() - startedAt) > maxWaitMs) throw new Error('Alibaba job zaman aşımına uğradı.');
+        await new Promise(resolve => setTimeout(resolve, 2500));
+    }
+}
+
+async function loadAlibabaStatus() {
+    try {
+        const data = await poolFetch('/admin/email-data-pool/alibaba-invalid/status', {}, 'Alibaba durum bilgisi alınamadı.');
+        const s = data?.data || {};
+        document.getElementById('alibabaEndpoint').textContent = s.endpoint || 'https://dm.aliyuncs.com/';
+        document.getElementById('alibabaAction').textContent = s.action || 'QueryInvalidAddress';
+        document.getElementById('alibabaKeyStatus').textContent = s.accessKeyConfigured ? 'Evet' : 'Hayır';
+        document.getElementById('alibabaSecretStatus').textContent = s.secretConfigured ? 'Evet' : 'Hayır';
+        document.getElementById('alibabaMaskedKey').textContent = s.maskedAccessKeyId || '-';
+        if (!document.getElementById('alibabaStartDate').value) {
+            const today = new Date();
+            const end = today.toISOString().slice(0, 10);
+            const start = new Date(today.getTime() - (7 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+            document.getElementById('alibabaStartDate').value = start;
+            document.getElementById('alibabaEndDate').value = end;
+        }
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    }
+}
+
+async function startAlibabaJob(path, label) {
+    const payload = alibabaFormPayload();
+    if (!payload.start_date || !payload.end_date) {
+        showCleanerToast('warning', 'Başlangıç ve bitiş tarihi zorunlu.');
+        return;
+    }
+    if (payload.mode === 'hard_delete' && !payload.hard_delete_confirmed && path !== 'preview' && path !== 'fetch') {
+        showCleanerToast('warning', 'Hard delete için onay kutusunu işaretleyin.');
+        return;
+    }
+    const buttonMap = {
+        fetch: 'alibabaFetchBtn',
+        preview: 'alibabaPreviewBtn',
+        clean: 'alibabaCleanBtn',
+        'fetch-clean': 'alibabaFetchCleanBtn'
+    };
+    const btn = document.getElementById(buttonMap[path] || '');
+    setButtonLoading(btn, true, 'Kuyruğa alınıyor...');
+    try {
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
+        Object.entries(payload).forEach(([k, v]) => body.append(k, String(v)));
+        const data = await poolFetch(`/admin/email-data-pool/alibaba-invalid/${path}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body
+        }, 'Alibaba invalid job başlatılamadı.');
+        const jobId = Number(data?.data?.jobId || data?.job_id || 0);
+        if (!jobId) throw new Error(data.message || 'Job id alınamadı.');
+        const done = await waitForAlibabaJob(jobId, label);
+        const reportBtn = document.getElementById('alibabaLastReportBtn');
+        const reportUrl = String(done?.result?.report_url || done?.result?.download_url || '');
+        if (reportBtn && reportUrl) {
+            reportBtn.href = reportUrl;
+            reportBtn.classList.remove('disabled');
+        }
+        showCleanerToast('success', 'Alibaba invalid işlemi tamamlandı.');
+        await loadTopStats(false);
+        await loadJobHistory();
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        setButtonLoading(btn, false);
+        hideAlibabaProgress();
+    }
+}
+
+function renderListOpsJobStatus(job) {
+    const statusBadge = document.getElementById('listOpsLastJobStatus');
+    const jobIdEl = document.getElementById('listOpsLastJobId');
+    const progressEl = document.getElementById('listOpsLastJobProgress');
+    if (!statusBadge || !jobIdEl || !progressEl) return;
+    const status = String(job?.status || 'idle');
+    const badgeClass = status === 'completed' ? 'bg-success' : (status === 'failed' ? 'bg-danger' : (status === 'running' || status === 'queued' ? 'bg-primary' : 'bg-secondary'));
+    statusBadge.className = `badge job-status-badge ${badgeClass}`;
+    statusBadge.textContent = status;
+    jobIdEl.textContent = String(job?.job_id || '-');
+    progressEl.textContent = `${Number(job?.processed || 0).toLocaleString('tr-TR')} / ${Number(job?.total || 0).toLocaleString('tr-TR')}`;
+}
+
+async function refreshListOpsJobStatus() {
+    if (!CURRENT_POOL_LIST_ID) return;
+    try {
+        const data = await poolFetch(`/admin/email-data-pool/jobs?per_page=1&pool_id=${encodeURIComponent(String(CURRENT_POOL_LIST_ID))}`, {}, 'Liste job durumu alınamadı.');
+        const job = Array.isArray(data?.data) && data.data.length ? data.data[0] : null;
+        renderListOpsJobStatus(job || { status: 'idle', processed: 0, total: 0 });
+    } catch (error) {
+        renderListOpsJobStatus({ status: 'failed', processed: 0, total: 0, job_id: '-' });
+    }
+}
+
 async function loadJobHistory() {
     const tbody = document.getElementById('jobHistoryTbody');
     if (!tbody) return;
@@ -2669,9 +3002,11 @@ async function loadJobHistory() {
         const type = document.getElementById('jobHistoryTypeFilter')?.value || '';
         const status = document.getElementById('jobHistoryStatusFilter')?.value || '';
         const date = document.getElementById('jobHistoryDateFilter')?.value || '';
+        const poolId = document.getElementById('jobHistoryListFilter')?.value || '';
         const params = new URLSearchParams({ per_page: '50' });
         if (type) params.set('type', type);
         if (status) params.set('status', status);
+        if (poolId) params.set('pool_id', poolId);
         const data = await poolFetch(`/admin/email-data-pool/jobs?${params.toString()}`, {}, 'Job geçmişi alınamadı.');
         const rows = Array.isArray(data.data) ? data.data : [];
         const filteredRows = date
@@ -2691,8 +3026,8 @@ async function loadJobHistory() {
             return `<tr>
                 <td>${Number(item.job_id || 0)}</td>
                 <td>${item.type || '-'}</td>
-                <td>${item.scope || '-'}</td>
-                <td><span class="badge ${badgeClass}">${status}</span></td>
+                <td>${item.scope === 'global' ? 'Global' : `Liste #${Number(item.list_id || 0)}`}</td>
+                <td><span class="badge job-status-badge ${badgeClass}">${status}</span></td>
                 <td>${Number(item.total || 0).toLocaleString('tr-TR')}</td>
                 <td>${Number(item.processed || 0).toLocaleString('tr-TR')}</td>
                 <td>${Number(item.success_count || item.result?.affected_rows || 0).toLocaleString('tr-TR')}</td>
@@ -2719,36 +3054,27 @@ function activatePoolOpsTab(tabName) {
     const cleanerCard = document.getElementById('mailCleanerCard');
     const balanceCard = document.getElementById('mailBalanceCard');
     const bulkCard = document.getElementById('globalBulkCard');
+    const alibabaCard = document.getElementById('alibabaInvalidCard');
     const historyCard = document.getElementById('jobHistoryCard');
-    [overviewCard, bulkCard, historyCard].forEach(el => el?.classList.add('d-none'));
-    [cleanerCard, balanceCard].forEach(el => el?.classList.remove('d-none'));
+    [overviewCard, bulkCard, alibabaCard, historyCard].forEach(el => el?.classList.add('d-none'));
+    [cleanerCard, balanceCard, document.getElementById('listOpsStatusCard')].forEach(el => el?.classList.remove('d-none'));
     if (toolsWrap) toolsWrap.classList.add('d-none');
 
     if (tab === 'overview') {
         overviewCard?.classList.remove('d-none');
         return;
     }
-    if (tab === 'cleaner') {
+    if (tab === 'operations') {
         if (toolsWrap) toolsWrap.classList.remove('d-none');
-        balanceCard?.classList.add('d-none');
-        return;
-    }
-    if (tab === 'balance') {
-        if (toolsWrap) toolsWrap.classList.remove('d-none');
-        cleanerCard?.classList.add('d-none');
-        return;
-    }
-    if (tab === 'split') {
-        if (toolsWrap) toolsWrap.classList.remove('d-none');
-        cleanerCard?.classList.add('d-none');
-        const splitAccordion = document.getElementById('splitAccordionBody');
-        if (splitAccordion && !splitAccordion.classList.contains('show')) {
-            new bootstrap.Collapse(splitAccordion, { toggle: true });
-        }
         return;
     }
     if (tab === 'bulk') {
         bulkCard?.classList.remove('d-none');
+        return;
+    }
+    if (tab === 'alibaba') {
+        alibabaCard?.classList.remove('d-none');
+        loadAlibabaStatus();
         return;
     }
     if (tab === 'history') {
@@ -3583,12 +3909,19 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('click', () => activatePoolOpsTab(btn.dataset.poolTab || 'overview'));
     });
     document.getElementById('globalAnalyzeAllBtn')?.addEventListener('click', runGlobalAnalyzeAll);
+    document.getElementById('globalRefreshStatsBtn')?.addEventListener('click', runGlobalRefreshStats);
     document.getElementById('globalDedupPreviewBtn')?.addEventListener('click', runGlobalDedupPreview);
     document.getElementById('globalDedupApplyBtn')?.addEventListener('click', runGlobalDedupApply);
+    document.getElementById('alibabaFetchBtn')?.addEventListener('click', () => startAlibabaJob('fetch', 'Alibaba invalid kayıtları çekiliyor...'));
+    document.getElementById('alibabaPreviewBtn')?.addEventListener('click', () => startAlibabaJob('preview', 'Alibaba invalid eşleştirme önizlemesi çalışıyor...'));
+    document.getElementById('alibabaCleanBtn')?.addEventListener('click', () => startAlibabaJob('clean', 'Alibaba invalid temizliği çalışıyor...'));
+    document.getElementById('alibabaFetchCleanBtn')?.addEventListener('click', () => startAlibabaJob('fetch-clean', 'Alibaba fetch + clean çalışıyor...'));
     document.getElementById('refreshJobHistoryBtn')?.addEventListener('click', () => loadJobHistory());
+    document.getElementById('listOpsRefreshStatusBtn')?.addEventListener('click', () => refreshListOpsJobStatus());
     document.getElementById('jobHistoryTypeFilter')?.addEventListener('change', () => loadJobHistory());
     document.getElementById('jobHistoryStatusFilter')?.addEventListener('change', () => loadJobHistory());
     document.getElementById('jobHistoryDateFilter')?.addEventListener('change', () => loadJobHistory());
+    document.getElementById('jobHistoryListFilter')?.addEventListener('input', () => loadJobHistory());
     document.getElementById('globalDedupConfirmCheck')?.addEventListener('change', function () {
         const applyBtn = document.getElementById('globalDedupApplyBtn');
         if (!applyBtn) return;
@@ -3600,6 +3933,13 @@ document.addEventListener('DOMContentLoaded', function() {
         priorityInput.disabled = this.value !== 'keep_priority';
         if (priorityInput.disabled) priorityInput.value = '';
     });
+    document.getElementById('alibabaMode')?.addEventListener('change', function () {
+        const hardDeleteCheck = document.getElementById('alibabaHardDeleteConfirm');
+        if (!hardDeleteCheck) return;
+        if (this.value !== 'hard_delete') {
+            hardDeleteCheck.checked = false;
+        }
+    });
     const priorityInput = document.getElementById('globalPriorityListIds');
     if (priorityInput) {
         priorityInput.disabled = true;
@@ -3607,6 +3947,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setBalanceButtonsDisabled(false);
     activatePoolOpsTab('overview');
     loadTopStats(false);
+    refreshListOpsJobStatus();
 });
 </script>
 {% endblock %}

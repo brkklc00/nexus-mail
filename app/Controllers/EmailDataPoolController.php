@@ -27,6 +27,17 @@ class EmailDataPoolController
     private const GLOBAL_BLOCKING_JOB_TYPES = [
         'global_analyze_all_pools',
         'global_deduplicate_apply',
+        'refresh_all_pool_stats',
+        'alibaba_invalid_fetch',
+        'alibaba_invalid_match_preview',
+        'alibaba_invalid_clean_apply',
+        'alibaba_invalid_fetch_and_clean',
+    ];
+    private const ALIBABA_JOB_TYPES = [
+        'alibaba_invalid_fetch',
+        'alibaba_invalid_match_preview',
+        'alibaba_invalid_clean_apply',
+        'alibaba_invalid_fetch_and_clean',
     ];
     private ?bool $hasNormalizationColumns = null;
     private ?bool $analysisTablesReady = null;
@@ -2015,6 +2026,162 @@ class EmailDataPoolController
         }
     }
 
+    public function globalStatsRefresh(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $this->ensureDataPoolJobTables();
+            $this->assertNoConflictingJobs([], self::BALANCE_JOB_TYPES);
+            $total = (int) $this->em->getConnection()->fetchOne('SELECT COALESCE(SUM(total_count), 0) FROM email_data_pool_lists');
+            $jobId = $this->createDataPoolJob(
+                0,
+                'refresh_all_pool_stats',
+                ['requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s')],
+                $total
+            );
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'message' => 'Tüm liste istatistik yenileme kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'type' => 'refresh_all_pool_stats',
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::globalStatsRefresh error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Global istatistik yenileme kuyruğa alınamadı.'], 500);
+        }
+    }
+
+    public function alibabaInvalidStatus(Request $request, Response $response): Response
+    {
+        try {
+            $this->ensureAlibabaInvalidTables();
+            $conn = $this->em->getConnection();
+            $lastFetch = $conn->fetchAssociative(
+                "SELECT * FROM alibaba_invalid_fetch_logs ORDER BY id DESC LIMIT 1"
+            ) ?: [];
+            $lastCount = (int) ($conn->fetchOne('SELECT COUNT(*) FROM alibaba_invalid_addresses') ?? 0);
+            $accessKeyId = trim((string) ($_ENV['ALIBABA_DM_ACCESS_KEY_ID'] ?? ''));
+            $maskedAccessKeyId = $accessKeyId === '' ? '' : (substr($accessKeyId, 0, 4) . '****' . substr($accessKeyId, -4));
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => [
+                    'endpoint' => (string) ($_ENV['ALIBABA_DM_ENDPOINT'] ?? 'https://dm.aliyuncs.com/'),
+                    'action' => (string) ($_ENV['ALIBABA_DM_INVALID_ACTION'] ?? 'QueryInvalidAddress'),
+                    'accessKeyConfigured' => $accessKeyId !== '',
+                    'secretConfigured' => trim((string) ($_ENV['ALIBABA_DM_ACCESS_KEY_SECRET'] ?? '')) !== '',
+                    'maskedAccessKeyId' => $maskedAccessKeyId,
+                    'lastSuccessfulFetchAt' => $lastFetch['finished_at'] ?? null,
+                    'lastErrorMessage' => $lastFetch['error_message'] ?? null,
+                    'lastFetchedInvalidCount' => (int) ($lastFetch['saved_count'] ?? 0),
+                    'storedInvalidCount' => $lastCount,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::alibabaInvalidStatus error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Alibaba invalid durumu alınamadı.'], 500);
+        }
+    }
+
+    public function alibabaInvalidFetch(Request $request, Response $response): Response
+    {
+        return $this->enqueueAlibabaInvalidJob($request, $response, 'alibaba_invalid_fetch');
+    }
+
+    public function alibabaInvalidPreview(Request $request, Response $response): Response
+    {
+        return $this->enqueueAlibabaInvalidJob($request, $response, 'alibaba_invalid_match_preview');
+    }
+
+    public function alibabaInvalidClean(Request $request, Response $response): Response
+    {
+        return $this->enqueueAlibabaInvalidJob($request, $response, 'alibaba_invalid_clean_apply');
+    }
+
+    public function alibabaInvalidFetchAndClean(Request $request, Response $response): Response
+    {
+        return $this->enqueueAlibabaInvalidJob($request, $response, 'alibaba_invalid_fetch_and_clean');
+    }
+
+    public function alibabaInvalidLogs(Request $request, Response $response): Response
+    {
+        try {
+            $this->ensureAlibabaInvalidTables();
+            $query = $request->getQueryParams();
+            $limit = max(10, min(200, (int) ($query['limit'] ?? 50)));
+            $rows = $this->em->getConnection()->fetchAllAssociative(
+                "SELECT id, job_id, start_date, end_date, page_size, next_start, fetched_count, saved_count, matched_count, cleaned_count, retry_count, status, error_message, started_at, finished_at, created_at
+                   FROM alibaba_invalid_fetch_logs
+               ORDER BY id DESC
+                  LIMIT {$limit}"
+            );
+            return $this->jsonResponse($response, ['success' => true, 'data' => $rows]);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::alibabaInvalidLogs error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Alibaba invalid logları alınamadı.'], 500);
+        }
+    }
+
+    private function enqueueAlibabaInvalidJob(Request $request, Response $response, string $type): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $this->ensureDataPoolJobTables();
+            $this->ensureAlibabaInvalidTables();
+            $this->assertNoConflictingJobs([], array_merge(self::BALANCE_JOB_TYPES, self::ALIBABA_JOB_TYPES));
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $startDate = trim((string) ($data['start_date'] ?? ''));
+            $endDate = trim((string) ($data['end_date'] ?? ''));
+            if ($startDate === '' || $endDate === '') {
+                throw new \RuntimeException('Başlangıç ve bitiş tarihi zorunludur.');
+            }
+            $pageSize = max(1, min(500, (int) ($data['length'] ?? ($_ENV['ALIBABA_DM_PAGE_SIZE'] ?? 500))));
+            $scope = (string) ($data['scope'] ?? 'all_lists');
+            $mode = (string) ($data['mode'] ?? 'mark_invalid');
+            if (!in_array($mode, ['fetch_only', 'mark_invalid', 'hard_delete'], true)) {
+                throw new \RuntimeException('Geçersiz temizleme modu.');
+            }
+            if ($mode === 'hard_delete' && !filter_var((string) ($data['hard_delete_confirmed'] ?? '0'), FILTER_VALIDATE_BOOLEAN)) {
+                throw new \RuntimeException('Hard delete için onay zorunludur.');
+            }
+            $selectedPoolId = (int) ($data['selected_pool_id'] ?? 0);
+            if ($scope === 'selected_list' && $selectedPoolId < 1) {
+                throw new \RuntimeException('Seçili liste kapsamı için liste seçin.');
+            }
+
+            $payload = [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'length' => $pageSize,
+                'scope' => $scope,
+                'selected_pool_id' => $selectedPoolId > 0 ? $selectedPoolId : null,
+                'mode' => $mode,
+                'dry_run' => filter_var((string) ($data['dry_run'] ?? '0'), FILTER_VALIDATE_BOOLEAN) ? 1 : 0,
+                'requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+            ];
+            $jobId = $this->createDataPoolJob(0, $type, $payload, 0);
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'message' => 'Alibaba invalid işlemi kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'type' => $type,
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::enqueueAlibabaInvalidJob error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Alibaba invalid job kuyruğa alınamadı.'], 500);
+        }
+    }
+
     public function jobStatus(Request $request, Response $response, array $args): Response
     {
         try {
@@ -2045,6 +2212,7 @@ class EmailDataPoolController
             $offset = ($page - 1) * $perPage;
             $status = trim((string) ($query['status'] ?? ''));
             $type = trim((string) ($query['type'] ?? ''));
+            $poolId = (int) ($query['pool_id'] ?? 0);
 
             $where = [];
             $params = [];
@@ -2055,6 +2223,10 @@ class EmailDataPoolController
             if ($type !== '') {
                 $where[] = 'type = ?';
                 $params[] = $type;
+            }
+            if ($poolId > 0) {
+                $where[] = 'pool_id = ?';
+                $params[] = $poolId;
             }
             $whereSql = $where === [] ? '' : (' WHERE ' . implode(' AND ', $where));
 
@@ -2931,6 +3103,13 @@ class EmailDataPoolController
             'duplicate_groups' => (int) ($result['duplicate_groups'] ?? 0),
             'removed_count' => (int) ($result['removed_count'] ?? 0),
             'affected_rows' => (int) ($result['affected_rows'] ?? 0),
+            'fetched_count' => (int) ($result['fetched_count'] ?? 0),
+            'saved_count' => (int) ($result['saved_count'] ?? 0),
+            'matched_count' => (int) ($result['matched_count'] ?? 0),
+            'cleaned_count' => (int) ($result['cleaned_count'] ?? 0),
+            'retry_count' => (int) ($result['retry_count'] ?? 0),
+            'current_page' => (int) ($result['current_page'] ?? 0),
+            'next_start' => (string) ($result['next_start'] ?? ''),
         ];
         $payload['data'] = [
             'jobId' => (int) ($payload['job_id'] ?? 0),
@@ -2950,6 +3129,13 @@ class EmailDataPoolController
             'totalPools' => (int) ($result['totalPools'] ?? 0),
             'processedRecords' => (int) ($result['processedRecords'] ?? 0),
             'totalRecords' => (int) ($result['totalRecords'] ?? 0),
+            'fetchedCount' => (int) ($result['fetched_count'] ?? 0),
+            'savedCount' => (int) ($result['saved_count'] ?? 0),
+            'matchedCount' => (int) ($result['matched_count'] ?? 0),
+            'cleanedCount' => (int) ($result['cleaned_count'] ?? 0),
+            'retryCount' => (int) ($result['retry_count'] ?? 0),
+            'currentPage' => (int) ($result['current_page'] ?? 0),
+            'nextStart' => (string) ($result['next_start'] ?? ''),
         ];
 
         return $payload;
@@ -3004,6 +3190,55 @@ class EmailDataPoolController
                 UNIQUE INDEX uq_email_pool_stats_pool_id (pool_id),
                 INDEX idx_email_pool_stats_pool_id (pool_id),
                 INDEX idx_email_pool_stats_last_analyzed_at (last_analyzed_at),
+                PRIMARY KEY(id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    }
+
+    private function ensureAlibabaInvalidTables(): void
+    {
+        $conn = $this->em->getConnection();
+        $conn->executeStatement(
+            "CREATE TABLE IF NOT EXISTS alibaba_invalid_addresses (
+                id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
+                email VARCHAR(320) NOT NULL,
+                normalized_email VARCHAR(320) NOT NULL,
+                reason VARCHAR(255) DEFAULT NULL,
+                source VARCHAR(50) NOT NULL DEFAULT 'alibaba',
+                raw_payload JSON DEFAULT NULL,
+                first_seen_at DATETIME DEFAULT NULL,
+                last_seen_at DATETIME DEFAULT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                UNIQUE INDEX uniq_normalized_email (normalized_email),
+                INDEX idx_email (email),
+                INDEX idx_normalized_email (normalized_email),
+                INDEX idx_last_seen_at (last_seen_at),
+                PRIMARY KEY(id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+        $conn->executeStatement(
+            "CREATE TABLE IF NOT EXISTS alibaba_invalid_fetch_logs (
+                id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
+                job_id BIGINT DEFAULT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                page_size INT NOT NULL DEFAULT 500,
+                next_start VARCHAR(255) DEFAULT NULL,
+                fetched_count INT NOT NULL DEFAULT 0,
+                saved_count INT NOT NULL DEFAULT 0,
+                matched_count INT NOT NULL DEFAULT 0,
+                cleaned_count INT NOT NULL DEFAULT 0,
+                retry_count INT NOT NULL DEFAULT 0,
+                status VARCHAR(30) NOT NULL DEFAULT 'queued',
+                error_message TEXT DEFAULT NULL,
+                started_at DATETIME DEFAULT NULL,
+                finished_at DATETIME DEFAULT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                INDEX idx_job_id (job_id),
+                INDEX idx_status (status),
+                INDEX idx_date_range (start_date, end_date),
                 PRIMARY KEY(id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );

@@ -681,6 +681,20 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/global-analysis/start', [\App\Controllers\EmailDataPoolController::class, 'globalAnalysisStart'])->setName('admin.email-data-pool.global-analysis.start')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/global-stats/refresh', [\App\Controllers\EmailDataPoolController::class, 'globalStatsRefresh'])->setName('admin.email-data-pool.global-stats.refresh')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/alibaba-invalid/status', [\App\Controllers\EmailDataPoolController::class, 'alibabaInvalidStatus'])->setName('admin.email-data-pool.alibaba-invalid.status')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/alibaba-invalid/fetch', [\App\Controllers\EmailDataPoolController::class, 'alibabaInvalidFetch'])->setName('admin.email-data-pool.alibaba-invalid.fetch')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/alibaba-invalid/preview', [\App\Controllers\EmailDataPoolController::class, 'alibabaInvalidPreview'])->setName('admin.email-data-pool.alibaba-invalid.preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/alibaba-invalid/clean', [\App\Controllers\EmailDataPoolController::class, 'alibabaInvalidClean'])->setName('admin.email-data-pool.alibaba-invalid.clean')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/alibaba-invalid/fetch-clean', [\App\Controllers\EmailDataPoolController::class, 'alibabaInvalidFetchAndClean'])->setName('admin.email-data-pool.alibaba-invalid.fetch-clean')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->get('/alibaba-invalid/logs', [\App\Controllers\EmailDataPoolController::class, 'alibabaInvalidLogs'])->setName('admin.email-data-pool.alibaba-invalid.logs')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/tools/leftovers/{token}', [\App\Controllers\EmailDataPoolController::class, 'downloadLeftoverFile'])->setName('admin.email-data-pool.tools.leftovers.download')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
         });

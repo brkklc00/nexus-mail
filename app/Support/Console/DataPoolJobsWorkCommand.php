@@ -84,6 +84,11 @@ class DataPoolJobsWorkCommand extends Command
                     'balance_pools' => $this->processBalancePools($em, $jobService, $jobId, $job, $batchSize),
                     'fill_new_pool' => $this->processFillNewPool($em, $jobService, $jobId, $job, $batchSize),
                     'global_analyze_all_pools' => $this->processGlobalAnalyzeAllPools($em, $jobService, $jobId, $batchSize),
+                    'refresh_all_pool_stats' => $this->processRefreshAllPoolStats($em, $jobService, $jobId),
+                    'alibaba_invalid_fetch' => $this->processAlibabaInvalidFetch($em, $jobService, $jobId, $job),
+                    'alibaba_invalid_match_preview' => $this->processAlibabaInvalidMatchPreview($em, $jobService, $jobId, $job),
+                    'alibaba_invalid_clean_apply' => $this->processAlibabaInvalidCleanApply($em, $jobService, $jobId, $job),
+                    'alibaba_invalid_fetch_and_clean' => $this->processAlibabaInvalidFetchAndClean($em, $jobService, $jobId, $job),
                     'global_deduplicate_preview' => $this->processGlobalDeduplicatePreview($em, $jobService, $jobId, $batchSize),
                     'global_deduplicate_apply' => $this->processGlobalDeduplicateApply($em, $jobService, $jobId, $job, $batchSize),
                     default => throw new \RuntimeException('Desteklenmeyen job tipi: ' . $type),
@@ -1313,6 +1318,599 @@ class DataPoolJobsWorkCommand extends Command
             'totalRecords' => $totalRecords,
             'result' => $result,
         ];
+    }
+
+    /**
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processRefreshAllPoolStats(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId): array
+    {
+        $conn = $em->getConnection();
+        $pools = $conn->fetchAllAssociative('SELECT id, name, total_count FROM email_data_pool_lists ORDER BY id ASC');
+        $totalPools = count($pools);
+        $processedPools = 0;
+        $processedRecords = 0;
+
+        foreach ($pools as $pool) {
+            $poolId = (int) ($pool['id'] ?? 0);
+            if ($poolId < 1) {
+                continue;
+            }
+            $row = $conn->fetchAssociative(
+                "SELECT
+                    COUNT(*) AS total_count,
+                    SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_count,
+                    SUM(CASE WHEN COALESCE(domain, SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1)) = 'gmail.com' THEN 1 ELSE 0 END) AS gmail_count,
+                    SUM(CASE WHEN COALESCE(domain, SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1)) <> 'gmail.com' THEN 1 ELSE 0 END) AS non_gmail_count,
+                    SUM(CASE WHEN is_duplicate = 1 THEN 1 ELSE 0 END) AS duplicate_count
+                  FROM email_data_pool
+                 WHERE pool_list_id = ?",
+                [$poolId]
+            ) ?: [];
+            $total = (int) ($row['total_count'] ?? 0);
+            $active = (int) ($row['active_count'] ?? 0);
+            $gmail = (int) ($row['gmail_count'] ?? 0);
+            $nonGmail = (int) ($row['non_gmail_count'] ?? 0);
+            $duplicate = (int) ($row['duplicate_count'] ?? 0);
+
+            $conn->executeStatement(
+                'UPDATE email_data_pool_lists SET total_count = ?, active_count = ?, passive_count = ?, updated_count_at = NOW() WHERE id = ?',
+                [$total, $active, max(0, $total - $active), $poolId]
+            );
+            $conn->executeStatement(
+                'INSERT INTO email_pool_stats
+                    (pool_id, total_count, active_count, gmail_count, non_gmail_count, invalid_gmail_count, duplicate_count, target_limit, last_analyzed_at, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, 0, ?, NULL, NOW(), NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE
+                    total_count = VALUES(total_count),
+                    active_count = VALUES(active_count),
+                    gmail_count = VALUES(gmail_count),
+                    non_gmail_count = VALUES(non_gmail_count),
+                    duplicate_count = VALUES(duplicate_count),
+                    updated_at = VALUES(updated_at)',
+                [$poolId, $total, $active, $gmail, $nonGmail, $duplicate]
+            );
+
+            $processedPools++;
+            $processedRecords += $total;
+            $jobService->updateProgress($jobId, $processedPools, max(1, $totalPools), $processedPools, 0);
+            $conn->executeStatement(
+                'UPDATE data_pool_jobs SET result = ? WHERE id = ?',
+                [json_encode([
+                    'processedPools' => $processedPools,
+                    'totalPools' => $totalPools,
+                    'processedRecords' => $processedRecords,
+                    'currentPoolId' => $poolId,
+                    'currentPoolName' => (string) ($pool['name'] ?? ''),
+                ], JSON_UNESCAPED_UNICODE), $jobId]
+            );
+        }
+
+        return [
+            'processed_count' => $processedPools,
+            'success_count' => $processedPools,
+            'failed_count' => 0,
+            'type' => 'refresh_all_pool_stats',
+            'processedPools' => $processedPools,
+            'totalPools' => $totalPools,
+            'processedRecords' => $processedRecords,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processAlibabaInvalidFetch(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job): array
+    {
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $fetchResult = $this->runAlibabaInvalidFetch($em, $jobService, $jobId, $payload);
+
+        return array_merge($fetchResult, [
+            'processed_count' => (int) ($fetchResult['saved_count'] ?? 0),
+            'success_count' => (int) ($fetchResult['saved_count'] ?? 0),
+            'failed_count' => 0,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processAlibabaInvalidMatchPreview(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job): array
+    {
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $match = $this->runAlibabaInvalidMatchPreview($em, $jobService, $jobId, $payload);
+
+        return array_merge($match, [
+            'processed_count' => (int) ($match['matched_count'] ?? 0),
+            'success_count' => (int) ($match['matched_count'] ?? 0),
+            'failed_count' => 0,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processAlibabaInvalidCleanApply(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job): array
+    {
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $clean = $this->runAlibabaInvalidClean($em, $jobService, $jobId, $payload);
+
+        return array_merge($clean, [
+            'processed_count' => (int) ($clean['cleaned_count'] ?? 0),
+            'success_count' => (int) ($clean['cleaned_count'] ?? 0),
+            'failed_count' => 0,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, int|string|array<mixed>>
+     */
+    private function processAlibabaInvalidFetchAndClean(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job): array
+    {
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $fetch = $this->runAlibabaInvalidFetch($em, $jobService, $jobId, $payload);
+        $match = $this->runAlibabaInvalidMatchPreview($em, $jobService, $jobId, $payload);
+        $clean = $this->runAlibabaInvalidClean($em, $jobService, $jobId, $payload);
+
+        return [
+            'processed_count' => (int) ($clean['cleaned_count'] ?? 0),
+            'success_count' => (int) ($clean['cleaned_count'] ?? 0),
+            'failed_count' => 0,
+            'fetched_count' => (int) ($fetch['fetched_count'] ?? 0),
+            'saved_count' => (int) ($fetch['saved_count'] ?? 0),
+            'matched_count' => (int) ($match['matched_count'] ?? 0),
+            'cleaned_count' => (int) ($clean['cleaned_count'] ?? 0),
+            'retry_count' => (int) ($fetch['retry_count'] ?? 0),
+            'next_start' => (string) ($fetch['next_start'] ?? ''),
+            'mode' => (string) ($payload['mode'] ?? 'mark_invalid'),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, int|string>
+     */
+    private function runAlibabaInvalidFetch(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $payload): array
+    {
+        $conn = $em->getConnection();
+        $this->ensureAlibabaInvalidTables($conn);
+
+        $endpoint = rtrim((string) ($_ENV['ALIBABA_DM_ENDPOINT'] ?? 'https://dm.aliyuncs.com/'), '/') . '/';
+        $accessKeyId = trim((string) ($_ENV['ALIBABA_DM_ACCESS_KEY_ID'] ?? ''));
+        $accessKeySecret = trim((string) ($_ENV['ALIBABA_DM_ACCESS_KEY_SECRET'] ?? ''));
+        if ($accessKeyId === '' || $accessKeySecret === '') {
+            throw new \RuntimeException('Alibaba AccessKey ayarları eksik.');
+        }
+
+        $startDate = (string) ($payload['start_date'] ?? date('Y-m-d'));
+        $endDate = (string) ($payload['end_date'] ?? date('Y-m-d'));
+        $pageSize = max(1, min(500, (int) ($payload['length'] ?? ($_ENV['ALIBABA_DM_PAGE_SIZE'] ?? 500))));
+        $action = (string) ($_ENV['ALIBABA_DM_INVALID_ACTION'] ?? 'QueryInvalidAddress');
+        $version = (string) ($_ENV['ALIBABA_DM_VERSION'] ?? '2015-11-23');
+        $retryCount = max(0, (int) ($_ENV['ALIBABA_DM_RETRY_COUNT'] ?? 5));
+        $retryBaseMs = max(200, (int) ($_ENV['ALIBABA_DM_RETRY_BASE_MS'] ?? 1000));
+        $timeoutMs = max(1000, (int) ($_ENV['ALIBABA_DM_TIMEOUT_MS'] ?? 15000));
+        $maxDays = max(1, (int) ($_ENV['ALIBABA_DM_MAX_DAYS_PER_JOB'] ?? 30));
+
+        $ranges = $this->splitDateRange($startDate, $endDate, $maxDays);
+        $fetched = 0;
+        $saved = 0;
+        $page = 0;
+        $totalRetries = 0;
+        $nextStart = '';
+        $logId = $this->insertAlibabaFetchLog($conn, $jobId, $startDate, $endDate, $pageSize);
+
+        foreach ($ranges as $range) {
+            $cursor = '';
+            while (true) {
+                $page++;
+                $params = [
+                    'Action' => $action,
+                    'Version' => $version,
+                    'Format' => 'JSON',
+                    'AccessKeyId' => $accessKeyId,
+                    'SignatureMethod' => 'HMAC-SHA1',
+                    'SignatureVersion' => '1.0',
+                    'SignatureNonce' => bin2hex(random_bytes(16)),
+                    'Timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+                    'StartTime' => $range['start'],
+                    'EndTime' => $range['end'],
+                    'Length' => (string) $pageSize,
+                ];
+                if ($cursor !== '') {
+                    $params['NextStart'] = $cursor;
+                }
+                $params['Signature'] = $this->alibabaSign($params, $accessKeySecret);
+                $url = $endpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+
+                $api = $this->callAlibabaApiWithRetry($url, $timeoutMs, $retryCount, $retryBaseMs);
+                $totalRetries += (int) ($api['retries'] ?? 0);
+                $data = is_array($api['data'] ?? null) ? $api['data'] : [];
+                $records = $this->extractAlibabaInvalidRows($data);
+                $fetched += count($records);
+                $saved += $this->upsertAlibabaInvalidRows($conn, $records);
+                $cursor = (string) ($data['NextStart'] ?? ($data['Data']['NextStart'] ?? ''));
+                $nextStart = $cursor;
+                $this->updateAlibabaFetchLog($conn, $logId, [
+                    'next_start' => $nextStart,
+                    'fetched_count' => $fetched,
+                    'saved_count' => $saved,
+                    'retry_count' => $totalRetries,
+                    'status' => 'running',
+                    'error_message' => null,
+                ]);
+                $jobService->updateProgress($jobId, $fetched, max(1, $fetched + 1), $saved, 0);
+                if ($cursor === '') {
+                    break;
+                }
+            }
+        }
+
+        $this->updateAlibabaFetchLog($conn, $logId, [
+            'next_start' => $nextStart,
+            'fetched_count' => $fetched,
+            'saved_count' => $saved,
+            'retry_count' => $totalRetries,
+            'status' => 'completed',
+            'error_message' => null,
+        ], true);
+
+        return [
+            'fetched_count' => $fetched,
+            'saved_count' => $saved,
+            'retry_count' => $totalRetries,
+            'current_page' => $page,
+            'next_start' => $nextStart,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, int|string>
+     */
+    private function runAlibabaInvalidMatchPreview(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $payload): array
+    {
+        $conn = $em->getConnection();
+        $this->ensureAlibabaInvalidTables($conn);
+        $scope = (string) ($payload['scope'] ?? 'all_lists');
+        $selectedPoolId = (int) ($payload['selected_pool_id'] ?? 0);
+        $where = $scope === 'selected_list' && $selectedPoolId > 0 ? ' AND p.pool_list_id = ?' : '';
+        $params = $where !== '' ? [$selectedPoolId] : [];
+
+        $matched = (int) $conn->fetchOne(
+            "SELECT COUNT(*)
+               FROM email_data_pool p
+               JOIN alibaba_invalid_addresses a ON a.normalized_email = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
+              WHERE p.is_active = 1{$where}",
+            $params
+        );
+        $invalidStored = (int) $conn->fetchOne('SELECT COUNT(*) FROM alibaba_invalid_addresses');
+        $jobService->updateProgress($jobId, $matched, max(1, $invalidStored), $matched, 0);
+
+        return [
+            'matched_count' => $matched,
+            'saved_count' => $invalidStored,
+            'cleaned_count' => 0,
+            'fetched_count' => 0,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, int|string>
+     */
+    private function runAlibabaInvalidClean(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $payload): array
+    {
+        $conn = $em->getConnection();
+        $this->ensureAlibabaInvalidTables($conn);
+        $scope = (string) ($payload['scope'] ?? 'all_lists');
+        $selectedPoolId = (int) ($payload['selected_pool_id'] ?? 0);
+        $mode = (string) ($payload['mode'] ?? 'mark_invalid');
+        $dryRun = ((int) ($payload['dry_run'] ?? 0)) === 1;
+        $batch = max(1000, min(100000, (int) ($_ENV['ALIBABA_INVALID_CLEAN_BATCH_SIZE'] ?? 50000)));
+        $hasStatus = $this->hasColumn($conn, 'email_data_pool', 'status');
+        $where = $scope === 'selected_list' && $selectedPoolId > 0 ? ' AND p.pool_list_id = ?' : '';
+        $params = $where !== '' ? [$selectedPoolId] : [];
+
+        $matched = (int) $conn->fetchOne(
+            "SELECT COUNT(*)
+               FROM email_data_pool p
+               JOIN alibaba_invalid_addresses a ON a.normalized_email = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
+              WHERE p.is_active = 1{$where}",
+            $params
+        );
+        if ($dryRun || $mode === 'fetch_only') {
+            $jobService->updateProgress($jobId, $matched, max(1, $matched), 0, 0);
+            return ['matched_count' => $matched, 'cleaned_count' => 0, 'mode' => 'dry_run'];
+        }
+
+        $cleaned = 0;
+        while ($cleaned < $matched) {
+            $ids = $conn->fetchFirstColumn(
+                "SELECT p.id
+                   FROM email_data_pool p
+                   JOIN alibaba_invalid_addresses a ON a.normalized_email = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
+                  WHERE p.is_active = 1{$where}
+                  LIMIT {$batch}",
+                $params
+            );
+            if ($ids === []) {
+                break;
+            }
+            $ids = array_values(array_map('intval', $ids));
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            if ($mode === 'hard_delete') {
+                $affected = $conn->executeStatement("DELETE FROM email_data_pool WHERE id IN ($in)", $ids);
+            } else {
+                $statusSql = $hasStatus ? "status = CASE WHEN status = 'active' THEN 'invalid' ELSE status END," : '';
+                $affected = $conn->executeStatement(
+                    "UPDATE email_data_pool
+                        SET is_invalid = 1,
+                            invalid_source = 'alibaba',
+                            invalid_marked_at = NOW(),
+                            {$statusSql}
+                            is_active = 0,
+                            updated_at = NOW()
+                      WHERE id IN ($in)",
+                    $ids
+                );
+            }
+            $cleaned += max(0, (int) $affected);
+            $jobService->updateProgress($jobId, $cleaned, max(1, $matched), $cleaned, 0);
+        }
+
+        $this->refreshAllListCounts($conn);
+        return [
+            'matched_count' => $matched,
+            'cleaned_count' => $cleaned,
+            'mode' => $mode,
+        ];
+    }
+
+    /**
+     * @return array<int, array{start:string,end:string}>
+     */
+    private function splitDateRange(string $startDate, string $endDate, int $maxDays): array
+    {
+        $start = new \DateTimeImmutable($startDate);
+        $end = new \DateTimeImmutable($endDate);
+        if ($start > $end) {
+            [$start, $end] = [$end, $start];
+        }
+        $ranges = [];
+        $cursor = $start;
+        while ($cursor <= $end) {
+            $chunkEnd = $cursor->modify('+' . ($maxDays - 1) . ' days');
+            if ($chunkEnd > $end) {
+                $chunkEnd = $end;
+            }
+            $ranges[] = ['start' => $cursor->format('Y-m-d'), 'end' => $chunkEnd->format('Y-m-d')];
+            $cursor = $chunkEnd->modify('+1 day');
+        }
+
+        return $ranges;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function callAlibabaApiWithRetry(string $url, int $timeoutMs, int $maxRetry, int $baseMs): array
+    {
+        $attempt = 0;
+        while (true) {
+            $attempt++;
+            $ctx = stream_context_create([
+                'http' => [
+                    'method' => 'GET',
+                    'timeout' => max(1, (int) ceil($timeoutMs / 1000)),
+                    'header' => "Accept: application/json\r\n",
+                ],
+            ]);
+            $raw = @file_get_contents($url, false, $ctx);
+            $decoded = is_string($raw) ? json_decode($raw, true) : null;
+            $decoded = is_array($decoded) ? $decoded : [];
+            $errorCode = (string) ($decoded['Code'] ?? '');
+            $isThrottle = str_contains(strtolower($errorCode), 'thrott') || str_contains(strtolower((string) ($decoded['Message'] ?? '')), 'thrott');
+            $hasError = $raw === false || $errorCode !== '';
+            if (!$hasError) {
+                return ['data' => $decoded, 'retries' => $attempt - 1];
+            }
+            if (!$isThrottle || $attempt > ($maxRetry + 1)) {
+                throw new \RuntimeException('Alibaba API çağrısı başarısız: ' . ($errorCode !== '' ? $errorCode : 'HTTP_ERROR'));
+            }
+            usleep((int) (($baseMs * (2 ** ($attempt - 1))) * 1000));
+        }
+    }
+
+    private function alibabaPercentEncode(string $value): string
+    {
+        return str_replace(['+','*','%7E'], ['%20','%2A','~'], rawurlencode($value));
+    }
+
+    /**
+     * @param array<string, string> $params
+     */
+    private function alibabaSign(array $params, string $accessKeySecret): string
+    {
+        unset($params['Signature']);
+        ksort($params);
+        $canonicalParts = [];
+        foreach ($params as $k => $v) {
+            $canonicalParts[] = $this->alibabaPercentEncode((string) $k) . '=' . $this->alibabaPercentEncode((string) $v);
+        }
+        $canonical = implode('&', $canonicalParts);
+        $stringToSign = 'GET&' . $this->alibabaPercentEncode('/') . '&' . $this->alibabaPercentEncode($canonical);
+
+        return base64_encode(hash_hmac('sha1', $stringToSign, $accessKeySecret . '&', true));
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<int, array{email:string,normalized_email:string,reason:string,raw_payload:string,first_seen_at:string,last_seen_at:string}>
+     */
+    private function extractAlibabaInvalidRows(array $data): array
+    {
+        $rows = [];
+        $candidateArrays = [];
+        if (isset($data['InvalidAddress']) && is_array($data['InvalidAddress'])) {
+            $candidateArrays[] = $data['InvalidAddress'];
+        }
+        if (isset($data['Data']['InvalidAddress']) && is_array($data['Data']['InvalidAddress'])) {
+            $candidateArrays[] = $data['Data']['InvalidAddress'];
+        }
+        if (isset($data['Data']['InvalidAddressList']) && is_array($data['Data']['InvalidAddressList'])) {
+            $candidateArrays[] = $data['Data']['InvalidAddressList'];
+        }
+        foreach ($candidateArrays as $arr) {
+            foreach ($arr as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $email = strtolower(trim((string) ($item['EmailAddress'] ?? $item['Address'] ?? $item['email'] ?? '')));
+                if ($email === '' || !str_contains($email, '@')) {
+                    continue;
+                }
+                $rows[] = [
+                    'email' => $email,
+                    'normalized_email' => $email,
+                    'reason' => (string) ($item['Reason'] ?? $item['ErrorMessage'] ?? ''),
+                    'raw_payload' => (string) json_encode($item, JSON_UNESCAPED_UNICODE),
+                    'first_seen_at' => date('Y-m-d H:i:s'),
+                    'last_seen_at' => date('Y-m-d H:i:s'),
+                ];
+            }
+        }
+        return $rows;
+    }
+
+    /**
+     * @param array<int, array{email:string,normalized_email:string,reason:string,raw_payload:string,first_seen_at:string,last_seen_at:string}> $rows
+     */
+    private function upsertAlibabaInvalidRows(\Doctrine\DBAL\Connection $conn, array $rows): int
+    {
+        $saved = 0;
+        foreach (array_chunk($rows, 1000) as $chunk) {
+            foreach ($chunk as $row) {
+                $conn->executeStatement(
+                    'INSERT INTO alibaba_invalid_addresses
+                        (email, normalized_email, reason, source, raw_payload, first_seen_at, last_seen_at, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                     ON DUPLICATE KEY UPDATE
+                        email = VALUES(email),
+                        reason = VALUES(reason),
+                        raw_payload = VALUES(raw_payload),
+                        last_seen_at = VALUES(last_seen_at),
+                        updated_at = VALUES(updated_at)',
+                    [
+                        $row['email'],
+                        $row['normalized_email'],
+                        $row['reason'],
+                        'alibaba',
+                        $row['raw_payload'],
+                        $row['first_seen_at'],
+                        $row['last_seen_at'],
+                    ]
+                );
+                $saved++;
+            }
+        }
+        return $saved;
+    }
+
+    private function insertAlibabaFetchLog(\Doctrine\DBAL\Connection $conn, int $jobId, string $startDate, string $endDate, int $pageSize): int
+    {
+        $conn->executeStatement(
+            'INSERT INTO alibaba_invalid_fetch_logs
+                (job_id, start_date, end_date, page_size, status, started_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, NOW(), NOW(), NOW())',
+            [$jobId, $startDate, $endDate, $pageSize, 'running']
+        );
+        return (int) $conn->lastInsertId();
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     */
+    private function updateAlibabaFetchLog(\Doctrine\DBAL\Connection $conn, int $logId, array $fields, bool $finished = false): void
+    {
+        $conn->executeStatement(
+            'UPDATE alibaba_invalid_fetch_logs
+                SET next_start = ?,
+                    fetched_count = ?,
+                    saved_count = ?,
+                    retry_count = ?,
+                    status = ?,
+                    error_message = ?,
+                    finished_at = CASE WHEN ? = 1 THEN NOW() ELSE finished_at END,
+                    updated_at = NOW()
+              WHERE id = ?',
+            [
+                (string) ($fields['next_start'] ?? ''),
+                (int) ($fields['fetched_count'] ?? 0),
+                (int) ($fields['saved_count'] ?? 0),
+                (int) ($fields['retry_count'] ?? 0),
+                (string) ($fields['status'] ?? 'running'),
+                $fields['error_message'] ?? null,
+                $finished ? 1 : 0,
+                $logId,
+            ]
+        );
+    }
+
+    private function ensureAlibabaInvalidTables(\Doctrine\DBAL\Connection $conn): void
+    {
+        $conn->executeStatement(
+            "CREATE TABLE IF NOT EXISTS alibaba_invalid_addresses (
+                id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
+                email VARCHAR(320) NOT NULL,
+                normalized_email VARCHAR(320) NOT NULL,
+                reason VARCHAR(255) DEFAULT NULL,
+                source VARCHAR(50) NOT NULL DEFAULT 'alibaba',
+                raw_payload JSON DEFAULT NULL,
+                first_seen_at DATETIME DEFAULT NULL,
+                last_seen_at DATETIME DEFAULT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                UNIQUE INDEX uniq_normalized_email (normalized_email),
+                INDEX idx_email (email),
+                INDEX idx_normalized_email (normalized_email),
+                INDEX idx_last_seen_at (last_seen_at),
+                PRIMARY KEY(id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+        $conn->executeStatement(
+            "CREATE TABLE IF NOT EXISTS alibaba_invalid_fetch_logs (
+                id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
+                job_id BIGINT DEFAULT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                page_size INT NOT NULL DEFAULT 500,
+                next_start VARCHAR(255) DEFAULT NULL,
+                fetched_count INT NOT NULL DEFAULT 0,
+                saved_count INT NOT NULL DEFAULT 0,
+                matched_count INT NOT NULL DEFAULT 0,
+                cleaned_count INT NOT NULL DEFAULT 0,
+                retry_count INT NOT NULL DEFAULT 0,
+                status VARCHAR(30) NOT NULL DEFAULT 'queued',
+                error_message TEXT DEFAULT NULL,
+                started_at DATETIME DEFAULT NULL,
+                finished_at DATETIME DEFAULT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                INDEX idx_job_id (job_id),
+                INDEX idx_status (status),
+                INDEX idx_date_range (start_date, end_date),
+                PRIMARY KEY(id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
     }
 
     private function refreshListCounts(\Doctrine\DBAL\Connection $conn, int $poolId): void
