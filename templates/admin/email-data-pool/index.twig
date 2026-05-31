@@ -15,6 +15,16 @@
 {% block styles %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
+    :root {
+        --nx-surface: #f8fafc;
+        --nx-card: #ffffff;
+        --nx-border: #e2e8f0;
+        --nx-muted: #64748b;
+        --nx-title: #0f172a;
+        --nx-shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.06);
+        --nx-shadow-md: 0 14px 32px rgba(15, 23, 42, 0.09);
+    }
+
     #loadingOverlay {
         display: none;
         position: fixed;
@@ -138,14 +148,23 @@
         align-items: stretch;
     }
     .tool-card {
-        border: 1px solid #e2e8f0;
-        border-radius: 18px;
+        border: 1px solid var(--nx-border);
+        border-radius: 20px;
         overflow: hidden;
         height: 100%;
+        background: var(--nx-card);
+        box-shadow: var(--nx-shadow-sm);
+        transition: box-shadow .2s ease, transform .2s ease;
+    }
+    .tool-card:hover {
+        box-shadow: var(--nx-shadow-md);
+        transform: translateY(-1px);
     }
     .tool-card .card-header {
-        background: linear-gradient(135deg, #16213a 0%, #1f2d4d 100%);
+        background: linear-gradient(135deg, #10203d 0%, #1e3a70 100%);
         color: #fff;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 14px 18px !important;
     }
     .tool-card .card-header .tool-icon-wrap {
         width: 28px;
@@ -158,7 +177,8 @@
         background: rgba(255, 255, 255, 0.08);
     }
     .tool-card .card-body {
-        background: #fff;
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+        padding: 16px 18px 18px !important;
     }
     .cleaner-actions {
         display: grid;
@@ -166,10 +186,11 @@
         gap: 10px;
     }
     .cleaner-action-section {
-        border: 1px solid #e2e8f0;
-        background: #f8fafc;
+        border: 1px solid var(--nx-border);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
         border-radius: 14px;
         padding: 12px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
     }
     .cleaner-action-title {
         font-size: 0.76rem;
@@ -181,15 +202,27 @@
     }
     .cleaner-action-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
         gap: 8px;
     }
     .cleaner-actions .btn {
-        height: 44px;
+        min-height: 44px;
+        height: auto;
         border-radius: 12px;
         font-weight: 600;
-        white-space: nowrap;
+        white-space: normal;
+        text-align: left;
+        line-height: 1.2;
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 6px;
+        padding: 10px 12px;
         opacity: 1 !important;
+        transition: all .18s ease;
+    }
+    .cleaner-actions .btn i {
+        flex: 0 0 auto;
     }
     .btn-cleaner-analyze {
         background: linear-gradient(135deg, #0f2a4d 0%, #2563eb 100%);
@@ -197,22 +230,22 @@
         border: none;
     }
     .btn-cleaner-export {
-        background: #eff6ff;
-        color: #1d4ed8;
-        border: 1px solid #bfdbfe;
+        background: #f0f7ff;
+        color: #1e40af;
+        border: 1px solid #c7ddff;
     }
     .btn-cleaner-delete {
-        background: #fff1f2;
+        background: #fff4f5;
         color: #e11d48;
         border: 1px solid #fecdd3;
     }
     .btn-cleaner-fix {
-        background: #fff7ed;
+        background: #fff9f1;
         color: #ea580c;
         border: 1px solid #fed7aa;
     }
     .btn-cleaner-dup {
-        background: #ecfeff;
+        background: #f0fdff;
         color: #0891b2;
         border: 1px solid #a5f3fc;
     }
@@ -221,14 +254,15 @@
         box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
     }
     .cleaner-actions .btn:disabled {
-        opacity: 0.58 !important;
+        opacity: 0.52 !important;
+        filter: grayscale(12%);
         cursor: not-allowed;
         transform: none;
         box-shadow: none;
     }
     #cleanerProgressWrap {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
+        background: linear-gradient(180deg, #f8fbff 0%, #f1f5f9 100%);
+        border: 1px solid var(--nx-border);
         border-radius: 12px;
         padding: 10px 12px;
     }
@@ -245,9 +279,10 @@
         min-width: 0;
         min-height: 92px;
         padding: 16px;
-        border-radius: 16px;
-        border: 1px solid #e2e8f0;
-        background: #fff;
+        border-radius: 14px;
+        border: 1px solid var(--nx-border);
+        background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
     }
     .cleaner-kpi-item .label {
         color: #64748b;
@@ -275,9 +310,9 @@
         gap: 12px;
     }
     .cleaner-preview-box {
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--nx-border);
         border-radius: 14px;
-        background: #f8fafc;
+        background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
         min-height: 110px;
         padding: 12px;
         display: flex;
@@ -304,13 +339,15 @@
         font-size: 0.82rem;
     }
     .section-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
+        background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+        border: 1px solid var(--nx-border);
+        border-radius: 14px;
         padding: 16px;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
     }
     .section-card h6 {
         font-weight: 700;
+        color: var(--nx-title);
     }
     .section-card .form-control,
     .section-card .form-select {
@@ -326,6 +363,7 @@
         height: 42px;
         border-radius: 12px;
         font-weight: 600;
+        min-width: 108px;
     }
     .section-actions .btn:disabled {
         opacity: 0.55 !important;
@@ -334,15 +372,19 @@
         font-weight: 600;
     }
     .balance-preview-summary {
-        border: 1px dashed #cbd5e1;
+        border: 1px dashed #bfd2eb;
         border-radius: 12px;
         padding: 10px 12px;
         font-size: 0.82rem;
-        color: #475569;
-        background: #fff;
+        color: #334155;
+        background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
     }
     .stats-card .card-body {
         min-height: 96px;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+        border: 1px solid var(--nx-border);
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
     }
     .stats-card .stats-icon {
         width: 36px;
@@ -386,9 +428,6 @@
     }
     @media (max-width: 575.98px) {
         .cleaner-actions {
-            grid-template-columns: 1fr;
-        }
-        .cleaner-action-grid {
             grid-template-columns: 1fr;
         }
         .cleaner-kpi-grid {
@@ -1925,17 +1964,13 @@ function startCleanerProgress(text) {
     if (!wrap || !bar || !percent || !label) return;
     label.textContent = text || 'İşlem sürüyor...';
     wrap.classList.remove('d-none');
-    bar.style.width = '0%';
-    percent.textContent = '0%';
-    let value = 0;
-    cleanerState.lastProgressValue = 0;
     clearInterval(cleanerState.progressTimer);
-    cleanerState.progressTimer = setInterval(() => {
-        value = Math.min(92, value + 4);
-        cleanerState.lastProgressValue = value;
-        bar.style.width = `${value}%`;
-        percent.textContent = `${value}%`;
-    }, 120);
+    cleanerState.progressTimer = null;
+    // Gerçek yüzde gelmeyen işlemlerde sahte 92% yerine belirsiz ilerleme göster.
+    bar.classList.add('progress-bar-striped', 'progress-bar-animated', 'bg-info');
+    bar.classList.remove('bg-primary', 'bg-success');
+    bar.style.width = '100%';
+    percent.textContent = '...';
 }
 
 function setCleanerProgress(text, percentValue) {
@@ -1947,6 +1982,8 @@ function setCleanerProgress(text, percentValue) {
     wrap.classList.remove('d-none');
     const safePercent = Math.max(0, Math.min(100, Number(percentValue || 0)));
     label.textContent = text || 'Liste analiz ediliyor...';
+    bar.classList.add('progress-bar-striped', 'progress-bar-animated', 'bg-primary');
+    bar.classList.remove('bg-info', 'bg-success');
     bar.style.width = `${safePercent}%`;
     percent.textContent = `${safePercent}%`;
 }
@@ -1958,12 +1995,20 @@ function finishCleanerProgress() {
     clearInterval(cleanerState.progressTimer);
     cleanerState.progressTimer = null;
     const label = document.getElementById('cleanerProgressText');
-    if (bar) bar.style.width = '100%';
+    if (bar) {
+        bar.classList.remove('bg-info', 'bg-primary');
+        bar.classList.add('bg-success');
+        bar.style.width = '100%';
+    }
     if (percent) percent.textContent = '100%';
     if (label) label.textContent = 'Analiz tamamlandı';
     setTimeout(() => {
         if (wrap) wrap.classList.add('d-none');
-        if (bar) bar.style.width = '0%';
+        if (bar) {
+            bar.style.width = '0%';
+            bar.classList.remove('bg-success');
+            bar.classList.add('bg-primary');
+        }
         if (percent) percent.textContent = '0%';
     }, 350);
 }
@@ -1975,7 +2020,11 @@ function hideCleanerProgress() {
     const bar = document.getElementById('cleanerProgressBar');
     const percent = document.getElementById('cleanerProgressPercent');
     if (wrap) wrap.classList.add('d-none');
-    if (bar) bar.style.width = '0%';
+    if (bar) {
+        bar.style.width = '0%';
+        bar.classList.remove('bg-info', 'bg-success');
+        bar.classList.add('bg-primary');
+    }
     if (percent) percent.textContent = '0%';
 }
 
