@@ -44,10 +44,15 @@ class DataPoolJobsWorkCommand extends Command
         $batchSize = max(1000, (int) ($_ENV['DATA_POOL_JOB_BATCH_SIZE'] ?? 10000));
         $sleepMs = max(10, (int) ($_ENV['DATA_POOL_JOB_SLEEP_MS'] ?? 100));
         $maxRuntime = max(30, (int) ($input->getOption('max-runtime') ?? ($_ENV['DATA_POOL_JOB_MAX_RUNTIME'] ?? 300)));
+        $staleMinutes = max(5, (int) ($_ENV['DATA_POOL_JOB_STALE_MINUTES'] ?? 30));
         $once = (bool) $input->getOption('once');
         $startedAt = time();
 
         $io->text(sprintf('Data pool worker basladi (batch=%d, sleep=%dms, max_runtime=%ds)', $batchSize, $sleepMs, $maxRuntime));
+        $recovered = $this->recoverStaleRunningJobs($em, $staleMinutes);
+        if ($recovered > 0) {
+            $io->warning(sprintf('%d adet takılı running job failed olarak işaretlendi.', $recovered));
+        }
 
         while (true) {
             if ((time() - $startedAt) >= $maxRuntime) {
@@ -118,6 +123,21 @@ class DataPoolJobsWorkCommand extends Command
         }
 
         return Command::SUCCESS;
+    }
+
+    private function recoverStaleRunningJobs(EntityManagerInterface $em, int $staleMinutes): int
+    {
+        $conn = $em->getConnection();
+        return $conn->executeStatement(
+            "UPDATE data_pool_jobs
+                SET status = 'failed',
+                    error_message = COALESCE(NULLIF(error_message, ''), 'Worker yeniden başlatıldığı için job sonlandırıldı.'),
+                    finished_at = NOW(),
+                    updated_at = NOW()
+              WHERE status = 'running'
+                AND updated_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)",
+            [$staleMinutes]
+        );
     }
 
     /**
@@ -311,32 +331,50 @@ class DataPoolJobsWorkCommand extends Command
             [$poolId]
         );
 
+        if ($totalToDelete < 1) {
+            return [
+                'processed_count' => 0,
+                'success_count' => 0,
+                'failed_count' => 0,
+                'deleted_count' => 0,
+            ];
+        }
+
+        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_pool_dup_ids');
+        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_pool_dup_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=InnoDB');
+        $conn->executeStatement(
+            "INSERT INTO tmp_pool_dup_ids (id)
+             SELECT p.id
+               FROM email_data_pool p
+               JOIN (
+                    SELECT MIN(id) AS keep_id, COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+                      FROM email_data_pool
+                     WHERE pool_list_id = ?
+                     GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+                    HAVING COUNT(*) > 1
+               ) k ON k.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
+              WHERE p.pool_list_id = ?
+                AND p.id <> k.keep_id",
+            [$poolId, $poolId]
+        );
+
         $deleted = 0;
-        $lastId = 0;
+        $safeBatch = max(1000, min(50000, $batchSize));
         while (true) {
-            $ids = $conn->fetchFirstColumn(
-                "SELECT d1.id
-                   FROM email_data_pool d1
-                   JOIN email_data_pool d2
-                     ON d1.pool_list_id = d2.pool_list_id
-                    AND COALESCE(d1.normalized_email, LOWER(TRIM(d1.email))) = COALESCE(d2.normalized_email, LOWER(TRIM(d2.email)))
-                    AND d1.id > d2.id
-                  WHERE d1.pool_list_id = ?
-                    AND d1.id > ?
-                  ORDER BY d1.id ASC
-                  LIMIT $batchSize",
-                [$poolId, $lastId]
-            );
+            $ids = $conn->fetchFirstColumn("SELECT id FROM tmp_pool_dup_ids ORDER BY id ASC LIMIT {$safeBatch}");
             if ($ids === []) {
                 break;
             }
 
             $ids = array_values(array_map('intval', $ids));
-            $lastId = max($ids);
             $in = implode(',', array_fill(0, count($ids), '?'));
             $deleted += $conn->executeStatement(
                 "DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)",
                 array_merge([$poolId], $ids)
+            );
+            $conn->executeStatement(
+                "DELETE FROM tmp_pool_dup_ids WHERE id IN ($in)",
+                $ids
             );
             $jobService->updateProgress($jobId, $deleted, $totalToDelete, $deleted, 0);
         }
@@ -1507,61 +1545,72 @@ class DataPoolJobsWorkCommand extends Command
         $totalRetries = 0;
         $nextStart = '';
         $logId = $this->insertAlibabaFetchLog($conn, $jobId, $startDate, $endDate, $pageSize);
+        try {
+            foreach ($ranges as $range) {
+                $cursor = '';
+                while (true) {
+                    $page++;
+                    $params = [
+                        'Action' => $action,
+                        'Version' => $version,
+                        'Format' => 'JSON',
+                        'AccessKeyId' => $accessKeyId,
+                        'SignatureMethod' => 'HMAC-SHA1',
+                        'SignatureVersion' => '1.0',
+                        'SignatureNonce' => bin2hex(random_bytes(16)),
+                        'Timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+                        'StartTime' => $range['start'],
+                        'EndTime' => $range['end'],
+                        'Length' => (string) $pageSize,
+                    ];
+                    if ($cursor !== '') {
+                        $params['NextStart'] = $cursor;
+                    }
+                    $params['Signature'] = $this->alibabaSign($params, $accessKeySecret);
+                    $url = $endpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 
-        foreach ($ranges as $range) {
-            $cursor = '';
-            while (true) {
-                $page++;
-                $params = [
-                    'Action' => $action,
-                    'Version' => $version,
-                    'Format' => 'JSON',
-                    'AccessKeyId' => $accessKeyId,
-                    'SignatureMethod' => 'HMAC-SHA1',
-                    'SignatureVersion' => '1.0',
-                    'SignatureNonce' => bin2hex(random_bytes(16)),
-                    'Timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
-                    'StartTime' => $range['start'],
-                    'EndTime' => $range['end'],
-                    'Length' => (string) $pageSize,
-                ];
-                if ($cursor !== '') {
-                    $params['NextStart'] = $cursor;
-                }
-                $params['Signature'] = $this->alibabaSign($params, $accessKeySecret);
-                $url = $endpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
-
-                $api = $this->callAlibabaApiWithRetry($url, $timeoutMs, $retryCount, $retryBaseMs);
-                $totalRetries += (int) ($api['retries'] ?? 0);
-                $data = is_array($api['data'] ?? null) ? $api['data'] : [];
-                $records = $this->extractAlibabaInvalidRows($data);
-                $fetched += count($records);
-                $saved += $this->upsertAlibabaInvalidRows($conn, $records);
-                $cursor = (string) ($data['NextStart'] ?? ($data['Data']['NextStart'] ?? ''));
-                $nextStart = $cursor;
-                $this->updateAlibabaFetchLog($conn, $logId, [
-                    'next_start' => $nextStart,
-                    'fetched_count' => $fetched,
-                    'saved_count' => $saved,
-                    'retry_count' => $totalRetries,
-                    'status' => 'running',
-                    'error_message' => null,
-                ]);
-                $jobService->updateProgress($jobId, $fetched, max(1, $fetched + 1), $saved, 0);
-                if ($cursor === '') {
-                    break;
+                    $api = $this->callAlibabaApiWithRetry($url, $timeoutMs, $retryCount, $retryBaseMs);
+                    $totalRetries += (int) ($api['retries'] ?? 0);
+                    $data = is_array($api['data'] ?? null) ? $api['data'] : [];
+                    $records = $this->extractAlibabaInvalidRows($data);
+                    $fetched += count($records);
+                    $saved += $this->upsertAlibabaInvalidRows($conn, $records);
+                    $cursor = (string) ($data['NextStart'] ?? ($data['Data']['NextStart'] ?? ''));
+                    $nextStart = $cursor;
+                    $this->updateAlibabaFetchLog($conn, $logId, [
+                        'next_start' => $nextStart,
+                        'fetched_count' => $fetched,
+                        'saved_count' => $saved,
+                        'retry_count' => $totalRetries,
+                        'status' => 'running',
+                        'error_message' => null,
+                    ]);
+                    $jobService->updateProgress($jobId, $fetched, max(1, $fetched + 1), $saved, 0);
+                    if ($cursor === '') {
+                        break;
+                    }
                 }
             }
-        }
 
-        $this->updateAlibabaFetchLog($conn, $logId, [
-            'next_start' => $nextStart,
-            'fetched_count' => $fetched,
-            'saved_count' => $saved,
-            'retry_count' => $totalRetries,
-            'status' => 'completed',
-            'error_message' => null,
-        ], true);
+            $this->updateAlibabaFetchLog($conn, $logId, [
+                'next_start' => $nextStart,
+                'fetched_count' => $fetched,
+                'saved_count' => $saved,
+                'retry_count' => $totalRetries,
+                'status' => 'completed',
+                'error_message' => null,
+            ], true);
+        } catch (\Throwable $e) {
+            $this->updateAlibabaFetchLog($conn, $logId, [
+                'next_start' => $nextStart,
+                'fetched_count' => $fetched,
+                'saved_count' => $saved,
+                'retry_count' => $totalRetries,
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+            ], true);
+            throw $e;
+        }
 
         return [
             'fetched_count' => $fetched,
@@ -1707,24 +1756,72 @@ class DataPoolJobsWorkCommand extends Command
         $attempt = 0;
         while (true) {
             $attempt++;
-            $ctx = stream_context_create([
-                'http' => [
-                    'method' => 'GET',
-                    'timeout' => max(1, (int) ceil($timeoutMs / 1000)),
-                    'header' => "Accept: application/json\r\n",
-                ],
-            ]);
-            $raw = @file_get_contents($url, false, $ctx);
+            $raw = false;
+            $httpCode = 0;
+            $transportError = '';
+
+            if (function_exists('curl_init')) {
+                $ch = curl_init();
+                if ($ch === false) {
+                    $transportError = 'CURL_INIT_FAILED';
+                } else {
+                    curl_setopt_array($ch, [
+                        CURLOPT_URL => $url,
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_CONNECTTIMEOUT_MS => min($timeoutMs, 5000),
+                        CURLOPT_TIMEOUT_MS => $timeoutMs,
+                        CURLOPT_HTTPHEADER => ['Accept: application/json'],
+                        CURLOPT_SSL_VERIFYPEER => true,
+                        CURLOPT_SSL_VERIFYHOST => 2,
+                    ]);
+                    $rawResult = curl_exec($ch);
+                    if ($rawResult === false) {
+                        $transportError = 'CURL_ERROR:' . curl_error($ch);
+                    } else {
+                        $raw = $rawResult;
+                        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    }
+                    curl_close($ch);
+                }
+            } else {
+                $ctx = stream_context_create([
+                    'http' => [
+                        'method' => 'GET',
+                        'timeout' => max(1, (int) ceil($timeoutMs / 1000)),
+                        'header' => "Accept: application/json\r\n",
+                        'ignore_errors' => true,
+                    ],
+                ]);
+                $raw = @file_get_contents($url, false, $ctx);
+                if ($raw === false) {
+                    $last = error_get_last();
+                    $transportError = 'HTTP_ERROR:' . (string) ($last['message'] ?? 'UNKNOWN');
+                }
+                if (isset($http_response_header) && is_array($http_response_header) && isset($http_response_header[0])) {
+                    if (preg_match('/\s(\d{3})\s/', (string) $http_response_header[0], $m)) {
+                        $httpCode = (int) ($m[1] ?? 0);
+                    }
+                }
+            }
+
             $decoded = is_string($raw) ? json_decode($raw, true) : null;
             $decoded = is_array($decoded) ? $decoded : [];
             $errorCode = (string) ($decoded['Code'] ?? '');
-            $isThrottle = str_contains(strtolower($errorCode), 'thrott') || str_contains(strtolower((string) ($decoded['Message'] ?? '')), 'thrott');
-            $hasError = $raw === false || $errorCode !== '';
+            $errorMsg = (string) ($decoded['Message'] ?? '');
+            $isThrottle = str_contains(strtolower($errorCode), 'thrott') || str_contains(strtolower($errorMsg), 'thrott') || $httpCode === 429;
+            $hasError = $raw === false || $transportError !== '' || $errorCode !== '' || $httpCode >= 400;
             if (!$hasError) {
                 return ['data' => $decoded, 'retries' => $attempt - 1];
             }
             if (!$isThrottle || $attempt > ($maxRetry + 1)) {
-                throw new \RuntimeException('Alibaba API çağrısı başarısız: ' . ($errorCode !== '' ? $errorCode : 'HTTP_ERROR'));
+                $snippet = is_string($raw) ? trim(substr($raw, 0, 180)) : '';
+                $detail = $errorCode !== '' ? $errorCode : ($transportError !== '' ? $transportError : ('HTTP_' . $httpCode));
+                if ($errorMsg !== '') {
+                    $detail .= ' - ' . $errorMsg;
+                } elseif ($snippet !== '' && $errorCode === '') {
+                    $detail .= ' - ' . $snippet;
+                }
+                throw new \RuntimeException('Alibaba API çağrısı başarısız: ' . $detail);
             }
             usleep((int) (($baseMs * (2 ** ($attempt - 1))) * 1000));
         }
