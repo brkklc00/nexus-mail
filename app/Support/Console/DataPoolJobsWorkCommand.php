@@ -715,21 +715,36 @@ class DataPoolJobsWorkCommand extends Command
         $mode = (string) ($payload['mode'] ?? 'mark_duplicate');
         $priorityListIds = array_values(array_filter(array_map('intval', (array) ($payload['priority_list_ids'] ?? [])), static fn (int $id): bool => $id > 0));
         $where = $this->globalActiveWhereClause($conn, 'p');
+        $declaredTotal = max(1, (int) ($job['total_count'] ?? 1));
 
+        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.02), $declaredTotal, 0, 0);
+        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dup_norms');
         $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dedup_keep_ids');
         $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dedup_dup_ids');
+        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dup_norms (norm VARCHAR(320) NOT NULL PRIMARY KEY) ENGINE=InnoDB');
         $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_keep_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=MEMORY');
         $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_dup_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=MEMORY');
+        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.05), $declaredTotal, 0, 0);
+
+        $conn->executeStatement(
+            "INSERT INTO tmp_global_dup_norms (norm)
+             SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+               FROM email_data_pool
+              WHERE " . $this->globalActiveWhereClause($conn) . "
+                AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
+              GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+             HAVING COUNT(*) > 1"
+        );
+        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.18), $declaredTotal, 0, 0);
 
         if ($strategy === 'keep_newest') {
             $conn->executeStatement(
                 "INSERT INTO tmp_global_dedup_keep_ids (id)
                  SELECT MAX(p.id) AS keep_id
                    FROM email_data_pool p
+                   JOIN tmp_global_dup_norms d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
                   WHERE {$where}
-                    AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) <> ''
-                  GROUP BY COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
-                 HAVING COUNT(*) > 1"
+                  GROUP BY d.norm"
             );
         } elseif ($strategy === 'keep_priority' && $priorityListIds !== []) {
             $inPriority = implode(',', array_fill(0, count($priorityListIds), '?'));
@@ -740,10 +755,9 @@ class DataPoolJobsWorkCommand extends Command
                             MIN(p.id)
                         ) AS keep_id
                    FROM email_data_pool p
+                   JOIN tmp_global_dup_norms d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
                   WHERE {$where}
-                    AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) <> ''
-                  GROUP BY COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
-                 HAVING COUNT(*) > 1",
+                  GROUP BY d.norm",
                 $priorityListIds
             );
         } else {
@@ -751,32 +765,23 @@ class DataPoolJobsWorkCommand extends Command
                 "INSERT INTO tmp_global_dedup_keep_ids (id)
                  SELECT MIN(p.id) AS keep_id
                    FROM email_data_pool p
+                   JOIN tmp_global_dup_norms d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
                   WHERE {$where}
-                    AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) <> ''
-                  GROUP BY COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
-                 HAVING COUNT(*) > 1"
+                  GROUP BY d.norm"
             );
         }
+        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.30), $declaredTotal, 0, 0);
 
         $conn->executeStatement(
             "INSERT INTO tmp_global_dedup_dup_ids (id)
              SELECT p.id
                FROM email_data_pool p
           LEFT JOIN tmp_global_dedup_keep_ids k ON k.id = p.id
+               JOIN tmp_global_dup_norms d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
               WHERE {$where}
-                AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) <> ''
-                AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) IN (
-                    SELECT norm FROM (
-                        SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
-                          FROM email_data_pool
-                         WHERE " . $this->globalActiveWhereClause($conn) . "
-                           AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
-                         GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
-                        HAVING COUNT(*) > 1
-                    ) d
-                )
                 AND k.id IS NULL"
         );
+        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.40), $declaredTotal, 0, 0);
 
         $totalToAffect = (int) $conn->fetchOne('SELECT COUNT(*) FROM tmp_global_dedup_dup_ids');
         $processed = 0;
@@ -785,6 +790,8 @@ class DataPoolJobsWorkCommand extends Command
         $hasIsDuplicate = $this->hasColumn($conn, 'email_data_pool', 'is_duplicate');
         $globalBatchSize = max(5000, (int) ($_ENV['DATA_POOL_GLOBAL_DEDUP_BATCH_SIZE'] ?? $batchSize));
         $limit = max(1000, min(100000, $globalBatchSize));
+        $phaseBase = (int) floor($declaredTotal * 0.40);
+        $phaseSpan = max(1, $declaredTotal - $phaseBase);
 
         while (true) {
             $ids = $conn->fetchFirstColumn("SELECT id FROM tmp_global_dedup_dup_ids ORDER BY id ASC LIMIT {$limit}");
@@ -821,8 +828,11 @@ class DataPoolJobsWorkCommand extends Command
                 $ids
             );
             $processed += count($ids);
-            $jobService->updateProgress($jobId, $processed, max(1, $totalToAffect), $affected, 0);
+            $phaseProgress = (int) floor((($processed / max(1, $totalToAffect)) * $phaseSpan));
+            $jobService->updateProgress($jobId, min($declaredTotal, $phaseBase + $phaseProgress), $declaredTotal, $affected, 0);
         }
+        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dup_norms');
+        $jobService->updateProgress($jobId, max((int) floor($declaredTotal * 0.95), $phaseBase), max(1, $declaredTotal), $affected, 0);
 
         $this->refreshAllListCounts($conn);
         $preview = $this->processGlobalDeduplicatePreview($em, $jobService, $jobId, $batchSize);
