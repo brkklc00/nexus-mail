@@ -635,6 +635,8 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/{listId}/analysis/start', [\App\Controllers\EmailDataPoolController::class, 'startAnalysis'])->setName('admin.email-data-pool.analysis.start')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/{listId}/analysis/status', [\App\Controllers\EmailDataPoolController::class, 'analysisStatusByList'])->setName('admin.email-data-pool.analysis.status.by-list')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/analysis/{jobId}/status', [\App\Controllers\EmailDataPoolController::class, 'analysisStatus'])->setName('admin.email-data-pool.analysis.status')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/tools/preview', [\App\Controllers\EmailDataPoolController::class, 'toolsPreview'])->setName('admin.email-data-pool.tools.preview')

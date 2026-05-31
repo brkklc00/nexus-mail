@@ -1850,6 +1850,58 @@ async function parseApiResponse(response, fallbackMessage) {
     return { success: false, message: compact.slice(0, 220) };
 }
 
+function resolveHttpErrorMessage(status, backendMessage, fallbackMessage, contentType = '') {
+    if (backendMessage) {
+        return backendMessage;
+    }
+    if (!String(contentType).includes('application/json')) {
+        return 'Sunucudan JSON yerine farklı bir yanıt döndü. Oturum süresi dolmuş olabilir.';
+    }
+    if (status === 401 || status === 403) {
+        return 'Oturum veya yetki hatası. Lütfen tekrar giriş yapın.';
+    }
+    if (status === 404) {
+        return 'İlgili endpoint bulunamadı.';
+    }
+    if (status === 405) {
+        return 'HTTP method hatası (405).';
+    }
+    if (status === 419) {
+        return 'Güvenlik doğrulaması (CSRF) başarısız. Sayfayı yenileyin.';
+    }
+    if (status === 422) {
+        return 'Geçersiz işlem parametresi.';
+    }
+    if (status >= 500) {
+        return 'Sunucu hatası oluştu.';
+    }
+    return fallbackMessage || 'İşlem başarısız oldu.';
+}
+
+async function poolFetch(url, options = {}, fallbackMessage = 'İşlem başarısız oldu.') {
+    const headers = Object.assign({
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+    }, options.headers || {});
+    const response = await fetch(url, Object.assign({}, options, { headers, credentials: 'same-origin' }));
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    const data = await parseApiResponse(response, fallbackMessage);
+    if (!response.ok || data.success === false) {
+        const message = resolveHttpErrorMessage(response.status, data.message, fallbackMessage, contentType);
+        console.error('[poolFetch]', {
+            url,
+            status: response.status,
+            contentType,
+            response: data
+        });
+        const error = new Error(message);
+        error.status = response.status;
+        error.payload = data;
+        throw error;
+    }
+    return data;
+}
+
 function setCleanerButtonsDisabled(disabled) {
     document.querySelectorAll('.cleaner-action-btn, #confirmDeleteNonGmailBtn, #confirmFixTyposBtn, #confirmDuplicateCleanupBtn')
         .forEach(btn => {
@@ -1934,36 +1986,23 @@ async function cleanerRequest(action, options = {}) {
         headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
         headers['X-CSRF-Token'] = CLEANER_CSRF_TOKEN;
     }
-    const response = await fetch(cleanerUrl(action), {
+    return poolFetch(cleanerUrl(action), {
         method,
-        headers: Object.assign({ 'Accept': 'application/json' }, headers),
+        headers,
         body: options.body || null,
-        credentials: 'same-origin'
-    });
-    const data = await parseApiResponse(response, 'İşlem yanıtı okunamadı.');
-    if (!response.ok || data.success === false) {
-        throw new Error(data.message || 'İşlem başarısız oldu.');
-    }
-    return data;
+    }, 'İşlem yanıtı okunamadı.');
 }
 
 async function cleanerPreviewRequest(operation) {
     const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN, operation: operation || '' });
-    const response = await fetch(cleanerPreviewUrl(), {
+    return poolFetch(cleanerPreviewUrl(), {
         method: 'POST',
         headers: {
-            'Accept': 'application/json',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
             'X-CSRF-Token': CLEANER_CSRF_TOKEN
         },
         body,
-        credentials: 'same-origin'
-    });
-    const data = await parseApiResponse(response, 'Önizleme alınamadı.');
-    if (!response.ok || data.success === false) {
-        throw new Error(data.message || 'Önizleme alınamadı.');
-    }
-    return data;
+    }, 'Önizleme alınamadı.');
 }
 
 function renderCleanerStats(stats) {
@@ -2039,14 +2078,7 @@ function stopAnalysisPolling() {
 }
 
 async function pollAnalysisStatus(jobId, showSuccessToast = false) {
-    const response = await fetch(analysisStatusUrl(jobId), {
-        credentials: 'same-origin',
-        headers: { 'Accept': 'application/json' }
-    });
-    const data = await parseApiResponse(response, 'Analiz durumu okunamadı.');
-    if (!response.ok || data.success === false) {
-        throw new Error(data.message || 'Analiz durumu okunamadı.');
-    }
+    const data = await poolFetch(analysisStatusUrl(jobId), {}, 'Analiz durumu okunamadı.');
     cleanerState.analysisJobId = jobId;
     cleanerState.analysisStatus = data.status || 'idle';
     if (data.status === 'running') {
@@ -2122,18 +2154,16 @@ async function runCleanerAnalyze(showSuccess = true) {
     startCleanerProgress('Liste analiz ediliyor...');
     try {
         const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
-        const response = await fetch(analysisStartUrl(), {
+        const data = await poolFetch(analysisStartUrl(), {
             method: 'POST',
             headers: {
-                'Accept': 'application/json',
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                 'X-CSRF-Token': CLEANER_CSRF_TOKEN
             },
-            body,
-            credentials: 'same-origin'
-        });
-        const data = await parseApiResponse(response, 'Analiz başlatılamadı.');
-        if (!response.ok || data.success === false || !data.job_id) {
+            body
+        }, 'Analiz başlatılamadı.');
+        const jobId = Number(data.job_id || data?.data?.jobId || 0);
+        if (!jobId) {
             throw new Error(data.message || 'Analiz başlatılamadı.');
         }
         if (data.already_running) {
@@ -2141,7 +2171,7 @@ async function runCleanerAnalyze(showSuccess = true) {
         } else if (showSuccess) {
             showCleanerToast('success', data.message || 'Analiz başlatıldı.');
         }
-        startAnalysisPolling(data.job_id, showSuccess);
+        startAnalysisPolling(jobId, showSuccess);
     } catch (error) {
         cleanerState.busy = false;
         showCleanerToast('error', error.message);
@@ -2282,14 +2312,7 @@ function statsUrl() {
 async function loadTopStats(showToast = false) {
     if (!CURRENT_POOL_LIST_ID) return;
     try {
-        const response = await fetch(statsUrl(), {
-            credentials: 'same-origin',
-            headers: { 'Accept': 'application/json' }
-        });
-        const data = await parseApiResponse(response, 'İstatistik alınamadı.');
-        if (!response.ok || data.success === false) {
-            throw new Error(data.message || 'İstatistik alınamadı.');
-        }
+        const data = await poolFetch(statsUrl(), {}, 'İstatistik alınamadı.');
         cleanerState.stats = data || {};
         cleanerState.analysisStatus = data.analysis_status || 'idle';
         const total = Number(data.total || 0);
@@ -2400,21 +2423,14 @@ async function postTools(path, payload) {
         if (v === null || typeof v === 'undefined') return;
         body.append(k, String(v));
     });
-    const response = await fetch(toolsEndpoint(path), {
+    return poolFetch(toolsEndpoint(path), {
         method: 'POST',
         headers: {
-            'Accept': 'application/json',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
             'X-CSRF-Token': CLEANER_CSRF_TOKEN
         },
-        body,
-        credentials: 'same-origin'
-    });
-    const data = await parseApiResponse(response, 'İşlem yanıtı okunamadı.');
-    if (!response.ok || data.success === false) {
-        throw new Error(data.message || 'İşlem başarısız.');
-    }
-    return data;
+        body
+    }, 'İşlem yanıtı okunamadı.');
 }
 
 function previewToText(data) {

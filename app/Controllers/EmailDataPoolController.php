@@ -17,6 +17,7 @@ class EmailDataPoolController
     private const LEFTOVER_FILES_SESSION_KEY = 'email_pool_leftover_files';
     private const DEFAULT_TARGET_LIMIT = 250000;
     private ?bool $hasNormalizationColumns = null;
+    private ?bool $analysisTablesReady = null;
 
     /** @var array<int, string> */
     private const GMAIL_TYPO_DOMAINS = [
@@ -1582,6 +1583,11 @@ class EmailDataPoolController
             $payload['success'] = true;
             $payload['already_running'] = false;
             $payload['message'] = 'Analiz başlatıldı';
+            $payload['data'] = [
+                'jobId' => (int) ($payload['job_id'] ?? 0),
+                'poolId' => (int) ($payload['list_id'] ?? 0),
+                'status' => (string) ($payload['status'] ?? 'queued'),
+            ];
             return $this->jsonResponse($response, $payload);
         } catch (\RuntimeException $e) {
             $status = $this->runtimeStatusCode($e);
@@ -1605,11 +1611,85 @@ class EmailDataPoolController
 
             $payload = $this->analysisJobPayload($jobId);
             $payload['success'] = true;
+            $payload['message'] = (string) ($payload['message'] ?? 'Analiz durumu alındı.');
+            $payload['data'] = [
+                'jobId' => (int) ($payload['job_id'] ?? 0),
+                'poolId' => (int) ($payload['list_id'] ?? 0),
+                'status' => (string) ($payload['status'] ?? 'idle'),
+                'processed' => (int) ($payload['processed'] ?? 0),
+                'total' => (int) ($payload['total'] ?? 0),
+                'percent' => (int) ($payload['percent'] ?? 0),
+                'gmailCount' => (int) ($payload['gmail_count'] ?? 0),
+                'nonGmailCount' => (int) ($payload['non_gmail_count'] ?? 0),
+                'invalidCount' => (int) ($payload['invalid_gmail_count'] ?? 0),
+                'duplicateCount' => (int) ($payload['duplicate_count'] ?? 0),
+            ];
             return $this->jsonResponse($response, $payload);
         } catch (\RuntimeException $e) {
             return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::analysisStatus error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Analiz durumu alınamadı.'], 500);
+        }
+    }
+
+    public function analysisStatusByList(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $listId = (int) ($args['listId'] ?? 0);
+            $poolList = $this->resolveExistingPoolListById($listId);
+            $jobId = 0;
+
+            $runningJob = $this->getRunningAnalysisJob((int) $poolList->getId());
+            if ($runningJob !== null) {
+                $jobId = (int) ($runningJob['job_id'] ?? 0);
+            } else {
+                $jobId = (int) $this->em->getConnection()->fetchOne(
+                    'SELECT id FROM email_data_pool_analysis_jobs WHERE list_id = ? ORDER BY id DESC LIMIT 1',
+                    [(int) $poolList->getId()]
+                );
+            }
+
+            if ($jobId < 1) {
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'message' => 'Analiz işi bulunamadı.',
+                    'data' => [
+                        'jobId' => null,
+                        'poolId' => (int) $poolList->getId(),
+                        'status' => 'idle',
+                        'processed' => 0,
+                        'total' => 0,
+                        'percent' => 0,
+                        'gmailCount' => 0,
+                        'nonGmailCount' => 0,
+                        'invalidCount' => 0,
+                        'duplicateCount' => 0,
+                    ],
+                ]);
+            }
+
+            $this->processAnalysisJob($jobId);
+            $payload = $this->analysisJobPayload($jobId);
+            $payload['success'] = true;
+            $payload['message'] = (string) ($payload['message'] ?? 'Analiz durumu alındı.');
+            $payload['data'] = [
+                'jobId' => (int) ($payload['job_id'] ?? 0),
+                'poolId' => (int) ($payload['list_id'] ?? 0),
+                'status' => (string) ($payload['status'] ?? 'idle'),
+                'processed' => (int) ($payload['processed'] ?? 0),
+                'total' => (int) ($payload['total'] ?? 0),
+                'percent' => (int) ($payload['percent'] ?? 0),
+                'gmailCount' => (int) ($payload['gmail_count'] ?? 0),
+                'nonGmailCount' => (int) ($payload['non_gmail_count'] ?? 0),
+                'invalidCount' => (int) ($payload['invalid_gmail_count'] ?? 0),
+                'duplicateCount' => (int) ($payload['duplicate_count'] ?? 0),
+            ];
+            return $this->jsonResponse($response, $payload);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::analysisStatusByList error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Analiz durumu alınamadı.'], 500);
         }
     }
@@ -2550,18 +2630,84 @@ class EmailDataPoolController
 
     private function ensureAnalysisTables(): void
     {
+        if ($this->analysisTablesReady === true) {
+            return;
+        }
+
         $conn = $this->em->getConnection();
         $db = (string) $conn->getDatabase();
-        $cacheExists = (int) $conn->fetchOne(
-            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
-            [$db, 'email_data_pool_analysis_cache']
-        ) > 0;
-        $jobsExists = (int) $conn->fetchOne(
-            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
-            [$db, 'email_data_pool_analysis_jobs']
-        ) > 0;
-        if (!$cacheExists || !$jobsExists) {
-            throw new \RuntimeException('Analiz tabloları bulunamadı. Lütfen migration çalıştırın.');
+
+        try {
+            $conn->executeStatement(
+                "CREATE TABLE IF NOT EXISTS email_data_pool_analysis_cache (
+                    list_id INT NOT NULL,
+                    total_count BIGINT NOT NULL DEFAULT 0,
+                    gmail_count BIGINT NOT NULL DEFAULT 0,
+                    non_gmail_count BIGINT NOT NULL DEFAULT 0,
+                    invalid_gmail_count BIGINT NOT NULL DEFAULT 0,
+                    duplicate_count BIGINT NOT NULL DEFAULT 0,
+                    deletable_count BIGINT NOT NULL DEFAULT 0,
+                    gmail_ratio DECIMAL(6,2) NOT NULL DEFAULT 0,
+                    target_limit BIGINT DEFAULT NULL,
+                    over_limit_count BIGINT NOT NULL DEFAULT 0,
+                    missing_count BIGINT NOT NULL DEFAULT 0,
+                    normalized_preview JSON DEFAULT NULL,
+                    non_gmail_preview JSON DEFAULT NULL,
+                    last_analyzed_at DATETIME DEFAULT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'idle',
+                    error_message TEXT DEFAULT NULL,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    PRIMARY KEY (list_id),
+                    CONSTRAINT fk_email_data_pool_analysis_cache_list FOREIGN KEY (list_id) REFERENCES email_data_pool_lists (id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+            );
+
+            $conn->executeStatement(
+                "CREATE TABLE IF NOT EXISTS email_data_pool_analysis_jobs (
+                    id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
+                    list_id INT NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'idle',
+                    total_count BIGINT NOT NULL DEFAULT 0,
+                    processed_count BIGINT NOT NULL DEFAULT 0,
+                    percent INT NOT NULL DEFAULT 0,
+                    chunk_size INT NOT NULL DEFAULT 25000,
+                    last_id BIGINT NOT NULL DEFAULT 0,
+                    gmail_count BIGINT NOT NULL DEFAULT 0,
+                    non_gmail_count BIGINT NOT NULL DEFAULT 0,
+                    invalid_gmail_count BIGINT NOT NULL DEFAULT 0,
+                    duplicate_count BIGINT NOT NULL DEFAULT 0,
+                    deletable_count BIGINT NOT NULL DEFAULT 0,
+                    gmail_ratio DECIMAL(6,2) NOT NULL DEFAULT 0,
+                    normalized_preview JSON DEFAULT NULL,
+                    non_gmail_preview JSON DEFAULT NULL,
+                    message VARCHAR(255) DEFAULT NULL,
+                    error_message TEXT DEFAULT NULL,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    completed_at DATETIME DEFAULT NULL,
+                    PRIMARY KEY(id),
+                    INDEX idx_email_pool_analysis_jobs_list_status (list_id, status),
+                    INDEX idx_email_pool_analysis_jobs_status (status),
+                    CONSTRAINT fk_email_pool_analysis_jobs_list FOREIGN KEY (list_id) REFERENCES email_data_pool_lists (id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+            );
+
+            $cacheExists = (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+                [$db, 'email_data_pool_analysis_cache']
+            ) > 0;
+            $jobsExists = (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+                [$db, 'email_data_pool_analysis_jobs']
+            ) > 0;
+            if (!$cacheExists || !$jobsExists) {
+                throw new \RuntimeException('Analiz tabloları bulunamadı.');
+            }
+            $this->analysisTablesReady = true;
+        } catch (\Throwable $e) {
+            $this->analysisTablesReady = false;
+            throw new \RuntimeException('Analiz tabloları bulunamadı. Lütfen migration çalıştırın. Detay: ' . $e->getMessage());
         }
     }
 
