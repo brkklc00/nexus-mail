@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Application\Services\AuditLoggerService;
 use App\Application\Services\CreditService;
+use App\Application\Services\EmailDataPoolJobService;
+use App\Application\Services\EmailDataPoolStatsService;
 use App\Application\Services\EmailSmtpService;
 use App\Application\Services\EmailSmtpSelector;
 use App\Application\Services\AlibabaDirectMailReportService;
@@ -276,6 +278,18 @@ return array_merge($settings, [
 
     \App\Application\Services\NotificationService::class => factory(function (ContainerInterface $c) {
         return new \App\Application\Services\NotificationService(
+            $c->get(EntityManager::class)
+        );
+    }),
+
+    EmailDataPoolStatsService::class => factory(function (ContainerInterface $c) {
+        return new EmailDataPoolStatsService(
+            $c->get(EntityManager::class)
+        );
+    }),
+
+    EmailDataPoolJobService::class => factory(function (ContainerInterface $c) {
+        return new EmailDataPoolJobService(
             $c->get(EntityManager::class)
         );
     }),

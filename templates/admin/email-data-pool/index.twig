@@ -1893,6 +1893,10 @@ function analysisStatusUrl(jobId) {
     return `/admin/email-data-pool/analysis/${jobId}/status`;
 }
 
+function jobStatusUrl(jobId) {
+    return `/admin/email-data-pool/jobs/${jobId}/status`;
+}
+
 function showCleanerToast(type, message) {
     if (window.NexusToast && typeof window.NexusToast.show === 'function') {
         window.NexusToast.show(type, message);
@@ -2197,7 +2201,7 @@ async function pollAnalysisStatus(jobId, showSuccessToast = false) {
     const data = await poolFetch(analysisStatusUrl(jobId), {}, 'Analiz durumu okunamadı.');
     cleanerState.analysisJobId = jobId;
     cleanerState.analysisStatus = data.status || 'idle';
-    if (data.status === 'running') {
+    if (data.status === 'queued' || data.status === 'running') {
         const total = Number(data.total || cleanerState.stats.total || 0);
         const gmail = Number(data.gmail_count || 0);
         const nonGmail = Number(data.non_gmail_count || 0);
@@ -2214,7 +2218,7 @@ async function pollAnalysisStatus(jobId, showSuccessToast = false) {
             last_analyzed_at: (cleanerState.stats && cleanerState.stats.last_analyzed_at) ? cleanerState.stats.last_analyzed_at : null
         });
         renderCleanerStats(cleanerState.stats);
-        setCleanerProgress(data.message || 'Liste analiz ediliyor...', data.percent || 0);
+        setCleanerProgress(data.message || (data.status === 'queued' ? 'Analiz kuyruğa alındı...' : 'Liste analiz ediliyor...'), data.percent || 0);
         return;
     }
     stopAnalysisPolling();
@@ -2258,6 +2262,33 @@ function startAnalysisPolling(jobId, showSuccessToast = false) {
             showCleanerToast('error', error.message);
         });
     }, 1500);
+}
+
+async function waitForBackgroundJob(jobId, label = 'İşlem sürüyor...') {
+    const safeJobId = Number(jobId || 0);
+    if (!safeJobId) {
+        throw new Error('Geçersiz job numarası.');
+    }
+    const maxWaitMs = 30 * 60 * 1000;
+    const startedAt = Date.now();
+
+    while (true) {
+        const data = await poolFetch(jobStatusUrl(safeJobId), {}, 'Job durumu alınamadı.');
+        const percent = Number(data.percent || data?.data?.percent || 0);
+        setCleanerProgress(label, percent);
+        const status = String(data.status || data?.data?.status || 'queued');
+        if (status === 'completed') {
+            finishCleanerProgress();
+            return data;
+        }
+        if (status === 'failed') {
+            throw new Error(data.error || data.message || 'Arkaplan işlemi başarısız oldu.');
+        }
+        if ((Date.now() - startedAt) > maxWaitMs) {
+            throw new Error('Arkaplan işlemi zaman aşımına uğradı.');
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
 }
 
 async function runCleanerAnalyze(showSuccess = true) {
@@ -2306,17 +2337,86 @@ async function ensureCleanerStats() {
 
 async function exportNonGmail() {
     if (!CURRENT_POOL_LIST_ID) return;
-    window.location.href = cleanerUrl('export-non-gmail');
+    setCleanerButtonsDisabled(true);
+    startCleanerProgress('Gmail dışı export hazırlanıyor...');
+    try {
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN, scope: 'non_gmail' });
+        const result = await poolFetch(`/admin/email-data-pool/${CURRENT_POOL_LIST_ID}/export/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body
+        }, 'Export kuyruğa alınamadı.');
+        const jobId = Number(result?.data?.jobId || result?.job_id || 0);
+        if (!jobId) throw new Error(result.message || 'Export job oluşturulamadı.');
+        const done = await waitForBackgroundJob(jobId, 'Gmail dışı export hazırlanıyor...');
+        const url = String(done?.data?.downloadUrl || done?.result?.download_url || '');
+        if (!url) throw new Error('Export tamamlandı fakat indirme linki alınamadı.');
+        window.location.href = url;
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setCleanerButtonsDisabled(false);
+    }
 }
 
 async function exportTypoGmail() {
     if (!CURRENT_POOL_LIST_ID) return;
-    window.location.href = cleanerUrl('export-typo-gmail');
+    setCleanerButtonsDisabled(true);
+    startCleanerProgress('Hatalı Gmail export hazırlanıyor...');
+    try {
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN, scope: 'typo_gmail' });
+        const result = await poolFetch(`/admin/email-data-pool/${CURRENT_POOL_LIST_ID}/export/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body
+        }, 'Export kuyruğa alınamadı.');
+        const jobId = Number(result?.data?.jobId || result?.job_id || 0);
+        if (!jobId) throw new Error(result.message || 'Export job oluşturulamadı.');
+        const done = await waitForBackgroundJob(jobId, 'Hatalı Gmail export hazırlanıyor...');
+        const url = String(done?.data?.downloadUrl || done?.result?.download_url || '');
+        if (!url) throw new Error('Export tamamlandı fakat indirme linki alınamadı.');
+        window.location.href = url;
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setCleanerButtonsDisabled(false);
+    }
 }
 
 async function exportFullList() {
     if (!CURRENT_POOL_LIST_ID) return;
-    window.location.href = `/admin/email-data-pool/export-csv?list_id=${encodeURIComponent(CURRENT_POOL_LIST_ID)}`;
+    setCleanerButtonsDisabled(true);
+    startCleanerProgress('CSV export hazırlanıyor...');
+    try {
+        const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN, scope: 'full_csv' });
+        const result = await poolFetch(`/admin/email-data-pool/${CURRENT_POOL_LIST_ID}/export/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-CSRF-Token': CLEANER_CSRF_TOKEN
+            },
+            body
+        }, 'Export kuyruğa alınamadı.');
+        const jobId = Number(result?.data?.jobId || result?.job_id || 0);
+        if (!jobId) throw new Error(result.message || 'Export job oluşturulamadı.');
+        const done = await waitForBackgroundJob(jobId, 'CSV export hazırlanıyor...');
+        const url = String(done?.data?.downloadUrl || done?.result?.download_url || '');
+        if (!url) throw new Error('Export tamamlandı fakat indirme linki alınamadı.');
+        window.location.href = url;
+    } catch (error) {
+        showCleanerToast('error', error.message);
+    } finally {
+        finishCleanerProgress();
+        setCleanerButtonsDisabled(false);
+    }
 }
 
 function openModalById(id) {
@@ -2373,8 +2473,13 @@ async function deleteNonGmailConfirmed() {
         const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
         const result = await cleanerRequest('delete-non-gmail', { method: 'POST', body });
         bootstrap.Modal.getInstance(document.getElementById('cleanerDeleteModal'))?.hide();
-        showCleanerToast('success', `${Number(result.deleted || 0).toLocaleString('tr-TR')} kayıt silindi.`);
-        showCleanerToast('warning', 'İşlem tamamlandı. Güncel metrikler için tekrar analiz et.');
+        const jobId = Number(result?.data?.jobId || result?.job_id || 0);
+        if (!jobId) {
+            throw new Error(result.message || 'İşlem kuyruğa alınamadı.');
+        }
+        showCleanerToast('info', result.message || 'Silme işlemi kuyruğa alındı.');
+        await waitForBackgroundJob(jobId, 'Gmail dışı kayıtlar siliniyor...');
+        showCleanerToast('success', 'Gmail dışı silme işlemi tamamlandı.');
         await loadTopStats(false);
     } catch (error) {
         showCleanerToast('error', error.message);
@@ -2391,8 +2496,13 @@ async function fixTyposConfirmed() {
         const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
         const result = await cleanerRequest('fix-gmail-typos', { method: 'POST', body });
         bootstrap.Modal.getInstance(document.getElementById('cleanerFixModal'))?.hide();
-        showCleanerToast('success', `${Number(result.fixed || 0).toLocaleString('tr-TR')} kayıt düzeltildi, ${Number(result.duplicates_after_fix || 0).toLocaleString('tr-TR')} duplicate kaldırıldı.`);
-        showCleanerToast('warning', 'İşlem tamamlandı. Güncel metrikler için tekrar analiz et.');
+        const jobId = Number(result?.data?.jobId || result?.job_id || 0);
+        if (!jobId) {
+            throw new Error(result.message || 'İşlem kuyruğa alınamadı.');
+        }
+        showCleanerToast('info', result.message || 'Düzeltme işlemi kuyruğa alındı.');
+        await waitForBackgroundJob(jobId, 'Gmail typo düzeltme çalışıyor...');
+        showCleanerToast('success', 'Gmail typo düzeltme işlemi tamamlandı.');
         await loadTopStats(false);
     } catch (error) {
         showCleanerToast('error', error.message);
@@ -2409,8 +2519,13 @@ async function removeDuplicatesConfirmed() {
         const body = new URLSearchParams({ _csrf: CLEANER_CSRF_TOKEN });
         const result = await cleanerRequest('remove-duplicates', { method: 'POST', body });
         bootstrap.Modal.getInstance(document.getElementById('cleanerDuplicateModal'))?.hide();
-        showCleanerToast('success', `${Number(result.removed || 0).toLocaleString('tr-TR')} duplicate kayıt silindi.`);
-        showCleanerToast('warning', 'İşlem tamamlandı. Güncel metrikler için tekrar analiz et.');
+        const jobId = Number(result?.data?.jobId || result?.job_id || 0);
+        if (!jobId) {
+            throw new Error(result.message || 'İşlem kuyruğa alınamadı.');
+        }
+        showCleanerToast('info', result.message || 'Duplicate temizleme işlemi kuyruğa alındı.');
+        await waitForBackgroundJob(jobId, 'Duplicate temizleme çalışıyor...');
+        showCleanerToast('success', 'Duplicate temizleme işlemi tamamlandı.');
         await loadTopStats(false);
     } catch (error) {
         showCleanerToast('error', error.message);

@@ -591,6 +591,8 @@ return function (App $app) {
 
             $group->get('', [\App\Controllers\EmailDataPoolController::class, 'index'])->setName('admin.email-data-pool.index')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/pools', [\App\Controllers\EmailDataPoolController::class, 'poolListCollection'])->setName('admin.email-data-pool.pools')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('', [\App\Controllers\EmailDataPoolController::class, 'store'])->setName('admin.email-data-pool.store')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'create'));
             $group->post('/remove', [\App\Controllers\EmailDataPoolController::class, 'remove'])->setName('admin.email-data-pool.remove')
@@ -625,6 +627,10 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/{listId}/cleaner/export-typo-gmail', [\App\Controllers\EmailDataPoolController::class, 'cleanerExportTypoGmail'])->setName('admin.email-data-pool.cleaner.export-typo-gmail')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/{listId}/export/start', [\App\Controllers\EmailDataPoolController::class, 'startExportJob'])->setName('admin.email-data-pool.export.start')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/exports/{file}', [\App\Controllers\EmailDataPoolController::class, 'downloadExportFile'])->setName('admin.email-data-pool.export.download')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/{listId}/cleaner/preview', [\App\Controllers\EmailDataPoolController::class, 'cleanerPreview'])->setName('admin.email-data-pool.cleaner.preview')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/{listId}/cleaner/delete-non-gmail', [\App\Controllers\EmailDataPoolController::class, 'cleanerDeleteNonGmail'])->setName('admin.email-data-pool.cleaner.delete-non-gmail')
@@ -640,6 +646,8 @@ return function (App $app) {
             $group->get('/{listId}/analysis/status', [\App\Controllers\EmailDataPoolController::class, 'analysisStatusByList'])->setName('admin.email-data-pool.analysis.status.by-list')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/analysis/{jobId}/status', [\App\Controllers\EmailDataPoolController::class, 'analysisStatus'])->setName('admin.email-data-pool.analysis.status')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/jobs/{jobId}/status', [\App\Controllers\EmailDataPoolController::class, 'jobStatus'])->setName('admin.email-data-pool.jobs.status')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('/tools/preview', [\App\Controllers\EmailDataPoolController::class, 'toolsPreview'])->setName('admin.email-data-pool.tools.preview')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));

@@ -25,6 +25,7 @@ $application = new Application($appTitle . ' Console', '1.0.0');
 $application->add(new \App\Support\Console\InstallCommand($container));
 $application->add(new \App\Support\Console\MigrateCommand($container));
 $application->add(new \App\Support\Console\ResetPasswordCommand($container));
+$application->add(new \App\Support\Console\DataPoolJobsWorkCommand($container));
 
 $application->run();
 
