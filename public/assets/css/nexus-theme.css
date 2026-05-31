@@ -10433,6 +10433,260 @@ textarea.nx-textarea-ticket--simple {
     padding: 0.85rem 1.15rem;
 }
 
+.nx-adm-eo-approval-head {
+    min-height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.nx-adm-eo-approval-head-sub {
+    margin-top: 0.15rem;
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.nx-adm-eo-head-close {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nx-adm-eo-head-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+.nx-adm-eo-head-close:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+}
+
+.nx-adm-eo-approval-body {
+    background: linear-gradient(180deg, #f8fbff 0%, #f4f7fb 100%);
+}
+
+.nx-adm-eo-approval-summary-card,
+.nx-adm-eo-approval-card {
+    background: #fff;
+    border: 1px solid #dbe5f1;
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.nx-adm-eo-approval-summary-ic {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(37, 99, 235, 0.1);
+    border: 1px solid rgba(37, 99, 235, 0.15);
+    color: #1d4ed8;
+}
+
+.nx-adm-eo-approval-summary-ic svg {
+    width: 18px;
+    height: 18px;
+}
+
+.nx-adm-eo-approval-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 0.9rem;
+}
+
+.nx-adm-eo-approval-card-title {
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.nx-adm-eo-approval-card-sub {
+    font-size: 0.76rem;
+    color: #64748b;
+    margin-top: 0.1rem;
+}
+
+.nx-adm-eo-approval-input,
+.nx-adm-eo-approval-select {
+    border-radius: 12px !important;
+    border-color: #d3deeb !important;
+    min-height: 42px;
+}
+
+.nx-adm-eo-approval-search-btn {
+    min-height: 42px;
+    border-radius: 12px !important;
+    border: 1px solid #c8d7ea !important;
+    color: #1e3a8a !important;
+    background: #eef4ff !important;
+    font-weight: 700;
+}
+
+.nx-adm-eo-approval-page-btn {
+    border-radius: 10px !important;
+    border: 1px solid #d4deea !important;
+    color: #334155 !important;
+    background: #fff !important;
+    min-width: 86px;
+    font-weight: 600;
+}
+
+.nx-adm-eo-selected-customer {
+    border-radius: 12px;
+    border: 1px solid #d8e4f4;
+    background: #f8fbff;
+    padding: 0.65rem 0.75rem;
+}
+
+.nx-adm-eo-balance-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+
+.nx-adm-eo-balance-item {
+    border-radius: 12px;
+    border: 1px solid #dbe5f1;
+    background: #f9fbff;
+    padding: 0.55rem 0.6rem;
+}
+
+.nx-adm-eo-balance-label {
+    display: block;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    font-weight: 700;
+}
+
+.nx-adm-eo-balance-value {
+    display: block;
+    margin-top: 0.18rem;
+    font-size: 1rem;
+    font-weight: 800;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+
+.nx-adm-eo-balance-value--ok {
+    color: #047857;
+}
+
+.nx-adm-eo-balance-value--bad {
+    color: #b91c1c;
+}
+
+.nx-adm-eo-balance-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.nx-adm-eo-balance-badge--ok {
+    background: rgba(5, 150, 105, 0.13);
+    color: #047857;
+    border: 1px solid rgba(5, 150, 105, 0.22);
+}
+
+.nx-adm-eo-balance-badge--bad {
+    background: rgba(239, 68, 68, 0.13);
+    color: #b91c1c;
+    border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
+.nx-adm-eo-data-pool-meta {
+    border-radius: 12px;
+    border: 1px solid #dbe5f1;
+    background: #f8fbff;
+    padding: 0.55rem 0.65rem;
+    font-size: 0.76rem;
+    color: #334155;
+}
+
+.nx-adm-eo-data-pool-meta--warn {
+    border-color: rgba(245, 158, 11, 0.45);
+    background: rgba(245, 158, 11, 0.11);
+    color: #92400e;
+}
+
+.nx-adm-eo-approval-intent {
+    border-radius: 14px;
+    border: 1px solid rgba(37, 99, 235, 0.2);
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.09), rgba(30, 64, 175, 0.05));
+    padding: 0.7rem 0.8rem;
+    display: flex;
+    gap: 0.55rem;
+    align-items: flex-start;
+    color: #1e3a8a;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.nx-adm-eo-approval-intent-ic {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(30, 64, 175, 0.14);
+}
+
+.nx-adm-eo-approval-intent-ic svg {
+    width: 14px;
+    height: 14px;
+}
+
+.nx-adm-eo-approval-footer {
+    justify-content: flex-end;
+    gap: 0.55rem;
+}
+
+.nx-adm-eo-approval-footer small {
+    margin-right: auto;
+}
+
+.nx-adm-eo-approve-btn {
+    border: none !important;
+    color: #fff !important;
+    font-weight: 800 !important;
+    border-radius: 12px !important;
+    min-height: 42px;
+    padding-inline: 1rem !important;
+    background: linear-gradient(135deg, #0f9d58 0%, #059669 40%, #047857 100%) !important;
+    box-shadow: 0 12px 24px rgba(5, 150, 105, 0.28);
+}
+
+.nx-adm-eo-approve-btn:disabled {
+    background: #cbd5e1 !important;
+    box-shadow: none !important;
+    color: #64748b !important;
+}
+
+@media (max-width: 991.98px) {
+    .nx-adm-eo-approval-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .nx-adm-eo-balance-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .nx-adm-eo-modal-head-ic {
     width: 34px;
     height: 34px;

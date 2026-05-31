@@ -348,57 +348,87 @@
 
 <!-- Gönderim Onayı Modal -->
 <div class="modal fade nx-adm-eo-modal-root" id="approvalModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content nx-adm-eo-modal">
-            <div class="modal-header nx-adm-eo-modal-head border-0">
-                <h5 class="modal-title text-white mb-0">Gönderim Onayı</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            <div class="modal-header nx-adm-eo-modal-head nx-adm-eo-approval-head border-0">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="nx-adm-eo-modal-head-ic"><i data-feather="shield"></i></span>
+                    <div>
+                        <h5 class="modal-title text-white mb-0">Gönderim Onayı</h5>
+                        <div class="nx-adm-eo-approval-head-sub">Kampanyayı bir müşteri hesabına baglayip gonderim kuyruguna al.</div>
+                    </div>
+                </div>
+                <button type="button" class="btn nx-adm-eo-head-close" data-bs-dismiss="modal" aria-label="Kapat">
+                    <i data-feather="x"></i>
+                </button>
             </div>
-            <div class="modal-body bg-white p-3 p-md-4">
+            <div class="modal-body bg-white p-3 p-md-4 nx-adm-eo-approval-body">
                 <input type="hidden" id="approvalOrderId" value="">
                 <input type="hidden" id="approvalOrderTotal" value="0">
                 <input type="hidden" id="approvalIsPoolOrder" value="0">
                 <div id="approvalAlertWrap" class="mb-3"></div>
 
-                <div class="card border mb-3">
-                    <div class="card-body py-2">
-                        <div class="small text-muted mb-1">Sipariş özeti</div>
-                        <div id="approvalSummaryLoading" class="small text-muted">Sipariş özeti yükleniyor...</div>
-                        <div id="approvalSummaryContent" class="small d-none"></div>
+                <div class="nx-adm-eo-approval-summary-card mb-3">
+                    <div class="d-flex align-items-start gap-2">
+                        <span class="nx-adm-eo-approval-summary-ic"><i data-feather="mail"></i></span>
+                        <div class="flex-grow-1">
+                            <div class="small text-muted mb-1">Sipariş Özeti</div>
+                            <div id="approvalSummaryLoading" class="small text-muted">Sipariş özeti yükleniyor...</div>
+                            <div id="approvalSummaryContent" class="small d-none"></div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label fw-semibold mb-1">Müşteri seç</label>
-                    <div class="d-flex gap-2 mb-2">
-                        <input type="search" class="form-control" id="approvalCustomerSearch" placeholder="ID, ad veya e-posta ile ara">
-                        <button type="button" class="btn btn-outline-secondary" id="approvalCustomerSearchBtn">Ara</button>
+                <div class="nx-adm-eo-approval-grid">
+                    <div class="nx-adm-eo-approval-col">
+                        <div class="nx-adm-eo-approval-card mb-3">
+                            <div class="nx-adm-eo-approval-card-title">1. Müşteri Seç</div>
+                            <div class="nx-adm-eo-approval-card-sub">Gönderim maliyeti seçilen müşterinin bakiyesinden düşülecek.</div>
+                            <div class="d-flex gap-2 mb-2 mt-2">
+                                <input type="search" class="form-control nx-adm-eo-approval-input" id="approvalCustomerSearch" placeholder="ID, ad veya e-posta ile ara">
+                                <button type="button" class="btn nx-adm-eo-approval-search-btn" id="approvalCustomerSearchBtn">Ara</button>
+                            </div>
+                            <div id="approvalCustomersLoading" class="small text-muted mb-2">Müşteriler yükleniyor...</div>
+                            <select class="form-select nx-adm-eo-approval-select" id="approvalCustomerSelect"></select>
+                            <div class="d-flex justify-content-between align-items-center mt-2">
+                                <button type="button" class="btn btn-sm nx-adm-eo-approval-page-btn" id="approvalUsersPrevBtn">Önceki</button>
+                                <small id="approvalUsersPageInfo" class="text-muted"></small>
+                                <button type="button" class="btn btn-sm nx-adm-eo-approval-page-btn" id="approvalUsersNextBtn">Sonraki</button>
+                            </div>
+                            <div id="approvalSelectedCustomerCard" class="nx-adm-eo-selected-customer d-none mt-3"></div>
+                        </div>
                     </div>
-                    <div id="approvalCustomersLoading" class="small text-muted mb-2">Müşteriler yükleniyor...</div>
-                    <select class="form-select" id="approvalCustomerSelect"></select>
-                    <div class="d-flex justify-content-between mt-2">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="approvalUsersPrevBtn">Önceki</button>
-                        <small id="approvalUsersPageInfo" class="text-muted"></small>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="approvalUsersNextBtn">Sonraki</button>
-                    </div>
-                </div>
+                    <div class="nx-adm-eo-approval-col">
+                        <div class="nx-adm-eo-approval-card mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="nx-adm-eo-approval-card-title">Bakiye Özeti</div>
+                                    <div class="nx-adm-eo-approval-card-sub">Onayla ve Başlat işleminden önce bakiye kontrolü.</div>
+                                </div>
+                                <span id="approvalBalanceBadge" class="nx-adm-eo-balance-badge d-none"></span>
+                            </div>
+                            <div id="approvalBalanceSummary" class="small text-muted mt-2">Müşteri seçilmedi.</div>
+                        </div>
 
-                <div class="card border mb-3">
-                    <div class="card-body py-2">
-                        <div class="small text-muted mb-1">Bakiye özeti</div>
-                        <div id="approvalBalanceSummary" class="small text-muted">Müşteri seçilmedi.</div>
-                    </div>
-                </div>
+                        <div class="nx-adm-eo-approval-card mb-3">
+                            <div class="nx-adm-eo-approval-card-title">2. Veri Listesi</div>
+                            <div class="nx-adm-eo-approval-card-sub">Gönderimde kullanılacak aktif veri havuzunu seç.</div>
+                            <select class="form-select nx-adm-eo-approval-select mt-2" id="approvalDataListSelect"></select>
+                            <small class="text-muted d-block mt-1">Sadece liste özeti ve aktif kayıt sayısı yüklenir.</small>
+                            <div id="approvalDataPoolMeta" class="nx-adm-eo-data-pool-meta mt-2"></div>
+                        </div>
 
-                <div class="mb-0">
-                    <label class="form-label fw-semibold mb-1">Veri listesi</label>
-                    <select class="form-select" id="approvalDataListSelect"></select>
-                    <small class="text-muted d-block mt-1">Sadece liste özeti ve aktif kayıt sayısı yüklenir.</small>
+                        <div class="nx-adm-eo-approval-intent" id="approvalIntentBox">
+                            <span class="nx-adm-eo-approval-intent-ic"><i data-feather="info"></i></span>
+                            <div id="approvalIntentText">Devam etmek için müşteri ve veri listesi seçmelisin.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer border-top bg-light">
+            <div class="modal-footer border-top bg-light nx-adm-eo-approval-footer">
+                <small class="text-muted">Bu işlem kampanyayı worker kuyruğuna aktarır.</small>
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">İptal</button>
-                <button type="button" class="btn btn-success" id="approvalConfirmBtn" disabled>Onayla ve Başlat</button>
+                <button type="button" class="btn nx-adm-eo-approve-btn" id="approvalConfirmBtn" disabled>Onayla ve Başlat</button>
             </div>
         </div>
     </div>
@@ -469,6 +499,92 @@ const approvalState = {
     usersController: null,
     userDetailController: null
 };
+
+function approvalStatusBadge(statusRaw) {
+    const status = String(statusRaw || '').toLowerCase();
+    const map = {
+        pending_approval: ['Onay Bekliyor', 'nx-adm-eo-status nx-adm-eo-status--pending_approval'],
+        approved: ['Onaylandı', 'nx-adm-eo-status nx-adm-eo-status--sent'],
+        pending: ['Kuyrukta', 'nx-adm-eo-status nx-adm-eo-status--pending'],
+        completed: ['Tamamlandı', 'nx-adm-eo-status nx-adm-eo-status--completed'],
+        rejected: ['Reddedildi', 'nx-adm-eo-status nx-adm-eo-status--failed'],
+        failed: ['Başarısız', 'nx-adm-eo-status nx-adm-eo-status--failed']
+    };
+    const [label, klass] = map[status] || [status || '-', 'nx-adm-eo-status'];
+    return `<span class="${klass}">${label}</span>`;
+}
+
+function formatTrNumber(value) {
+    return Number(value || 0).toLocaleString('tr-TR');
+}
+
+function renderSelectedCustomerCard() {
+    const card = document.getElementById('approvalSelectedCustomerCard');
+    if (!card) return;
+    if (!approvalState.selectedCustomer) {
+        card.classList.add('d-none');
+        card.innerHTML = '';
+        return;
+    }
+    const c = approvalState.selectedCustomer;
+    card.classList.remove('d-none');
+    card.innerHTML = `
+        <div class="fw-semibold">${c.name || '-'}</div>
+        <div class="small text-muted">${c.email || '-'}</div>
+        <div class="small mt-1">Müşteri ID: <strong>#${c.id || '-'}</strong></div>
+        <div class="small">Mevcut bakiye: <strong>${formatTrNumber(c.currentBalance)}</strong></div>
+    `;
+}
+
+function renderDataPoolMeta() {
+    const meta = document.getElementById('approvalDataPoolMeta');
+    if (!meta) return;
+    const selectedId = Number(document.getElementById('approvalDataListSelect').value || 0);
+    if (!selectedId) {
+        meta.className = 'nx-adm-eo-data-pool-meta mt-2';
+        meta.textContent = approvalState.isPoolOrder
+            ? 'Devam etmek için bir veri listesi seçin.'
+            : 'Bu sipariş için veri listesi zorunlu değil.';
+        return;
+    }
+    const selected = approvalState.lists.find(item => Number(item.id) === selectedId);
+    if (!selected) {
+        meta.className = 'nx-adm-eo-data-pool-meta mt-2';
+        meta.textContent = 'Seçilen veri listesi bulunamadı.';
+        return;
+    }
+    const activeCount = Number(selected.activeCount || 0);
+    const required = Number(approvalState.orderTotal || 0);
+    const enough = activeCount >= required || !approvalState.isPoolOrder;
+    meta.className = `nx-adm-eo-data-pool-meta mt-2 ${enough ? '' : 'nx-adm-eo-data-pool-meta--warn'}`.trim();
+    meta.innerHTML = `
+        <div><strong>${selected.name || '-'}</strong></div>
+        <div>Aktif kayıt: <strong>${formatTrNumber(activeCount)}</strong></div>
+        <div>${enough ? 'Gönderim adedi ile uyumlu.' : 'Seçilen veri listesinde gönderim adedinden daha az aktif kayıt var.'}</div>
+    `;
+}
+
+function renderApprovalIntent() {
+    const intent = document.getElementById('approvalIntentText');
+    if (!intent) return;
+    const orderId = approvalState.orderId || '-';
+    const total = Number(approvalState.orderTotal || 0);
+    const customer = approvalState.selectedCustomer;
+    const selectedId = Number(document.getElementById('approvalDataListSelect').value || 0);
+    const selectedList = approvalState.lists.find(item => Number(item.id) === selectedId);
+    const needsList = !!approvalState.isPoolOrder;
+
+    if (!customer || (needsList && !selectedList)) {
+        intent.textContent = 'Devam etmek için müşteri ve veri listesi seçmelisin.';
+        return;
+    }
+    if (approvalState.balanceInfo && !approvalState.balanceInfo.canApprove) {
+        intent.textContent = 'Bu müşteri bakiyesi gönderim için yeterli değil.';
+        return;
+    }
+    const listText = selectedList ? selectedList.name : 'varsayılan kaynak';
+    intent.textContent = `Kampanya #${orderId}, ${customer.name} hesabından ${formatTrNumber(total)} kredi düşülerek ${listText} veri listesiyle gönderim kuyruğuna alınacak.`;
+}
 
 function handleSearch() {
     clearTimeout(searchTimer);
@@ -764,15 +880,20 @@ function approveOrder(orderId, isPoolOrder) {
     document.getElementById('approvalIsPoolOrder').value = isPoolOrder ? '1' : '0';
     document.getElementById('approvalCustomerSearch').value = '';
     document.getElementById('approvalSummaryLoading').classList.remove('d-none');
+    document.getElementById('approvalSummaryLoading').innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sipariş özeti yükleniyor...';
     document.getElementById('approvalSummaryContent').classList.add('d-none');
     document.getElementById('approvalSummaryContent').innerHTML = '';
-    document.getElementById('approvalCustomersLoading').textContent = 'Müşteriler yükleniyor...';
+    document.getElementById('approvalCustomersLoading').innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Müşteriler yükleniyor...';
     document.getElementById('approvalAlertWrap').innerHTML = '';
     document.getElementById('approvalBalanceSummary').textContent = 'Müşteri seçilmedi.';
     document.getElementById('approvalDataListSelect').innerHTML = '<option value="">Veri listeleri yükleniyor...</option>';
     document.getElementById('approvalCustomerSelect').innerHTML = '<option value="">Müşteriler yükleniyor...</option>';
     document.getElementById('approvalConfirmBtn').disabled = true;
     document.getElementById('approvalConfirmBtn').innerHTML = 'Onayla ve Başlat';
+    document.getElementById('approvalBalanceBadge').className = 'nx-adm-eo-balance-badge d-none';
+    renderSelectedCustomerCard();
+    renderDataPoolMeta();
+    renderApprovalIntent();
 
     if (!approvalState.modal) {
         approvalState.modal = new bootstrap.Modal(document.getElementById('approvalModal'));
@@ -784,9 +905,10 @@ function approveOrder(orderId, isPoolOrder) {
     loadCustomers(1, '', approvalState.openKey);
 }
 
-function renderApprovalAlert(message, type = 'danger') {
+function renderApprovalAlert(message, type = 'warning') {
+    const normalizedType = ['danger', 'success', 'info', 'warning'].includes(type) ? type : 'warning';
     document.getElementById('approvalAlertWrap').innerHTML = message
-        ? `<div class="alert alert-${type} py-2 mb-0">${message}</div>`
+        ? `<div class="alert alert-${normalizedType} py-2 mb-0">${message}</div>`
         : '';
 }
 
@@ -808,10 +930,19 @@ function loadOrderSummary(orderId, openKey) {
             document.getElementById('approvalOrderTotal').value = String(approvalState.orderTotal);
 
             const summaryHtml = `
-                <div><strong>Sipariş ID:</strong> #${order.id || '-'}</div>
-                <div><strong>Konu / Template:</strong> ${order.subject || '-'}${template.name ? ` / ${template.name}` : ''}${template.id ? ` (TPL #${template.id})` : ''}</div>
-                <div><strong>Gönderim adedi:</strong> ${approvalState.orderTotal.toLocaleString('tr-TR')}</div>
-                <div><strong>Durum:</strong> ${order.status || '-'}</div>
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <div><strong>Sipariş ID:</strong> #${order.id || '-'}</div>
+                        <div><strong>Konu:</strong> ${order.subject || '-'}</div>
+                        <div><strong>Template:</strong> ${template.name || '-'}${template.id ? ` (TPL #${template.id})` : ''}</div>
+                        <div><strong>Tarih:</strong> ${order.createdAt || '-'}</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="small text-muted">Gönderim adedi</div>
+                        <div class="nx-adm-eo-balance-value">${formatTrNumber(approvalState.orderTotal)}</div>
+                        ${approvalStatusBadge(order.status)}
+                    </div>
+                </div>
             `;
             document.getElementById('approvalSummaryContent').innerHTML = summaryHtml;
             document.getElementById('approvalSummaryLoading').classList.add('d-none');
@@ -823,6 +954,7 @@ function loadOrderSummary(orderId, openKey) {
                 approvalState.lists = [];
                 approvalState.selectedDataPoolId = null;
                 document.getElementById('approvalDataListSelect').innerHTML = '<option value="">Bu sipariş için veri listesi gerekli değil</option>';
+                renderDataPoolMeta();
             }
 
             if (approvalState.selectedCustomer) {
@@ -830,6 +962,7 @@ function loadOrderSummary(orderId, openKey) {
             } else {
                 updateApprovalActionState();
             }
+            renderApprovalIntent();
         })
         .catch(err => {
             if (err.name === 'AbortError') return;
@@ -872,6 +1005,7 @@ function loadDataPools(orderId, openKey) {
                 }
             }
             updateApprovalActionState();
+            renderDataPoolMeta();
         })
         .catch(err => {
             if (err.name === 'AbortError') return;
@@ -880,13 +1014,14 @@ function loadDataPools(orderId, openKey) {
             document.getElementById('approvalDataListSelect').innerHTML = '<option value="">Liste yüklenemedi</option>';
             approvalState.selectedDataPoolId = null;
             updateApprovalActionState();
+            renderDataPoolMeta();
         });
 }
 
 function loadCustomers(page = 1, query = '', openKey = approvalState.openKey) {
     approvalState.usersPage = page;
     approvalState.usersQuery = query;
-    document.getElementById('approvalCustomersLoading').textContent = 'Müşteriler yükleniyor...';
+    document.getElementById('approvalCustomersLoading').innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Müşteriler yükleniyor...';
     if (approvalState.usersController) {
         try { approvalState.usersController.abort(); } catch (e) {}
     }
@@ -911,6 +1046,7 @@ function loadCustomers(page = 1, query = '', openKey = approvalState.openKey) {
                 approvalState.selectedCustomer = null;
                 approvalState.balanceInfo = null;
                 document.getElementById('approvalBalanceSummary').textContent = 'Müşteri seçilmedi.';
+                renderSelectedCustomerCard();
             } else {
                 users.forEach(user => {
                     const balance = Number(user.balance || user.credit || 0);
@@ -960,6 +1096,7 @@ function handleCustomerSelection(openKey = approvalState.openKey) {
         email: opt.dataset.email || '',
         currentBalance: current
     };
+    renderSelectedCustomerCard();
     // Hızlı UX: önce listedeki bakiye ile anında özet göster, sonra API ile doğrula.
     const required = Number(approvalState.orderTotal || 0);
     approvalState.balanceInfo = {
@@ -1020,8 +1157,13 @@ function loadCustomerBalance(customerId, openKey = approvalState.openKey) {
 }
 
 function renderBalanceSummary() {
+    const badge = document.getElementById('approvalBalanceBadge');
     if (!approvalState.balanceInfo) {
         document.getElementById('approvalBalanceSummary').textContent = 'Bakiye bilgisi alınamadı.';
+        if (badge) {
+            badge.className = 'nx-adm-eo-balance-badge d-none';
+            badge.textContent = '';
+        }
         return;
     }
     const current = Number(approvalState.balanceInfo.balance || 0);
@@ -1029,10 +1171,25 @@ function renderBalanceSummary() {
     const remaining = Number(approvalState.balanceInfo.remaining || (current - toDeduct));
 
     document.getElementById('approvalBalanceSummary').innerHTML = `
-        <div>Mevcut bakiye: <strong>${current.toLocaleString('tr-TR')}</strong></div>
-        <div>Düşülecek bakiye: <strong>${toDeduct.toLocaleString('tr-TR')}</strong></div>
-        <div>Kalan bakiye: <strong class="${remaining < 0 ? 'text-danger' : 'text-success'}">${remaining.toLocaleString('tr-TR')}</strong></div>
+        <div class="nx-adm-eo-balance-grid">
+            <div class="nx-adm-eo-balance-item">
+                <span class="nx-adm-eo-balance-label">Mevcut bakiye</span>
+                <span class="nx-adm-eo-balance-value">${formatTrNumber(current)}</span>
+            </div>
+            <div class="nx-adm-eo-balance-item">
+                <span class="nx-adm-eo-balance-label">Düşülecek bakiye</span>
+                <span class="nx-adm-eo-balance-value">${formatTrNumber(toDeduct)}</span>
+            </div>
+            <div class="nx-adm-eo-balance-item">
+                <span class="nx-adm-eo-balance-label">Kalan bakiye</span>
+                <span class="nx-adm-eo-balance-value ${remaining < 0 ? 'nx-adm-eo-balance-value--bad' : 'nx-adm-eo-balance-value--ok'}">${formatTrNumber(remaining)}</span>
+            </div>
+        </div>
     `;
+    if (badge) {
+        badge.className = `nx-adm-eo-balance-badge ${remaining < 0 ? 'nx-adm-eo-balance-badge--bad' : 'nx-adm-eo-balance-badge--ok'}`;
+        badge.textContent = remaining < 0 ? 'Yetersiz bakiye' : 'Bakiye yeterli';
+    }
 
     if (remaining < 0) {
         renderApprovalAlert(`Yetersiz mail bakiyesi. Gerekli: ${toDeduct.toLocaleString('tr-TR')}, Mevcut: ${current.toLocaleString('tr-TR')}`);
@@ -1059,6 +1216,8 @@ function updateApprovalActionState() {
         }
     }
     btn.disabled = !(hasCustomer && enoughBalance && listOk && approvalState.orderTotal > 0);
+    renderDataPoolMeta();
+    renderApprovalIntent();
 }
 
 function submitApprove(orderId) {
