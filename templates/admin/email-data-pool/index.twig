@@ -1834,6 +1834,7 @@ const cleanerState = {
     stats: null,
     busy: false,
     progressTimer: null,
+    operationProgressTimer: null,
     lastProgressValue: 0,
     analysisJobId: null,
     statusPollTimer: null,
@@ -1845,7 +1846,10 @@ const balancePreviewState = {
     fill_to_target: false,
     fill_manual: false,
     move_overflow: false,
-    split_list: false
+    split_list: false,
+    fill_to_target_payload: null,
+    fill_manual_payload: null,
+    move_overflow_payload: null
 };
 
 function cleanerUrl(action) {
@@ -2026,6 +2030,44 @@ function hideCleanerProgress() {
         bar.classList.add('bg-primary');
     }
     if (percent) percent.textContent = '0%';
+}
+
+function stopOperationProgressTracker() {
+    if (cleanerState.operationProgressTimer) {
+        clearInterval(cleanerState.operationProgressTimer);
+        cleanerState.operationProgressTimer = null;
+    }
+}
+
+function startOperationProgressTracker(config = {}) {
+    stopOperationProgressTracker();
+    const expectedDelta = Math.max(0, Number(config.expectedDelta || 0));
+    const startTotal = Math.max(0, Number(config.startTotal || 0));
+    const mode = String(config.mode || 'increase');
+    const label = String(config.label || 'İşlem çalışıyor...');
+    if (expectedDelta < 1) {
+        return;
+    }
+
+    const tick = async () => {
+        try {
+            const data = await poolFetch(statsUrl(), {}, 'İşlem ilerleme verisi alınamadı.');
+            const currentTotal = Math.max(0, Number(data.total || 0));
+            let processed = 0;
+            if (mode === 'decrease') {
+                processed = Math.max(0, startTotal - currentTotal);
+            } else {
+                processed = Math.max(0, currentTotal - startTotal);
+            }
+            const percent = Math.min(99, Math.floor((processed / expectedDelta) * 100));
+            setCleanerProgress(`${label} (${processed.toLocaleString('tr-TR')} / ${expectedDelta.toLocaleString('tr-TR')})`, percent);
+        } catch (_) {
+            // Tracker için sessiz geç: ana işlem akışı zaten hataları gösterecek.
+        }
+    };
+
+    tick();
+    cleanerState.operationProgressTimer = setInterval(tick, 1200);
 }
 
 async function cleanerRequest(action, options = {}) {
@@ -2557,13 +2599,16 @@ async function previewFill(sourceType, triggerBtn = null) {
     try {
         setButtonLoading(triggerBtn, true, 'Önizleniyor...');
         setBalanceButtonsDisabled(true);
-        const data = await postTools('preview', Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType)));
+        const payload = Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType));
+        const data = await postTools('preview', payload);
         openPreviewModal(data);
         if (sourceType === 'list') {
             balancePreviewState.fill_to_target = true;
+            balancePreviewState.fill_to_target_payload = data;
             setPreviewSummary('fillPreviewSummary', `Eklenecek: ${Number(data.will_process || 0).toLocaleString('tr-TR')} | Kalan: ${Number(data.estimated_leftover || 0).toLocaleString('tr-TR')}`);
         } else {
             balancePreviewState.fill_manual = true;
+            balancePreviewState.fill_manual_payload = data;
             setPreviewSummary('manualFillPreviewSummary', `Eklenecek: ${Number(data.will_process || 0).toLocaleString('tr-TR')} | Kalan: ${Number(data.estimated_leftover || 0).toLocaleString('tr-TR')}`);
         }
     } catch (error) {
@@ -2576,10 +2621,20 @@ async function previewFill(sourceType, triggerBtn = null) {
 
 async function runFill(sourceType, triggerBtn = null) {
     try {
-        if (!confirm('Seçili ayarlarla hedef tamamlama işlemi başlatılsın mı?')) return;
+        const previewPayload = sourceType === 'list'
+            ? (balancePreviewState.fill_to_target_payload || await postTools('preview', Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType))))
+            : (balancePreviewState.fill_manual_payload || await postTools('preview', Object.assign({ tool: 'fill_to_target' }, getFillPayload(sourceType))));
+        const willProcess = Number(previewPayload?.will_process || 0);
+        if (!confirm(`Seçili ayarlarla hedef tamamlama işlemi başlatılsın mı?\nİşlenecek kayıt: ${willProcess.toLocaleString('tr-TR')}`)) return;
         setButtonLoading(triggerBtn, true, 'Uygulanıyor...');
         setBalanceButtonsDisabled(true);
         startCleanerProgress('Hedefe tamamlama çalışıyor...');
+        startOperationProgressTracker({
+            mode: 'increase',
+            startTotal: Number(previewPayload?.current_total || cleanerState?.stats?.total || 0),
+            expectedDelta: willProcess,
+            label: 'Hedefe tamamlama çalışıyor'
+        });
         const data = await postTools('fill-to-target', getFillPayload(sourceType));
         openResultModal(data.summary || {});
         await loadTopStats(false);
@@ -2593,6 +2648,7 @@ async function runFill(sourceType, triggerBtn = null) {
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
+        stopOperationProgressTracker();
         setButtonLoading(triggerBtn, false);
         finishCleanerProgress();
         setBalanceButtonsDisabled(false);
@@ -2617,6 +2673,7 @@ async function previewOverflow(triggerBtn = null) {
         const data = await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
         openPreviewModal(data);
         balancePreviewState.move_overflow = true;
+        balancePreviewState.move_overflow_payload = data;
         setPreviewSummary('overflowPreviewSummary', `Taşınacak: ${Number(data.overflow || 0).toLocaleString('tr-TR')} kayıt`);
     } catch (error) {
         showCleanerToast('error', error.message);
@@ -2628,13 +2685,19 @@ async function previewOverflow(triggerBtn = null) {
 
 async function runOverflow(triggerBtn = null) {
     try {
-        const dataPreview = await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
+        const dataPreview = balancePreviewState.move_overflow_payload || await postTools('preview', Object.assign({ tool: 'move_overflow' }, getOverflowPayload()));
         const overflow = Number(dataPreview.overflow || 0).toLocaleString('tr-TR');
         const targetName = document.getElementById('overflowNewListName')?.value?.trim() || document.getElementById('overflowTargetListId')?.selectedOptions?.[0]?.text || 'hedef liste';
         if (!confirm(`Bu işlem ${overflow} kaydı seçili listeden ${targetName} listesine taşıyacak. Devam edilsin mi?`)) return;
         setButtonLoading(triggerBtn, true, 'Taşınıyor...');
         setBalanceButtonsDisabled(true);
         startCleanerProgress('Fazla kayıtlar aktarılıyor...');
+        startOperationProgressTracker({
+            mode: 'decrease',
+            startTotal: Number(dataPreview?.current_total || cleanerState?.stats?.total || 0),
+            expectedDelta: Number(dataPreview?.overflow || 0),
+            label: 'Fazla kayıtlar aktarılıyor'
+        });
         const data = await postTools('move-overflow', getOverflowPayload());
         openResultModal(data.summary || {});
         await loadTopStats(false);
@@ -2643,6 +2706,7 @@ async function runOverflow(triggerBtn = null) {
     } catch (error) {
         showCleanerToast('error', error.message);
     } finally {
+        stopOperationProgressTracker();
         setButtonLoading(triggerBtn, false);
         finishCleanerProgress();
         setBalanceButtonsDisabled(false);
