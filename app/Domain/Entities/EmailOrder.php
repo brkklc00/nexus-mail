@@ -91,15 +91,6 @@ class EmailOrder
     #[ORM\Column(type: 'boolean', name: 'worker_stop_requested')]
     private bool $workerStopRequested = false;
 
-    #[ORM\Column(type: 'string', length: 64, nullable: true, name: 'dispatch_batch_id')]
-    private ?string $dispatchBatchId = null;
-
-    #[ORM\Column(type: 'datetime', nullable: true, name: 'dispatch_approved_at')]
-    private ?DateTimeInterface $dispatchApprovedAt = null;
-
-    #[ORM\Column(type: 'integer', nullable: true, name: 'dispatch_approved_by')]
-    private ?int $dispatchApprovedBy = null;
-
     #[ORM\OneToMany(mappedBy: 'order', targetEntity: EmailOrderEmail::class, cascade: ['persist', 'remove'])]
     private Collection $emails;
 
@@ -411,39 +402,6 @@ class EmailOrder
     public function setWorkerStopRequested(bool $workerStopRequested): self
     {
         $this->workerStopRequested = $workerStopRequested;
-        return $this;
-    }
-
-    public function getDispatchBatchId(): ?string
-    {
-        return $this->dispatchBatchId;
-    }
-
-    public function setDispatchBatchId(?string $dispatchBatchId): self
-    {
-        $this->dispatchBatchId = $dispatchBatchId;
-        return $this;
-    }
-
-    public function getDispatchApprovedAt(): ?DateTimeInterface
-    {
-        return $this->dispatchApprovedAt;
-    }
-
-    public function setDispatchApprovedAt(?DateTimeInterface $dispatchApprovedAt): self
-    {
-        $this->dispatchApprovedAt = $dispatchApprovedAt;
-        return $this;
-    }
-
-    public function getDispatchApprovedBy(): ?int
-    {
-        return $this->dispatchApprovedBy;
-    }
-
-    public function setDispatchApprovedBy(?int $dispatchApprovedBy): self
-    {
-        $this->dispatchApprovedBy = $dispatchApprovedBy;
         return $this;
     }
 

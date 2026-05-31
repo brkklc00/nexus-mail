@@ -272,8 +272,6 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/approve-with-balance', [\App\Controllers\Admin\EmailOrderController::class, 'approveWithBalance'])->setName('admin.email-orders.approve-with-balance')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
-            $group->post('/approve-dispatch-batch', [\App\Controllers\Admin\EmailOrderController::class, 'approveDispatchBatch'])->setName('admin.email-orders.approve-dispatch-batch')
-                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/update-template', [\App\Controllers\Admin\EmailOrderController::class, 'updateTemplate'])->setName('admin.email-orders.update-template')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/cancel', [\App\Controllers\Admin\EmailOrderController::class, 'cancel'])->setName('admin.email-orders.cancel')

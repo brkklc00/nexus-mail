@@ -234,7 +234,6 @@ class EmailOrderController
                 'stats' => [
                     'total' => 0,
                     'pending_approval' => 0,
-                    'approved_for_dispatch' => 0,
                     'pending' => 0,
                     'processing' => 0,
                     'completed' => 0,
@@ -866,7 +865,7 @@ class EmailOrderController
             }
             $externalDebitDone = true;
 
-            $order->setStatus(EmailOrderStatus::APPROVED_FOR_DISPATCH);
+            $order->setStatus(EmailOrderStatus::PENDING);
             $this->em->flush();
 
             $balanceData = is_array($subtractResult['data'] ?? null) ? $subtractResult['data'] : [];
@@ -890,14 +889,13 @@ class EmailOrderController
             $conn->commit();
             return $this->jsonResponse($response, [
                 'success' => true,
-                'message' => 'Gönderim onaylandı, müşteri bakiyesi düşüldü. Sipariş toplu dispatch onayını bekliyor.',
+                'message' => 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.',
                 'data' => [
                     'orderId' => $order->getId(),
                     'userId' => $externalUserId,
                     'dataPoolId' => $selectedDataListId,
                     'sendCount' => $orderTotal,
                     'amount' => $orderTotal,
-                    'status' => EmailOrderStatus::APPROVED_FOR_DISPATCH->value,
                 ],
             ]);
         } catch (\Throwable $e) {
@@ -949,151 +947,6 @@ class EmailOrderController
             return $this->jsonResponse($response, [
                 'success' => false,
                 'message' => 'Onay işlemi sırasında sistem hatası oluştu. Lütfen tekrar deneyin.'
-            ], 500);
-        }
-    }
-
-    /**
-     * Toplu dispatch onayı:
-     * approved_for_dispatch durumundaki kampanyaları snapshot alıp tek batch ile pending'e çeker.
-     */
-    public function approveDispatchBatch(Request $request, Response $response): Response
-    {
-        $conn = $this->em->getConnection();
-        $adminUserId = isset($_SESSION['user']['id']) ? (int) $_SESSION['user']['id'] : null;
-        $batchId = sprintf('dispatch_%s_%s', date('YmdHis'), bin2hex(random_bytes(4)));
-        $startedAtMs = (int) round(microtime(true) * 1000);
-
-        try {
-            $body = (string) $request->getBody();
-            $payload = json_decode($body, true);
-            if (!is_array($payload)) {
-                $payload = $request->getParsedBody() ?: [];
-            }
-
-            $requestedOrderIds = [];
-            if (isset($payload['order_ids']) && is_array($payload['order_ids'])) {
-                $requestedOrderIds = array_values(array_unique(array_filter(
-                    array_map('intval', $payload['order_ids']),
-                    static fn (int $id): bool => $id > 0
-                )));
-            }
-
-            error_log(json_encode([
-                'event' => 'campaign_dispatch_batch_approval_started',
-                'dispatch_batch_id' => $batchId,
-                'approved_by' => $adminUserId,
-                'requested_order_count' => count($requestedOrderIds),
-                'timestamp' => (new \DateTimeImmutable())->format(DATE_ATOM),
-            ], JSON_UNESCAPED_UNICODE));
-
-            $whereOrderFilter = '';
-            $orderFilterParams = [];
-            if (!empty($requestedOrderIds)) {
-                $whereOrderFilter = ' AND id IN (' . implode(',', array_fill(0, count($requestedOrderIds), '?')) . ')';
-                $orderFilterParams = $requestedOrderIds;
-            }
-
-            $conn->beginTransaction();
-
-            $candidateIds = array_map(
-                'intval',
-                $conn->fetchFirstColumn(
-                    "SELECT id
-                     FROM email_orders
-                     WHERE status = 'approved_for_dispatch'" . $whereOrderFilter . '
-                     ORDER BY created_at ASC',
-                    $orderFilterParams
-                )
-            );
-
-            $eligibleIds = array_map(
-                'intval',
-                $conn->fetchFirstColumn(
-                    "SELECT id
-                     FROM email_orders
-                     WHERE status = 'approved_for_dispatch'
-                       AND worker_paused = 0" . $whereOrderFilter . '
-                     ORDER BY created_at ASC',
-                    $orderFilterParams
-                )
-            );
-
-            if (empty($eligibleIds)) {
-                $conn->commit();
-                return $this->jsonResponse($response, [
-                    'success' => true,
-                    'message' => 'Dispatch için uygun kampanya bulunamadı.',
-                    'data' => [
-                        'dispatchBatchId' => null,
-                        'eligible' => 0,
-                        'dispatched' => 0,
-                        'skipped' => count($candidateIds),
-                        'candidateCount' => count($candidateIds),
-                    ],
-                ]);
-            }
-
-            $eligiblePlaceholders = implode(',', array_fill(0, count($eligibleIds), '?'));
-            $updateParams = array_merge([$batchId, $adminUserId], $eligibleIds);
-            $dispatched = $conn->executeStatement(
-                "UPDATE email_orders
-                 SET status = 'pending',
-                     worker_stop_requested = 0,
-                     dispatch_batch_id = ?,
-                     dispatch_approved_at = NOW(),
-                     dispatch_approved_by = ?,
-                     updated_at = NOW()
-                 WHERE status = 'approved_for_dispatch'
-                   AND worker_paused = 0
-                   AND id IN ($eligiblePlaceholders)",
-                $updateParams
-            );
-
-            $conn->commit();
-
-            $eligibleCount = count($eligibleIds);
-            $skipped = max(0, count($candidateIds) - (int) $dispatched);
-            $dispatchLatencyMs = (int) round(microtime(true) * 1000) - $startedAtMs;
-            error_log(json_encode([
-                'event' => 'campaign_dispatch_batch_approved',
-                'dispatch_batch_id' => $batchId,
-                'approved_by' => $adminUserId,
-                'candidate_count' => count($candidateIds),
-                'eligible_count' => $eligibleCount,
-                'dispatched_count' => (int) $dispatched,
-                'skipped_count' => $skipped,
-                'campaigns_dispatched_total' => (int) $dispatched,
-                'campaign_dispatch_latency_ms' => $dispatchLatencyMs,
-                'timestamp' => (new \DateTimeImmutable())->format(DATE_ATOM),
-            ], JSON_UNESCAPED_UNICODE));
-
-            return $this->jsonResponse($response, [
-                'success' => true,
-                'message' => 'Toplu dispatch onayı tamamlandı.',
-                'data' => [
-                    'dispatchBatchId' => $batchId,
-                    'eligible' => $eligibleCount,
-                    'dispatched' => (int) $dispatched,
-                    'skipped' => $skipped,
-                    'candidateCount' => count($candidateIds),
-                ],
-            ]);
-        } catch (\Throwable $e) {
-            if ($conn->isTransactionActive()) {
-                $conn->rollBack();
-            }
-
-            error_log(json_encode([
-                'event' => 'campaign_dispatch_batch_approval_failed',
-                'dispatch_batch_id' => $batchId,
-                'approved_by' => $adminUserId,
-                'error' => $e->getMessage(),
-                'timestamp' => (new \DateTimeImmutable())->format(DATE_ATOM),
-            ], JSON_UNESCAPED_UNICODE));
-            return $this->jsonResponse($response, [
-                'success' => false,
-                'message' => 'Toplu dispatch onayı sırasında hata oluştu.',
             ], 500);
         }
     }
@@ -1359,8 +1212,8 @@ class EmailOrderController
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
             }
 
-            // Pending approval, dispatch onayı bekleyen, pending veya processing durumundaki kampanyalar durdurulabilir
-            if (!in_array($order->getStatus(), [EmailOrderStatus::PENDING_APPROVAL, EmailOrderStatus::APPROVED_FOR_DISPATCH, EmailOrderStatus::PENDING, EmailOrderStatus::PROCESSING], true)) {
+            // Pending approval, pending veya processing durumundaki kampanyalar durdurulabilir
+            if (!in_array($order->getStatus(), [EmailOrderStatus::PENDING_APPROVAL, EmailOrderStatus::PENDING, EmailOrderStatus::PROCESSING], true)) {
                 $response->getBody()->write(json_encode([
                     'success' => false,
                     'message' => 'Sadece bekleyen veya işlemdeki kampanyalar durdurulabilir'
@@ -1416,8 +1269,8 @@ class EmailOrderController
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
             }
 
-            // Dispatch sırasındaki kampanyalar silinmeden önce durdurulmalı
-            if (in_array($order->getStatus(), [EmailOrderStatus::PROCESSING, EmailOrderStatus::PENDING, EmailOrderStatus::APPROVED_FOR_DISPATCH], true)) {
+            // Pending approval hariç - işlemde veya bekleyen kampanyalar önce durdurulmalı
+            if (in_array($order->getStatus(), [EmailOrderStatus::PROCESSING, EmailOrderStatus::PENDING], true)) {
                 $response->getBody()->write(json_encode([
                     'success' => false,
                     'message' => 'İşlemdeki veya bekleyen kampanyalar önce durdurulmalıdır'
@@ -1568,7 +1421,6 @@ class EmailOrderController
             "SELECT
                 COUNT(id) AS total,
                 SUM(CASE WHEN status = 'pending_approval' THEN 1 ELSE 0 END) AS pendingApproval,
-                SUM(CASE WHEN status = 'approved_for_dispatch' THEN 1 ELSE 0 END) AS approvedForDispatch,
                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
                 SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
                 SUM(CASE WHEN status IN ('sent', 'completed') THEN 1 ELSE 0 END) AS completed,
@@ -1579,7 +1431,6 @@ class EmailOrderController
         return [
             'total' => (int) ($row['total'] ?? 0),
             'pending_approval' => (int) ($row['pendingApproval'] ?? 0),
-            'approved_for_dispatch' => (int) ($row['approvedForDispatch'] ?? 0),
             'pending' => (int) ($row['pending'] ?? 0),
             'processing' => (int) ($row['processing'] ?? 0),
             'completed' => (int) ($row['completed'] ?? 0),
@@ -1721,9 +1572,6 @@ class EmailOrderController
             'createdAt' => $order->getCreatedAt()->format('d.m.Y'),
             'updatedAt' => $order->getUpdatedAt()->format('d.m.Y'),
             'completedAt' => $order->getCompletedAt() ? $order->getCompletedAt()->format('d.m.Y') : null,
-            'dispatch_batch_id' => $order->getDispatchBatchId(),
-            'dispatch_approved_at' => $order->getDispatchApprovedAt()?->format('Y-m-d H:i:s'),
-            'dispatch_approved_by' => $order->getDispatchApprovedBy(),
             'body' => $includeBody ? $order->getBody() : null,
             'approval' => $latestApproval,
         ];
