@@ -10458,9 +10458,13 @@ textarea.nx-textarea-ticket--simple {
     justify-content: center;
 }
 
-.nx-adm-eo-head-close svg {
-    width: 18px;
-    height: 18px;
+.nx-adm-eo-head-close-mark {
+    display: inline-block;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+    transform: translateY(-1px);
 }
 
 .nx-adm-eo-head-close:hover {

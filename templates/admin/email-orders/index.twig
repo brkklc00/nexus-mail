@@ -69,7 +69,16 @@
             <div class="nx-adm-eo-stat-inner">
                 <span class="nx-adm-eo-stat-ic"><i data-feather="clock"></i></span>
                 <div class="nx-adm-eo-stat-body">
-                    <span class="nx-adm-eo-stat-label">Bekleyen</span>
+                    <span class="nx-adm-eo-stat-label">Dispatch Bekleyen</span>
+                    <span class="nx-adm-eo-stat-value">{{ stats.approved_for_dispatch|default(0)|number_format }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="nx-adm-eo-stat nx-adm-eo-stat--pending">
+            <div class="nx-adm-eo-stat-inner">
+                <span class="nx-adm-eo-stat-ic"><i data-feather="clock"></i></span>
+                <div class="nx-adm-eo-stat-body">
+                    <span class="nx-adm-eo-stat-label">Kuyruk Bekleyen</span>
                     <span class="nx-adm-eo-stat-value">{{ stats.pending|number_format }}</span>
                 </div>
             </div>
@@ -114,6 +123,7 @@
                         <select class="form-select nx-adm-eo-select" id="statusFilter" onchange="applyFilters()">
                             <option value="">Tüm durumlar</option>
                             <option value="pending_approval" {{ selected_status == 'pending_approval' ? 'selected' : '' }}>Onay Bekleyen</option>
+                            <option value="approved_for_dispatch" {{ selected_status == 'approved_for_dispatch' ? 'selected' : '' }}>Dispatch Onayı Bekleyen</option>
                             <option value="pending" {{ selected_status == 'pending' ? 'selected' : '' }}>Bekleyen</option>
                             <option value="processing" {{ selected_status == 'processing' ? 'selected' : '' }}>İşlemde</option>
                             <option value="sent" {{ selected_status == 'sent' ? 'selected' : '' }}>Gönderildi</option>
@@ -136,6 +146,12 @@
                         <button type="button" class="btn nx-adm-eo-clear-btn w-100" onclick="clearFilters()">
                             <i data-feather="x" class="nx-adm-eo-clear-ic"></i>
                             Temizle
+                        </button>
+                    </div>
+                    <div class="nx-adm-eo-field nx-adm-eo-field--clear">
+                        <button type="button" class="btn btn-success w-100" onclick="approveDispatchBatch()">
+                            <i data-feather="send" class="nx-adm-eo-clear-ic"></i>
+                            Toplu Dispatch Onayı
                         </button>
                     </div>
                 </div>
@@ -216,6 +232,8 @@
                                     <td class="nx-adm-eo-td-status">
                                         {% if order.status == 'pending_approval' %}
                                         <span class="nx-adm-eo-status nx-adm-eo-status--pending_approval">Onay Bekliyor</span>
+                                        {% elseif order.status == 'approved_for_dispatch' %}
+                                        <span class="nx-adm-eo-status nx-adm-eo-status--pending">Dispatch Onayı Bekliyor</span>
                                         {% elseif order.status == 'pending' %}
                                         <span class="nx-adm-eo-status nx-adm-eo-status--pending">Bekliyor</span>
                                         {% elseif order.status == 'processing' %}
@@ -248,13 +266,13 @@
                                                     <li><button type="button" class="dropdown-item" onclick="editOrderTemplate({{ order.id }})"><i data-feather="edit-2" class="icon-xs me-2"></i>Düzenle</button></li>
                                                     <li><button type="button" class="dropdown-item" onclick="approveOrder({{ order.id }}, {{ order.sourceType == 'pool' ? 'true' : 'false' }})"><i data-feather="check" class="icon-xs me-2"></i>Onayla</button></li>
                                                     {% endif %}
-                                                    {% if order.status == 'pending' or order.status == 'processing' %}
+                                                    {% if order.status == 'approved_for_dispatch' or order.status == 'pending' or order.status == 'processing' %}
                                                     <li><button type="button" class="dropdown-item" onclick="cancelOrder({{ order.id }})"><i data-feather="pause" class="icon-xs me-2"></i>Duraklat</button></li>
                                                     {% endif %}
                                                     {% if order.status in ['sent', 'completed', 'failed', 'cancelled'] %}
                                                     <li><button type="button" class="dropdown-item" onclick="restartOrder({{ order.id }}, {{ order.sourceType == 'pool' ? 'true' : 'false' }}, '{{ order.status }}')"><i data-feather="refresh-cw" class="icon-xs me-2"></i>Devam Ettir</button></li>
                                                     {% endif %}
-                                                    {% if order.status != 'processing' and order.status != 'pending' %}
+                                                    {% if order.status != 'processing' and order.status != 'pending' and order.status != 'approved_for_dispatch' %}
                                                     <li><hr class="dropdown-divider"></li>
                                                     <li><button type="button" class="dropdown-item text-danger" onclick="deleteOrder({{ order.id }})"><i data-feather="trash-2" class="icon-xs me-2"></i>Sil</button></li>
                                                     {% endif %}
@@ -359,7 +377,7 @@
                     </div>
                 </div>
                 <button type="button" class="btn nx-adm-eo-head-close" data-bs-dismiss="modal" aria-label="Kapat">
-                    <i data-feather="x"></i>
+                    <span class="nx-adm-eo-head-close-mark" aria-hidden="true">&times;</span>
                 </button>
             </div>
             <div class="modal-body bg-white p-3 p-md-4 nx-adm-eo-approval-body">
@@ -504,6 +522,7 @@ function approvalStatusBadge(statusRaw) {
     const status = String(statusRaw || '').toLowerCase();
     const map = {
         pending_approval: ['Onay Bekliyor', 'nx-adm-eo-status nx-adm-eo-status--pending_approval'],
+        approved_for_dispatch: ['Dispatch Onayı Bekliyor', 'nx-adm-eo-status nx-adm-eo-status--pending'],
         approved: ['Onaylandı', 'nx-adm-eo-status nx-adm-eo-status--sent'],
         pending: ['Kuyrukta', 'nx-adm-eo-status nx-adm-eo-status--pending'],
         completed: ['Tamamlandı', 'nx-adm-eo-status nx-adm-eo-status--completed'],
@@ -761,6 +780,10 @@ function approveStartUrl(orderId) {
     return `/admin/email-orders/${orderId}/approve-start`;
 }
 
+function approveDispatchBatchUrl() {
+    return '/admin/email-orders/approve-dispatch-batch';
+}
+
 function parseApiErrorMessage(text, status) {
     let parsed = null;
     try {
@@ -903,6 +926,37 @@ function approveOrder(orderId, isPoolOrder) {
 
     loadOrderSummary(orderId, approvalState.openKey);
     loadCustomers(1, '', approvalState.openKey);
+}
+
+function approveDispatchBatch() {
+    if (!confirm('Dispatch onayı bekleyen kampanyalar tek seferde kuyruğa alınacak. Devam edilsin mi?')) {
+        return;
+    }
+
+    fetchJson(approveDispatchBatchUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    })
+    .then((data) => {
+        if (!data.success) {
+            alert(data.message || 'Toplu dispatch onayı başarısız.');
+            return;
+        }
+
+        const summary = data.data || {};
+        alert(
+            `Toplu dispatch onayı tamamlandı.\n` +
+            `Batch: ${summary.dispatchBatchId || '-'}\n` +
+            `Eligible: ${Number(summary.eligible || 0).toLocaleString('tr-TR')}\n` +
+            `Dispatched: ${Number(summary.dispatched || 0).toLocaleString('tr-TR')}\n` +
+            `Skipped: ${Number(summary.skipped || 0).toLocaleString('tr-TR')}`
+        );
+        location.reload();
+    })
+    .catch((err) => {
+        alert(err.message || 'Toplu dispatch onayı sırasında hata oluştu.');
+    });
 }
 
 function renderApprovalAlert(message, type = 'warning') {
@@ -1243,7 +1297,7 @@ function submitApprove(orderId) {
 
     const btn = document.getElementById('approvalConfirmBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Bakiye düşülüyor ve gönderim başlatılıyor...';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Bakiye düşülüyor ve dispatch onayı için hazırlanıyor...';
 
     fetchJson(approveStartUrl(orderId), {
         method: 'POST',
@@ -1255,7 +1309,7 @@ function submitApprove(orderId) {
             if (approvalState.modal) {
                 approvalState.modal.hide();
             }
-            alert(data.message || 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.');
+            alert(data.message || 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş dispatch onayını beklemeye alındı.');
             location.reload();
         } else {
             renderApprovalAlert(data.message || 'Onaylanamadı.');
@@ -1480,6 +1534,7 @@ function renderDetailPagination(orderId, section, pagination) {
 function renderOrderDetails(order) {
     const statusBadges = {
         'pending_approval': '<span class="nx-adm-eo-status nx-adm-eo-status--pending_approval">Onay Bekliyor</span>',
+        'approved_for_dispatch': '<span class="nx-adm-eo-status nx-adm-eo-status--pending">Dispatch Onayı Bekliyor</span>',
         'pending': '<span class="nx-adm-eo-status nx-adm-eo-status--pending">Bekliyor</span>',
         'processing': '<span class="nx-adm-eo-status nx-adm-eo-status--processing">İşleniyor</span>',
         'sent': '<span class="nx-adm-eo-status nx-adm-eo-status--sent">Gönderildi</span>',
