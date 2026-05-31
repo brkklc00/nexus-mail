@@ -489,6 +489,7 @@ class EmailOrderController
         $search = trim((string) ($query['q'] ?? ''));
         $page = max(1, (int) ($query['page'] ?? 1));
         $perPage = max(1, min(100, (int) ($query['per_page'] ?? $query['limit'] ?? 20)));
+        $positiveOnly = ((int) ($query['positive_only'] ?? 1)) === 1;
 
         $result = $this->externalMailBalanceApi->listUsers($search, $page, $perPage);
         if (!$result['success']) {
@@ -508,6 +509,11 @@ class EmailOrderController
                 'credit' => $balance,
             ];
         }, (array) ($result['users'] ?? []));
+
+        if ($positiveOnly) {
+            $items = array_values(array_filter($items, static fn (array $row): bool => (int) ($row['balance'] ?? 0) > 0));
+        }
+
         $pagination = $this->normalizeAdminPagination($result['pagination'] ?? [], $page, $perPage, count($items));
 
         return $this->jsonResponse($response, [

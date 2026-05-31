@@ -630,7 +630,7 @@ function orderSummaryUrl(orderId) {
 }
 
 function customerSearchUrl(page, query) {
-    return `/admin/email-orders/customers/search?page=${page}&per_page=20&q=${encodeURIComponent(query || '')}`;
+    return `/admin/email-orders/customers/search?page=${page}&per_page=100&positive_only=1&q=${encodeURIComponent(query || '')}`;
 }
 
 function customerBalanceUrl(id, orderId) {
@@ -674,8 +674,10 @@ function parseApiErrorMessage(text, status) {
 async function fetchJson(url, options = {}) {
     const timeoutMs = Number(options.timeoutMs || 12000);
     const controller = options.signal ? null : new AbortController();
+    let timedOut = false;
     const timeoutId = setTimeout(() => {
         if (controller) {
+            timedOut = true;
             controller.abort();
         }
     }, timeoutMs);
@@ -689,6 +691,13 @@ async function fetchJson(url, options = {}) {
                 ...(options.headers || {})
             }
         });
+    } catch (err) {
+        if (timedOut) {
+            const timeoutError = new Error('İstek zaman aşımına uğradı.');
+            timeoutError.status = 408;
+            throw timeoutError;
+        }
+        throw err;
     } finally {
         clearTimeout(timeoutId);
     }
@@ -831,7 +840,7 @@ function loadOrderSummary(orderId, openKey) {
 }
 
 function loadDataPools(orderId, openKey) {
-    fetchJson(dataPoolsUrl(orderId))
+    fetchJson(dataPoolsUrl(orderId), { timeoutMs: 20000 })
         .then(data => {
             if (!isApprovalViewActive(openKey)) return;
             if (!data.success) {
@@ -865,6 +874,7 @@ function loadDataPools(orderId, openKey) {
             updateApprovalActionState();
         })
         .catch(err => {
+            if (err.name === 'AbortError') return;
             if (!isApprovalViewActive(openKey)) return;
             renderApprovalAlert(err.message || 'Veri listesi alınamadı.');
             document.getElementById('approvalDataListSelect').innerHTML = '<option value="">Liste yüklenemedi</option>';
@@ -897,7 +907,7 @@ function loadCustomers(page = 1, query = '', openKey = approvalState.openKey) {
             const select = document.getElementById('approvalCustomerSelect');
             select.innerHTML = '';
             if (!users.length) {
-                select.innerHTML = '<option value="">Müşteri bulunamadı</option>';
+                select.innerHTML = '<option value="">Bakiyesi olan müşteri bulunamadı</option>';
                 approvalState.selectedCustomer = null;
                 approvalState.balanceInfo = null;
                 document.getElementById('approvalBalanceSummary').textContent = 'Müşteri seçilmedi.';
