@@ -8,6 +8,7 @@ class ExternalMailBalanceApiService
 {
     private string $apiBaseUrl;
     private string $apiKey;
+    private string $apiKeyName;
     private int $timeoutSeconds;
 
     public function __construct(array $settings = [])
@@ -17,6 +18,10 @@ class ExternalMailBalanceApiService
             (string) ($externalSettings['base_url'] ?? getenv('EXTERNAL_API_BASE_URL') ?: 'https://hub-nexus.com')
         );
         $this->apiKey = (string) ($externalSettings['key'] ?? getenv('EXTERNAL_API_KEY') ?: '');
+        $this->apiKeyName = trim((string) ($externalSettings['key_name'] ?? getenv('EXTERNAL_API_KEY_NAME') ?: 'partner_site'));
+        if ($this->apiKeyName === '') {
+            $this->apiKeyName = 'partner_site';
+        }
         $this->timeoutSeconds = (int) ($externalSettings['timeout_seconds'] ?? 10);
     }
 
@@ -150,6 +155,13 @@ class ExternalMailBalanceApiService
             'Content-Type: application/json',
             'Authorization: Bearer ' . $this->apiKey
         ];
+        // External API deployments may validate partner key via custom header name.
+        if ($this->apiKeyName !== '') {
+            $headers[] = $this->apiKeyName . ': ' . $this->apiKey;
+        }
+        // Common fallbacks for stricter gateway setups.
+        $headers[] = 'X-Api-Key: ' . $this->apiKey;
+        $headers[] = 'X-Api-Key-Name: ' . $this->apiKeyName;
 
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,

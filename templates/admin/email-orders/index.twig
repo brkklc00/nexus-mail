@@ -672,13 +672,26 @@ function parseApiErrorMessage(text, status) {
 }
 
 async function fetchJson(url, options = {}) {
-    const response = await fetch(url, {
-        ...options,
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            ...(options.headers || {})
+    const timeoutMs = Number(options.timeoutMs || 12000);
+    const controller = options.signal ? null : new AbortController();
+    const timeoutId = setTimeout(() => {
+        if (controller) {
+            controller.abort();
         }
-    });
+    }, timeoutMs);
+    let response;
+    try {
+        response = await fetch(url, {
+            ...options,
+            signal: options.signal || (controller ? controller.signal : undefined),
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                ...(options.headers || {})
+            }
+        });
+    } finally {
+        clearTimeout(timeoutId);
+    }
 
     const text = await response.text();
     let data = null;
@@ -759,7 +772,6 @@ function approveOrder(orderId, isPoolOrder) {
     setTimeout(() => { approvalState.busy = false; }, 200);
 
     loadOrderSummary(orderId, approvalState.openKey);
-    loadDataPools(orderId, approvalState.openKey);
     loadCustomers(1, '', approvalState.openKey);
 }
 
@@ -795,6 +807,14 @@ function loadOrderSummary(orderId, openKey) {
             document.getElementById('approvalSummaryContent').innerHTML = summaryHtml;
             document.getElementById('approvalSummaryLoading').classList.add('d-none');
             document.getElementById('approvalSummaryContent').classList.remove('d-none');
+
+            if (approvalState.isPoolOrder) {
+                loadDataPools(orderId, openKey);
+            } else {
+                approvalState.lists = [];
+                approvalState.selectedDataPoolId = null;
+                document.getElementById('approvalDataListSelect').innerHTML = '<option value="">Bu sipariş için veri listesi gerekli değil</option>';
+            }
 
             if (approvalState.selectedCustomer) {
                 loadCustomerBalance(approvalState.selectedCustomer.id, openKey);
@@ -930,6 +950,16 @@ function handleCustomerSelection(openKey = approvalState.openKey) {
         email: opt.dataset.email || '',
         currentBalance: current
     };
+    // Hızlı UX: önce listedeki bakiye ile anında özet göster, sonra API ile doğrula.
+    const required = Number(approvalState.orderTotal || 0);
+    approvalState.balanceInfo = {
+        balance: current,
+        required,
+        remaining: current - required,
+        canApprove: (current - required) >= 0
+    };
+    renderBalanceSummary();
+    updateApprovalActionState();
     loadCustomerBalance(approvalState.selectedCustomer.id, openKey);
 }
 
