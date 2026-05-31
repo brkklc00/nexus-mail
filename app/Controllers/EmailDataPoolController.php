@@ -52,8 +52,6 @@ class EmailDataPoolController
         $params = $request->getQueryParams();
         $listIdParam = (int) ($params['list_id'] ?? 0);
         $listSearch = trim((string) ($params['list_search'] ?? ''));
-        $listPage = max(1, (int) ($params['list_page'] ?? 1));
-        $listPerPage = 30;
 
         $listQb = $this->em->createQueryBuilder()
             ->select('l')
@@ -63,14 +61,11 @@ class EmailDataPoolController
                 ->setParameter('listSearch', '%' . $listSearch . '%');
         }
         $totalLists = (int) (clone $listQb)->select('COUNT(l.id)')->getQuery()->getSingleScalarResult();
-        $listOffset = ($listPage - 1) * $listPerPage;
 
         /** @var EmailDataPoolList[] $visibleLists */
         $visibleLists = $listQb
             ->orderBy('l.sortOrder', 'ASC')
             ->addOrderBy('l.id', 'ASC')
-            ->setFirstResult($listOffset)
-            ->setMaxResults($listPerPage)
             ->getQuery()
             ->getResult();
 
@@ -134,8 +129,6 @@ class EmailDataPoolController
             'current_list_id' => $currentList?->getId(),
             'current_list_name' => $currentList?->getName(),
             'list_search' => $listSearch,
-            'list_page' => $listPage,
-            'list_per_page' => $listPerPage,
             'list_total' => $totalLists,
             'total' => $total,
             'active_count' => $activeCount,
@@ -3457,6 +3450,59 @@ class EmailDataPoolController
         $_SESSION['success'] = 'Liste güncellendi';
 
         return $response->withHeader('Location', $this->poolListRedirect($list->getId()))->withStatus(302);
+    }
+
+    public function reorderLists(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $data = $request->getParsedBody();
+            if (!is_array($data)) {
+                return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz istek verisi.'], 422);
+            }
+
+            $order = $data['order'] ?? [];
+            if (is_string($order)) {
+                $decoded = json_decode($order, true);
+                $order = is_array($decoded) ? $decoded : [];
+            }
+            if (!is_array($order) || $order === []) {
+                return $this->jsonResponse($response, ['success' => false, 'message' => 'Sıralama listesi boş.'], 422);
+            }
+
+            $ids = array_values(array_filter(array_map('intval', $order), static fn (int $id): bool => $id > 0));
+            if ($ids === []) {
+                return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçerli liste bulunamadı.'], 422);
+            }
+
+            $conn = $this->em->getConnection();
+            $conn->beginTransaction();
+            try {
+                $sortOrder = 10;
+                foreach ($ids as $id) {
+                    $conn->executeStatement(
+                        'UPDATE email_data_pool_lists SET sort_order = ? WHERE id = ?',
+                        [$sortOrder, $id]
+                    );
+                    $sortOrder += 10;
+                }
+                $conn->commit();
+            } catch (\Throwable $e) {
+                $conn->rollBack();
+                throw $e;
+            }
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'message' => 'Liste sıralaması güncellendi.',
+            ]);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 422;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::reorderLists error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Liste sıralaması güncellenemedi.'], 500);
+        }
     }
 
     public function deleteList(Request $request, Response $response, array $args): Response

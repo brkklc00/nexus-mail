@@ -48,6 +48,35 @@
         border-right: 0;
         border-top: 0;
         padding: 12px 14px;
+        position: relative;
+        user-select: none;
+    }
+    .pool-list-group .list-group-item.draggable-item {
+        cursor: grab;
+    }
+    .pool-list-group .list-group-item.draggable-item:active {
+        cursor: grabbing;
+    }
+    .pool-list-group .list-group-item.drag-over {
+        box-shadow: inset 0 -2px 0 #2563eb;
+        background: #eff6ff;
+    }
+    .pool-list-drag-handle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        color: #94a3b8;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        flex: 0 0 auto;
+    }
+    .pool-list-group .list-group-item.active .pool-list-drag-handle {
+        color: rgba(255, 255, 255, 0.88);
+        border-color: rgba(255, 255, 255, 0.35);
+        background: rgba(255, 255, 255, 0.12);
     }
     .pool-list-item-top {
         display: flex;
@@ -462,7 +491,6 @@
     <div class="alert alert-warning">Havuz listesi bulunamadı. Veritabanı migration’ını çalıştırın (<code>email_data_pool_lists</code>).</div>
     {% else %}
     {% set inactive_count = passive_count|default(total - active_count) %}
-    {% set list_pages = (list_total / list_per_page)|round(0, 'ceil') %}
     <div class="row g-3">
         <div class="col-lg-3">
             <div class="card h-100 left-pool-list-card">
@@ -488,10 +516,18 @@
                 </div>
                 <div class="list-group list-group-flush pool-list-group left-pool-list-body">
                     {% for pl in pool_lists %}
-                    <a href="/admin/email-data-pool?list_id={{ pl.id }}{% if list_search %}&list_search={{ list_search|url_encode }}{% endif %}{% if list_page > 1 %}&list_page={{ list_page }}{% endif %}"
-                       class="list-group-item list-group-item-action {% if pl.id == current_list_id %}active{% endif %}">
+                    <a href="/admin/email-data-pool?list_id={{ pl.id }}{% if list_search %}&list_search={{ list_search|url_encode }}{% endif %}"
+                       class="list-group-item list-group-item-action draggable-item {% if pl.id == current_list_id %}active{% endif %}"
+                       data-list-id="{{ pl.id }}"
+                       data-list-name="{{ pl.name|e('html_attr') }}"
+                       draggable="true">
                         <div class="pool-list-item-top">
-                            <span class="pool-list-item-name text-truncate" title="{{ pl.name }}">{{ pl.name }}</span>
+                            <span class="d-flex align-items-center gap-2 min-w-0">
+                                <span class="pool-list-drag-handle" title="Sürükle bırak ile sırala">
+                                    <i data-feather="menu" class="icon-xs"></i>
+                                </span>
+                                <span class="pool-list-item-name text-truncate" title="{{ pl.name }}">{{ pl.name }}</span>
+                            </span>
                             <span class="badge {% if pl.id == current_list_id %}bg-white text-primary{% else %}bg-soft-secondary text-secondary{% endif %} rounded-pill">{{ pl.entry_count|number_format }}</span>
                         </div>
                         <div class="pool-list-item-meta">
@@ -516,17 +552,6 @@
                     </div>
                     {% endfor %}
                 </div>
-                {% if list_pages > 1 %}
-                <div class="card-body border-top py-2 left-pool-list-footer">
-                    <div class="d-flex align-items-center justify-content-between small">
-                        {% set prev_page = list_page - 1 %}
-                        {% set next_page = list_page + 1 %}
-                        <a class="btn btn-soft-secondary btn-sm {% if list_page <= 1 %}disabled{% endif %}" href="/admin/email-data-pool?list_id={{ current_list_id }}{% if list_search %}&list_search={{ list_search|url_encode }}{% endif %}&list_page={{ prev_page > 0 ? prev_page : 1 }}">Önceki</a>
-                        <span class="text-muted">{{ list_page }} / {{ list_pages }}</span>
-                        <a class="btn btn-soft-secondary btn-sm {% if list_page >= list_pages %}disabled{% endif %}" href="/admin/email-data-pool?list_id={{ current_list_id }}{% if list_search %}&list_search={{ list_search|url_encode }}{% endif %}&list_page={{ next_page <= list_pages ? next_page : list_pages }}">Sonraki</a>
-                    </div>
-                </div>
-                {% endif %}
                 <div class="card-body border-top pt-3 left-pool-list-footer">
                     <button type="button" class="btn btn-sm btn-soft-primary w-100 mb-2" data-bs-toggle="modal" data-bs-target="#editListModal">
                         <i data-feather="edit-2" class="icon-xs me-1"></i> Listeyi düzenle
@@ -2761,29 +2786,98 @@ async function runSplit(triggerBtn = null) {
     }
 }
 
+function filterPoolListItems(term) {
+    const query = String(term || '').trim().toLowerCase();
+    const items = Array.from(document.querySelectorAll('.pool-list-group .draggable-item'));
+    items.forEach(item => {
+        const name = String(item.dataset.listName || '').toLowerCase();
+        const matched = query === '' || name.includes(query);
+        item.style.display = matched ? '' : 'none';
+    });
+}
+
+async function persistPoolListOrder() {
+    const items = Array.from(document.querySelectorAll('.pool-list-group .draggable-item'));
+    const order = items
+        .map(item => Number(item.dataset.listId || 0))
+        .filter(id => Number.isFinite(id) && id > 0);
+    if (!order.length) return;
+
+    const body = new URLSearchParams();
+    body.set('_csrf', CLEANER_CSRF_TOKEN);
+    body.set('order', JSON.stringify(order));
+
+    await poolFetch('/admin/email-data-pool/lists/reorder', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-CSRF-Token': CLEANER_CSRF_TOKEN
+        },
+        body
+    }, 'Liste sıralaması güncellenemedi.');
+}
+
+function initPoolListDnD() {
+    const listWrap = document.querySelector('.pool-list-group.left-pool-list-body');
+    if (!listWrap) return;
+
+    let dragEl = null;
+
+    listWrap.querySelectorAll('.draggable-item').forEach(item => {
+        item.addEventListener('dragstart', e => {
+            dragEl = item;
+            item.classList.add('opacity-75');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', String(item.dataset.listId || ''));
+        });
+
+        item.addEventListener('dragover', e => {
+            e.preventDefault();
+            if (!dragEl || dragEl === item) return;
+            item.classList.add('drag-over');
+            const rect = item.getBoundingClientRect();
+            const before = e.clientY < rect.top + rect.height / 2;
+            if (before) {
+                listWrap.insertBefore(dragEl, item);
+            } else {
+                listWrap.insertBefore(dragEl, item.nextSibling);
+            }
+        });
+
+        item.addEventListener('dragleave', () => {
+            item.classList.remove('drag-over');
+        });
+
+        item.addEventListener('drop', e => {
+            e.preventDefault();
+            item.classList.remove('drag-over');
+        });
+
+        item.addEventListener('dragend', async () => {
+            item.classList.remove('opacity-75');
+            listWrap.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            if (!dragEl) return;
+            dragEl = null;
+            try {
+                await persistPoolListOrder();
+                showCleanerToast('success', 'Liste sıralaması güncellendi.');
+            } catch (error) {
+                showCleanerToast('error', error.message);
+            }
+        });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
     const listSearchInput = document.getElementById('poolListSearch');
     if (listSearchInput) {
-        let searchTimer = null;
         listSearchInput.addEventListener('input', function () {
-            clearTimeout(searchTimer);
-            const value = this.value.trim();
-            searchTimer = setTimeout(function () {
-                const params = new URLSearchParams(window.location.search);
-                if (value) {
-                    params.set('list_search', value);
-                } else {
-                    params.delete('list_search');
-                }
-                params.set('list_page', '1');
-                if (CURRENT_POOL_LIST_ID) {
-                    params.set('list_id', String(CURRENT_POOL_LIST_ID));
-                }
-                window.location.href = '/admin/email-data-pool?' + params.toString();
-            }, 300);
+            filterPoolListItems(this.value);
         });
+        filterPoolListItems(listSearchInput.value);
     }
+    initPoolListDnD();
 
     ['addModal', 'removeModal', 'newListModal', 'editListModal'].forEach(function (id) {
         const el = document.getElementById(id);

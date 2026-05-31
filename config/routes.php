@@ -599,6 +599,8 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'create'));
             $group->post('/lists/{id}/update', [\App\Controllers\EmailDataPoolController::class, 'updateList'])->setName('admin.email-data-pool.lists.update')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/lists/reorder', [\App\Controllers\EmailDataPoolController::class, 'reorderLists'])->setName('admin.email-data-pool.lists.reorder')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/lists/{id}/delete', [\App\Controllers\EmailDataPoolController::class, 'deleteList'])->setName('admin.email-data-pool.lists.delete')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'delete'));
             $group->post('/{id}/delete', [\App\Controllers\EmailDataPoolController::class, 'delete'])->setName('admin.email-data-pool.delete')
