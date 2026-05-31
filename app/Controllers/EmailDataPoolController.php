@@ -2233,7 +2233,10 @@ class EmailDataPoolController
             $conn = $this->em->getConnection();
             $total = (int) $conn->fetchOne("SELECT COUNT(*) FROM data_pool_jobs{$whereSql}", $params);
             $rows = $conn->fetchAllAssociative(
-                "SELECT id, pool_id, type, status, total_count, processed_count, success_count, failed_count, progress_percent, result, error_message, started_at, finished_at, created_at, updated_at
+                "SELECT id, pool_id, type, status, total_count, processed_count, success_count, failed_count, progress_percent, result, error_message,
+                        error_code, exception_class, failed_step, last_sql_name, current_step, status_message,
+                        locked_by, locked_at, heartbeat_at, attempts, max_attempts, resumable, cancel_requested, last_processed_id, worker_id,
+                        started_at, finished_at, created_at, updated_at
                    FROM data_pool_jobs{$whereSql}
                ORDER BY id DESC
                   LIMIT {$perPage} OFFSET {$offset}",
@@ -2256,6 +2259,181 @@ class EmailDataPoolController
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::jobs error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Job listesi alınamadı.'], 500);
+        }
+    }
+
+    public function jobCancel(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $jobId = (int) ($args['jobId'] ?? 0);
+            if ($jobId < 1) {
+                throw new \RuntimeException('Job bulunamadı.');
+            }
+            $this->ensureDataPoolJobTables();
+            $affected = $this->em->getConnection()->executeStatement(
+                "UPDATE data_pool_jobs
+                    SET cancel_requested = 1,
+                        status_message = 'Kullanıcı iptal talebi gönderdi.',
+                        updated_at = NOW()
+                  WHERE id = ?
+                    AND status IN ('queued', 'running')",
+                [$jobId]
+            );
+            if ($affected < 1) {
+                throw new \RuntimeException('Sadece queued/running job iptal edilebilir.');
+            }
+
+            return $this->jsonResponse($response, ['success' => true, 'message' => 'İptal talebi alındı.']);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::jobCancel error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Job iptal edilemedi.'], 500);
+        }
+    }
+
+    public function jobRetry(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $jobId = (int) ($args['jobId'] ?? 0);
+            if ($jobId < 1) {
+                throw new \RuntimeException('Job bulunamadı.');
+            }
+            $this->ensureDataPoolJobTables();
+            $job = $this->getDataPoolJob($jobId);
+            if ($job === null) {
+                throw new \RuntimeException('Job bulunamadı.');
+            }
+            if (!in_array((string) ($job['status'] ?? ''), ['failed', 'cancelled'], true)) {
+                throw new \RuntimeException('Sadece failed/cancelled job tekrar kuyruğa alınabilir.');
+            }
+            if ((int) ($job['attempts'] ?? 0) >= (int) ($job['max_attempts'] ?? 3)) {
+                throw new \RuntimeException('Job max deneme limitine ulaşmış.');
+            }
+
+            $this->em->getConnection()->executeStatement(
+                "UPDATE data_pool_jobs
+                    SET status = 'queued',
+                        cancel_requested = 0,
+                        error_message = NULL,
+                        error_code = NULL,
+                        exception_class = NULL,
+                        failed_step = NULL,
+                        last_sql_name = NULL,
+                        locked_by = NULL,
+                        locked_at = NULL,
+                        heartbeat_at = NULL,
+                        next_run_at = NOW(),
+                        status_message = 'Kullanıcı tarafından retry edildi.',
+                        finished_at = NULL,
+                        updated_at = NOW()
+                  WHERE id = ?",
+                [$jobId]
+            );
+
+            return $this->jsonResponse($response, ['success' => true, 'message' => 'Job tekrar kuyruğa alındı.']);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::jobRetry error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Job retry edilemedi.'], 500);
+        }
+    }
+
+    public function jobResume(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $jobId = (int) ($args['jobId'] ?? 0);
+            if ($jobId < 1) {
+                throw new \RuntimeException('Job bulunamadı.');
+            }
+            $this->ensureDataPoolJobTables();
+            $job = $this->getDataPoolJob($jobId);
+            if ($job === null) {
+                throw new \RuntimeException('Job bulunamadı.');
+            }
+            if (((int) ($job['resumable'] ?? 1)) !== 1) {
+                throw new \RuntimeException('Bu job resume desteklemiyor.');
+            }
+            if (!in_array((string) ($job['status'] ?? ''), ['running', 'failed'], true)) {
+                throw new \RuntimeException('Sadece running/failed job resume edilebilir.');
+            }
+            if ((int) ($job['attempts'] ?? 0) >= (int) ($job['max_attempts'] ?? 3)) {
+                throw new \RuntimeException('Job max deneme limitine ulaştı.');
+            }
+
+            $this->em->getConnection()->executeStatement(
+                "UPDATE data_pool_jobs
+                    SET status = 'queued',
+                        cancel_requested = 0,
+                        error_message = NULL,
+                        error_code = NULL,
+                        exception_class = NULL,
+                        failed_step = NULL,
+                        last_sql_name = NULL,
+                        locked_by = NULL,
+                        locked_at = NULL,
+                        heartbeat_at = NULL,
+                        next_run_at = NOW(),
+                        status_message = 'Job resume için kuyruğa alındı.',
+                        finished_at = NULL,
+                        updated_at = NOW()
+                  WHERE id = ?",
+                [$jobId]
+            );
+
+            return $this->jsonResponse($response, ['success' => true, 'message' => 'Job resume için kuyruğa alındı.']);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::jobResume error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Job resume edilemedi.'], 500);
+        }
+    }
+
+    public function jobMarkFailed(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertCleanerCsrf($request);
+            $jobId = (int) ($args['jobId'] ?? 0);
+            if ($jobId < 1) {
+                throw new \RuntimeException('Job bulunamadı.');
+            }
+            $this->ensureDataPoolJobTables();
+            $affected = $this->em->getConnection()->executeStatement(
+                "UPDATE data_pool_jobs
+                    SET status = 'failed',
+                        error_message = COALESCE(NULLIF(error_message, ''), 'Operatör tarafından failed işaretlendi.'),
+                        error_code = COALESCE(error_code, 'MANUAL_FAIL'),
+                        exception_class = COALESCE(exception_class, 'RuntimeException'),
+                        failed_step = COALESCE(failed_step, 'manual_mark_failed'),
+                        status_message = 'Operatör tarafından failed işaretlendi.',
+                        locked_by = NULL,
+                        locked_at = NULL,
+                        heartbeat_at = NOW(),
+                        finished_at = NOW(),
+                        updated_at = NOW()
+                  WHERE id = ?
+                    AND status IN ('queued', 'running')",
+                [$jobId]
+            );
+            if ($affected < 1) {
+                throw new \RuntimeException('Sadece queued/running job failed işaretlenebilir.');
+            }
+
+            return $this->jsonResponse($response, ['success' => true, 'message' => 'Job failed olarak işaretlendi.']);
+        } catch (\RuntimeException $e) {
+            $status = str_contains($e->getMessage(), 'CSRF') ? 419 : 400;
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $status);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::jobMarkFailed error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Job failed işaretleme başarısız.'], 500);
         }
     }
 
@@ -2937,10 +3115,11 @@ class EmailDataPoolController
         $this->ensureDataPoolJobTables();
         $conn = $this->em->getConnection();
         $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $maxAttempts = max(1, (int) ($_ENV['DATA_POOL_JOB_MAX_ATTEMPTS'] ?? 3));
         $conn->executeStatement(
             'INSERT INTO data_pool_jobs
-                (pool_id, type, status, payload, total_count, processed_count, success_count, failed_count, progress_percent, result, error_message, started_at, finished_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, NULL, NULL, NULL, NULL, ?, ?)',
+                (pool_id, type, status, payload, total_count, processed_count, success_count, failed_count, progress_percent, result, error_message, started_at, finished_at, created_at, updated_at, attempts, max_attempts, resumable, cancel_requested)
+             VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, NULL, NULL, NULL, NULL, ?, ?, 0, ?, 1, 0)',
             [
                 $poolId > 0 ? $poolId : null,
                 $type,
@@ -2949,6 +3128,7 @@ class EmailDataPoolController
                 max(0, $totalCount),
                 $now,
                 $now,
+                $maxAttempts,
             ]
         );
 
@@ -2982,6 +3162,21 @@ class EmailDataPoolController
             'failed_count' => (int) ($row['failed_count'] ?? 0),
             'progress_percent' => (int) ($row['progress_percent'] ?? 0),
             'error_message' => (string) ($row['error_message'] ?? ''),
+            'error_code' => (string) ($row['error_code'] ?? ''),
+            'exception_class' => (string) ($row['exception_class'] ?? ''),
+            'failed_step' => (string) ($row['failed_step'] ?? ''),
+            'last_sql_name' => (string) ($row['last_sql_name'] ?? ''),
+            'current_step' => (string) ($row['current_step'] ?? ''),
+            'status_message' => (string) ($row['status_message'] ?? ''),
+            'locked_by' => $row['locked_by'] ?? null,
+            'locked_at' => $row['locked_at'] ?? null,
+            'heartbeat_at' => $row['heartbeat_at'] ?? null,
+            'attempts' => (int) ($row['attempts'] ?? 0),
+            'max_attempts' => (int) ($row['max_attempts'] ?? 3),
+            'resumable' => (int) ($row['resumable'] ?? 1),
+            'cancel_requested' => (int) ($row['cancel_requested'] ?? 0),
+            'last_processed_id' => isset($row['last_processed_id']) ? (int) $row['last_processed_id'] : null,
+            'worker_id' => (string) ($row['worker_id'] ?? ''),
             'started_at' => $row['started_at'] ?? null,
             'finished_at' => $row['finished_at'] ?? null,
             'created_at' => $row['created_at'] ?? null,
@@ -3076,6 +3271,13 @@ class EmailDataPoolController
         $result = is_array($job['result'] ?? null) ? $job['result'] : [];
         $status = (string) ($job['status'] ?? 'queued');
         $poolId = (int) ($job['pool_id'] ?? 0);
+        $heartbeatAt = (string) ($job['heartbeat_at'] ?? '');
+        $staleThreshold = max(30, (int) ($_ENV['DATA_POOL_STALE_HEARTBEAT_SECONDS'] ?? 60));
+        $isStale = false;
+        if ($status === 'running' && $heartbeatAt !== '') {
+            $heartbeatTs = strtotime($heartbeatAt) ?: 0;
+            $isStale = $heartbeatTs > 0 && (time() - $heartbeatTs) > $staleThreshold;
+        }
         $payload = [
             'success' => true,
             'job_id' => (int) ($job['id'] ?? 0),
@@ -3093,13 +3295,28 @@ class EmailDataPoolController
             'invalid_gmail_count' => (int) ($result['invalid_gmail_count'] ?? 0),
             'duplicate_count' => (int) ($result['duplicate_count'] ?? 0),
             'deletable_count' => (int) (($result['non_gmail_count'] ?? 0) + ($result['duplicate_count'] ?? 0)),
-            'message' => $status === 'failed' ? 'İşlem başarısız oldu.' : ($status === 'completed' ? 'İşlem tamamlandı.' : 'İşlem sürüyor...'),
+            'message' => (string) ($job['status_message'] ?? ($status === 'failed' ? 'İşlem başarısız oldu.' : ($status === 'completed' ? 'İşlem tamamlandı.' : 'İşlem sürüyor...'))),
             'error' => (string) ($job['error_message'] ?? ''),
+            'error_code' => (string) ($job['error_code'] ?? ''),
+            'exception_class' => (string) ($job['exception_class'] ?? ''),
+            'failed_step' => (string) ($job['failed_step'] ?? ''),
+            'last_sql_name' => (string) ($job['last_sql_name'] ?? ''),
             'result' => $result,
             'started_at' => $job['started_at'] ?? null,
             'finished_at' => $job['finished_at'] ?? null,
             'created_at' => $job['created_at'] ?? null,
             'updated_at' => $job['updated_at'] ?? null,
+            'locked_by' => $job['locked_by'] ?? null,
+            'locked_at' => $job['locked_at'] ?? null,
+            'heartbeat_at' => $job['heartbeat_at'] ?? null,
+            'worker_id' => (string) ($job['worker_id'] ?? ''),
+            'attempts' => (int) ($job['attempts'] ?? 0),
+            'max_attempts' => (int) ($job['max_attempts'] ?? 3),
+            'resumable' => ((int) ($job['resumable'] ?? 1)) === 1,
+            'cancel_requested' => ((int) ($job['cancel_requested'] ?? 0)) === 1,
+            'last_processed_id' => isset($job['last_processed_id']) ? (int) $job['last_processed_id'] : null,
+            'current_step' => (string) ($job['current_step'] ?? ''),
+            'is_stale' => $isStale,
             'duplicate_groups' => (int) ($result['duplicate_groups'] ?? 0),
             'removed_count' => (int) ($result['removed_count'] ?? 0),
             'affected_rows' => (int) ($result['affected_rows'] ?? 0),
@@ -3136,6 +3353,12 @@ class EmailDataPoolController
             'retryCount' => (int) ($result['retry_count'] ?? 0),
             'currentPage' => (int) ($result['current_page'] ?? 0),
             'nextStart' => (string) ($result['next_start'] ?? ''),
+            'workerId' => (string) ($payload['worker_id'] ?? ''),
+            'attempts' => (int) ($payload['attempts'] ?? 0),
+            'maxAttempts' => (int) ($payload['max_attempts'] ?? 3),
+            'heartbeatAt' => $payload['heartbeat_at'] ?? null,
+            'isStale' => (bool) ($payload['is_stale'] ?? false),
+            'currentStep' => (string) ($payload['current_step'] ?? ''),
         ];
 
         return $payload;
@@ -3168,6 +3391,54 @@ class EmailDataPoolController
                 PRIMARY KEY(id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+
+        $columnExists = static function (string $column) use ($conn): bool {
+            return (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                ['data_pool_jobs', $column]
+            ) > 0;
+        };
+        $indexExists = static function (string $indexName) use ($conn): bool {
+            return (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?',
+                ['data_pool_jobs', $indexName]
+            ) > 0;
+        };
+
+        $extraColumns = [
+            'locked_by' => 'ALTER TABLE data_pool_jobs ADD COLUMN locked_by VARCHAR(100) DEFAULT NULL AFTER status',
+            'locked_at' => 'ALTER TABLE data_pool_jobs ADD COLUMN locked_at DATETIME DEFAULT NULL AFTER locked_by',
+            'heartbeat_at' => 'ALTER TABLE data_pool_jobs ADD COLUMN heartbeat_at DATETIME DEFAULT NULL AFTER locked_at',
+            'attempts' => 'ALTER TABLE data_pool_jobs ADD COLUMN attempts INT NOT NULL DEFAULT 0 AFTER heartbeat_at',
+            'max_attempts' => 'ALTER TABLE data_pool_jobs ADD COLUMN max_attempts INT NOT NULL DEFAULT 3 AFTER attempts',
+            'resumable' => 'ALTER TABLE data_pool_jobs ADD COLUMN resumable TINYINT(1) NOT NULL DEFAULT 1 AFTER max_attempts',
+            'cancel_requested' => 'ALTER TABLE data_pool_jobs ADD COLUMN cancel_requested TINYINT(1) NOT NULL DEFAULT 0 AFTER resumable',
+            'last_processed_id' => 'ALTER TABLE data_pool_jobs ADD COLUMN last_processed_id BIGINT DEFAULT NULL AFTER cancel_requested',
+            'cursor_payload' => 'ALTER TABLE data_pool_jobs ADD COLUMN cursor_payload JSON DEFAULT NULL AFTER last_processed_id',
+            'next_run_at' => 'ALTER TABLE data_pool_jobs ADD COLUMN next_run_at DATETIME DEFAULT NULL AFTER cursor_payload',
+            'current_step' => 'ALTER TABLE data_pool_jobs ADD COLUMN current_step VARCHAR(120) DEFAULT NULL AFTER next_run_at',
+            'status_message' => 'ALTER TABLE data_pool_jobs ADD COLUMN status_message VARCHAR(255) DEFAULT NULL AFTER current_step',
+            'error_code' => 'ALTER TABLE data_pool_jobs ADD COLUMN error_code VARCHAR(64) DEFAULT NULL AFTER error_message',
+            'exception_class' => 'ALTER TABLE data_pool_jobs ADD COLUMN exception_class VARCHAR(190) DEFAULT NULL AFTER error_code',
+            'failed_step' => 'ALTER TABLE data_pool_jobs ADD COLUMN failed_step VARCHAR(120) DEFAULT NULL AFTER exception_class',
+            'last_sql_name' => 'ALTER TABLE data_pool_jobs ADD COLUMN last_sql_name VARCHAR(120) DEFAULT NULL AFTER failed_step',
+            'worker_id' => 'ALTER TABLE data_pool_jobs ADD COLUMN worker_id VARCHAR(100) DEFAULT NULL AFTER last_sql_name',
+        ];
+        foreach ($extraColumns as $column => $sql) {
+            if (!$columnExists($column)) {
+                $conn->executeStatement($sql);
+            }
+        }
+
+        if (!$indexExists('idx_data_pool_jobs_status_next_run')) {
+            $conn->executeStatement('CREATE INDEX idx_data_pool_jobs_status_next_run ON data_pool_jobs (status, next_run_at, id)');
+        }
+        if (!$indexExists('idx_data_pool_jobs_heartbeat')) {
+            $conn->executeStatement('CREATE INDEX idx_data_pool_jobs_heartbeat ON data_pool_jobs (status, heartbeat_at)');
+        }
+        if (!$indexExists('idx_data_pool_jobs_locked_by')) {
+            $conn->executeStatement('CREATE INDEX idx_data_pool_jobs_locked_by ON data_pool_jobs (locked_by, locked_at)');
+        }
     }
 
     private function ensureDataPoolStatsTable(): void

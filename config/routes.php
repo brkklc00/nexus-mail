@@ -651,6 +651,14 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/jobs', [\App\Controllers\EmailDataPoolController::class, 'jobs'])->setName('admin.email-data-pool.jobs')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/jobs/{jobId}/cancel', [\App\Controllers\EmailDataPoolController::class, 'jobCancel'])->setName('admin.email-data-pool.jobs.cancel')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/jobs/{jobId}/retry', [\App\Controllers\EmailDataPoolController::class, 'jobRetry'])->setName('admin.email-data-pool.jobs.retry')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/jobs/{jobId}/resume', [\App\Controllers\EmailDataPoolController::class, 'jobResume'])->setName('admin.email-data-pool.jobs.resume')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/jobs/{jobId}/mark-failed', [\App\Controllers\EmailDataPoolController::class, 'jobMarkFailed'])->setName('admin.email-data-pool.jobs.mark-failed')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/global-deduplicate/preview', [\App\Controllers\EmailDataPoolController::class, 'globalDeduplicatePreview'])->setName('admin.email-data-pool.global-deduplicate.preview')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/global-deduplicate/apply', [\App\Controllers\EmailDataPoolController::class, 'globalDeduplicateApply'])->setName('admin.email-data-pool.global-deduplicate.apply')

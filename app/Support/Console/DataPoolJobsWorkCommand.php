@@ -16,6 +16,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 class DataPoolJobsWorkCommand extends Command
 {
+    private const CANCELLED_EXCEPTION_PREFIX = 'JOB_CANCELLED:';
+
     protected static $defaultName = 'data-pool:jobs:work';
 
     public function __construct(private ContainerInterface $container)
@@ -45,14 +47,26 @@ class DataPoolJobsWorkCommand extends Command
         $sleepMs = max(10, (int) ($_ENV['DATA_POOL_JOB_SLEEP_MS'] ?? 100));
         $maxRuntime = max(30, (int) ($input->getOption('max-runtime') ?? ($_ENV['DATA_POOL_JOB_MAX_RUNTIME'] ?? 300)));
         $staleMinutes = max(5, (int) ($_ENV['DATA_POOL_JOB_STALE_MINUTES'] ?? 30));
+        $heartbeatSeconds = max(5, (int) ($_ENV['DATA_POOL_HEARTBEAT_SECONDS'] ?? 10));
+        $workerId = trim((string) ($_ENV['DATA_POOL_WORKER_ID'] ?? ('data-pool-worker-' . gethostname() . '-' . getmypid())));
+        if ($workerId === '') {
+            $workerId = 'data-pool-worker-' . getmypid();
+        }
         $once = (bool) $input->getOption('once');
         $startedAt = time();
+        $this->ensureWorkerInfrastructure($em->getConnection());
+        $this->ensureWorkerJobColumns($em->getConnection());
 
-        $io->text(sprintf('Data pool worker basladi (batch=%d, sleep=%dms, max_runtime=%ds)', $batchSize, $sleepMs, $maxRuntime));
-        $recovered = $this->recoverStaleRunningJobs($em, $staleMinutes);
-        if ($recovered > 0) {
-            $io->warning(sprintf('%d adet takılı running job failed olarak işaretlendi.', $recovered));
+        $io->text(sprintf('Data pool worker basladi (id=%s, batch=%d, sleep=%dms, max_runtime=%ds)', $workerId, $batchSize, $sleepMs, $maxRuntime));
+        $recovered = $this->recoverStaleRunningJobs($em, $staleMinutes, $workerId);
+        if (($recovered['requeued'] ?? 0) > 0 || ($recovered['failed'] ?? 0) > 0) {
+            $io->warning(sprintf(
+                'Stale jobs: %d yeniden kuyruğa alındı, %d failed işaretlendi.',
+                (int) ($recovered['requeued'] ?? 0),
+                (int) ($recovered['failed'] ?? 0)
+            ));
         }
+        $lastWorkerHeartbeatAt = 0;
 
         while (true) {
             if ((time() - $startedAt) >= $maxRuntime) {
@@ -60,7 +74,12 @@ class DataPoolJobsWorkCommand extends Command
                 break;
             }
 
-            $job = $this->claimNextQueuedJob($em);
+            if ((time() - $lastWorkerHeartbeatAt) >= $heartbeatSeconds) {
+                $this->touchWorkerHeartbeat($em->getConnection(), $workerId, null, 'idle');
+                $lastWorkerHeartbeatAt = time();
+            }
+
+            $job = $this->claimNextQueuedJob($em, $workerId);
             if (!$job) {
                 if ($once) {
                     break;
@@ -73,7 +92,8 @@ class DataPoolJobsWorkCommand extends Command
             $poolId = (int) ($job['pool_id'] ?? 0);
             $type = (string) ($job['type'] ?? '');
             $io->text(sprintf('#%d isleniyor: %s (pool: %d)', $jobId, $type, $poolId));
-            $jobService->markRunning($jobId);
+            $jobService->markRunning($jobId, $workerId);
+            $this->touchWorkerHeartbeat($em->getConnection(), $workerId, $jobId, 'running');
 
             try {
                 $result = match ($type) {
@@ -109,10 +129,11 @@ class DataPoolJobsWorkCommand extends Command
                     (int) ($result['failed_count'] ?? 0),
                     $result
                 );
+                $this->touchWorkerHeartbeat($em->getConnection(), $workerId, $jobId, 'idle');
                 $io->success(sprintf('#%d tamamlandi', $jobId));
             } catch (\Throwable $e) {
-                $jobService->markFailed($jobId, $e->getMessage());
-                $io->error(sprintf('#%d basarisiz: %s', $jobId, $e->getMessage()));
+                $this->handleJobFailure($jobService, $job, $e, $workerId, $io);
+                $this->touchWorkerHeartbeat($em->getConnection(), $workerId, $jobId, 'idle');
             } finally {
                 $em->clear();
             }
@@ -125,45 +146,192 @@ class DataPoolJobsWorkCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function recoverStaleRunningJobs(EntityManagerInterface $em, int $staleMinutes): int
+    private function ensureWorkerInfrastructure(\Doctrine\DBAL\Connection $conn): void
+    {
+        $conn->executeStatement(
+            "CREATE TABLE IF NOT EXISTS data_pool_worker_heartbeats (
+                id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
+                worker_id VARCHAR(100) NOT NULL,
+                hostname VARCHAR(255) DEFAULT NULL,
+                pid INT DEFAULT NULL,
+                current_job_id BIGINT DEFAULT NULL,
+                status VARCHAR(30) NOT NULL,
+                heartbeat_at DATETIME NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                UNIQUE INDEX uq_worker_id (worker_id),
+                INDEX idx_heartbeat_at (heartbeat_at),
+                PRIMARY KEY(id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    }
+
+    private function ensureWorkerJobColumns(\Doctrine\DBAL\Connection $conn): void
+    {
+        $columnExists = static function (string $column) use ($conn): bool {
+            return (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                ['data_pool_jobs', $column]
+            ) > 0;
+        };
+        $columns = [
+            'locked_by' => 'ALTER TABLE data_pool_jobs ADD COLUMN locked_by VARCHAR(100) DEFAULT NULL AFTER status',
+            'locked_at' => 'ALTER TABLE data_pool_jobs ADD COLUMN locked_at DATETIME DEFAULT NULL AFTER locked_by',
+            'heartbeat_at' => 'ALTER TABLE data_pool_jobs ADD COLUMN heartbeat_at DATETIME DEFAULT NULL AFTER locked_at',
+            'attempts' => 'ALTER TABLE data_pool_jobs ADD COLUMN attempts INT NOT NULL DEFAULT 0 AFTER heartbeat_at',
+            'max_attempts' => 'ALTER TABLE data_pool_jobs ADD COLUMN max_attempts INT NOT NULL DEFAULT 3 AFTER attempts',
+            'resumable' => 'ALTER TABLE data_pool_jobs ADD COLUMN resumable TINYINT(1) NOT NULL DEFAULT 1 AFTER max_attempts',
+            'cancel_requested' => 'ALTER TABLE data_pool_jobs ADD COLUMN cancel_requested TINYINT(1) NOT NULL DEFAULT 0 AFTER resumable',
+            'last_processed_id' => 'ALTER TABLE data_pool_jobs ADD COLUMN last_processed_id BIGINT DEFAULT NULL AFTER cancel_requested',
+            'cursor_payload' => 'ALTER TABLE data_pool_jobs ADD COLUMN cursor_payload JSON DEFAULT NULL AFTER last_processed_id',
+            'next_run_at' => 'ALTER TABLE data_pool_jobs ADD COLUMN next_run_at DATETIME DEFAULT NULL AFTER cursor_payload',
+            'current_step' => 'ALTER TABLE data_pool_jobs ADD COLUMN current_step VARCHAR(120) DEFAULT NULL AFTER next_run_at',
+            'status_message' => 'ALTER TABLE data_pool_jobs ADD COLUMN status_message VARCHAR(255) DEFAULT NULL AFTER current_step',
+            'error_code' => 'ALTER TABLE data_pool_jobs ADD COLUMN error_code VARCHAR(64) DEFAULT NULL AFTER error_message',
+            'exception_class' => 'ALTER TABLE data_pool_jobs ADD COLUMN exception_class VARCHAR(190) DEFAULT NULL AFTER error_code',
+            'failed_step' => 'ALTER TABLE data_pool_jobs ADD COLUMN failed_step VARCHAR(120) DEFAULT NULL AFTER exception_class',
+            'last_sql_name' => 'ALTER TABLE data_pool_jobs ADD COLUMN last_sql_name VARCHAR(120) DEFAULT NULL AFTER failed_step',
+            'worker_id' => 'ALTER TABLE data_pool_jobs ADD COLUMN worker_id VARCHAR(100) DEFAULT NULL AFTER last_sql_name',
+        ];
+        foreach ($columns as $column => $sql) {
+            if (!$columnExists($column)) {
+                $conn->executeStatement($sql);
+            }
+        }
+    }
+
+    /**
+     * @return array{requeued:int,failed:int}
+     */
+    private function recoverStaleRunningJobs(EntityManagerInterface $em, int $staleMinutes, string $workerId): array
     {
         $conn = $em->getConnection();
-        return $conn->executeStatement(
-            "UPDATE data_pool_jobs
-                SET status = 'failed',
-                    error_message = COALESCE(NULLIF(error_message, ''), 'Worker yeniden başlatıldığı için job sonlandırıldı.'),
-                    finished_at = NOW(),
-                    updated_at = NOW()
+        $rows = $conn->fetchAllAssociative(
+            "SELECT id, attempts, max_attempts, resumable
+               FROM data_pool_jobs
               WHERE status = 'running'
-                AND updated_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)",
+                AND COALESCE(heartbeat_at, updated_at, started_at, created_at) < DATE_SUB(NOW(), INTERVAL ? MINUTE)",
             [$staleMinutes]
         );
+        $requeued = 0;
+        $failed = 0;
+        foreach ($rows as $row) {
+            $jobId = (int) ($row['id'] ?? 0);
+            if ($jobId < 1) {
+                continue;
+            }
+            $attempts = (int) ($row['attempts'] ?? 0);
+            $maxAttempts = max(1, (int) ($row['max_attempts'] ?? 3));
+            $resumable = ((int) ($row['resumable'] ?? 1)) === 1;
+
+            if ($resumable && $attempts < $maxAttempts) {
+                $conn->executeStatement(
+                    "UPDATE data_pool_jobs
+                        SET status = 'queued',
+                            status_message = 'Stale job tekrar kuyruğa alındı.',
+                            locked_by = NULL,
+                            locked_at = NULL,
+                            heartbeat_at = NULL,
+                            next_run_at = NOW(),
+                            updated_at = NOW()
+                      WHERE id = ?",
+                    [$jobId]
+                );
+                $requeued++;
+                continue;
+            }
+
+            $conn->executeStatement(
+                "UPDATE data_pool_jobs
+                    SET status = 'failed',
+                        error_message = COALESCE(NULLIF(error_message, ''), 'Worker durduğu için stale job otomatik sonlandırıldı.'),
+                        error_code = COALESCE(error_code, 'STALE_JOB'),
+                        exception_class = COALESCE(exception_class, 'RuntimeException'),
+                        failed_step = COALESCE(failed_step, 'recover_stale_running_jobs'),
+                        worker_id = COALESCE(worker_id, ?),
+                        locked_by = NULL,
+                        locked_at = NULL,
+                        finished_at = NOW(),
+                        updated_at = NOW()
+                  WHERE id = ?",
+                [$workerId, $jobId]
+            );
+            $failed++;
+        }
+
+        return ['requeued' => $requeued, 'failed' => $failed];
     }
 
     /**
      * @return array<string, mixed>|null
      */
-    private function claimNextQueuedJob(EntityManagerInterface $em): ?array
+    private function claimNextQueuedJob(EntityManagerInterface $em, string $workerId): ?array
     {
         $conn = $em->getConnection();
-        $lock = (int) $conn->fetchOne("SELECT GET_LOCK('data_pool_jobs_worker', 0)");
+        $lock = (int) $conn->fetchOne("SELECT GET_LOCK('data_pool_jobs_worker', 1)");
         if ($lock !== 1) {
             return null;
         }
 
         try {
-            $job = $conn->fetchAssociative(
-                "SELECT * FROM data_pool_jobs WHERE status = 'queued' ORDER BY id ASC LIMIT 1"
-            );
+            $conn->beginTransaction();
+            $job = null;
+            try {
+                $job = $conn->fetchAssociative(
+                    "SELECT *
+                       FROM data_pool_jobs
+                      WHERE status = 'queued'
+                        AND (next_run_at IS NULL OR next_run_at <= NOW())
+                   ORDER BY id ASC
+                      LIMIT 1
+                      FOR UPDATE SKIP LOCKED"
+                );
+            } catch (\Throwable) {
+                $job = $conn->fetchAssociative(
+                    "SELECT *
+                       FROM data_pool_jobs
+                      WHERE status = 'queued'
+                        AND (next_run_at IS NULL OR next_run_at <= NOW())
+                   ORDER BY id ASC
+                      LIMIT 1"
+                );
+            }
+
             if (!$job) {
+                $conn->commit();
                 return null;
             }
-            $conn->executeStatement(
-                "UPDATE data_pool_jobs SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ? WHERE id = ? AND status = 'queued'",
-                [(new \DateTimeImmutable())->format('Y-m-d H:i:s'), (new \DateTimeImmutable())->format('Y-m-d H:i:s'), (int) ($job['id'] ?? 0)]
-            );
 
-            return $job;
+            $jobId = (int) ($job['id'] ?? 0);
+            $updated = $conn->executeStatement(
+                "UPDATE data_pool_jobs
+                    SET status = 'running',
+                        locked_by = ?,
+                        worker_id = ?,
+                        locked_at = NOW(),
+                        heartbeat_at = NOW(),
+                        started_at = COALESCE(started_at, NOW()),
+                        next_run_at = NULL,
+                        attempts = attempts + 1,
+                        status_message = 'Worker tarafından claim edildi.',
+                        updated_at = NOW()
+                  WHERE id = ?
+                    AND status = 'queued'",
+                [$workerId, $workerId, $jobId]
+            );
+            if ($updated < 1) {
+                $conn->rollBack();
+                return null;
+            }
+            $fresh = $conn->fetchAssociative('SELECT * FROM data_pool_jobs WHERE id = ?', [$jobId]);
+            $conn->commit();
+
+            return $fresh ?: null;
+        } catch (\Throwable $e) {
+            if ($conn->isTransactionActive()) {
+                $conn->rollBack();
+            }
+            throw $e;
         } finally {
             $conn->executeQuery("SELECT RELEASE_LOCK('data_pool_jobs_worker')");
         }
@@ -176,6 +344,9 @@ class DataPoolJobsWorkCommand extends Command
     {
         $conn = $em->getConnection();
         $total = (int) $conn->fetchOne('SELECT total_count FROM email_data_pool_lists WHERE id = ?', [$poolId]);
+        if ($total < 1) {
+            $total = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?', [$poolId]);
+        }
         $processed = 0;
         $lastId = 0;
         $gmail = 0;
@@ -188,6 +359,7 @@ class DataPoolJobsWorkCommand extends Command
         ];
 
         while (true) {
+            $this->assertNotCancelled($jobService, $jobId);
             $rows = $conn->fetchAllAssociative(
                 "SELECT id, email, domain
                    FROM email_data_pool
@@ -220,7 +392,12 @@ class DataPoolJobsWorkCommand extends Command
                 $processed++;
             }
 
-            $jobService->updateProgress($jobId, $processed, $total, $processed, 0);
+            $jobService->updateProgress($jobId, $processed, $total, $processed, 0, [
+                'current_step' => 'analyze_batch',
+                'message' => sprintf('%d / %d kayıt analiz edildi', $processed, max(1, $total)),
+                'last_processed_id' => $lastId,
+                'cursor_payload' => ['last_id' => $lastId],
+            ]);
         }
 
         $duplicateCount = (int) $conn->fetchOne(
@@ -361,6 +538,7 @@ class DataPoolJobsWorkCommand extends Command
         $deleted = 0;
         $safeBatch = max(1000, min(50000, $batchSize));
         while (true) {
+            $this->assertNotCancelled($jobService, $jobId);
             $ids = $conn->fetchFirstColumn("SELECT id FROM tmp_pool_dup_ids ORDER BY id ASC LIMIT {$safeBatch}");
             if ($ids === []) {
                 break;
@@ -368,15 +546,18 @@ class DataPoolJobsWorkCommand extends Command
 
             $ids = array_values(array_map('intval', $ids));
             $in = implode(',', array_fill(0, count($ids), '?'));
-            $deleted += $conn->executeStatement(
+            $deleted += $this->executeNamedSql(
+                $conn,
+                'remove_duplicates_delete_source_batch',
                 "DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)",
                 array_merge([$poolId], $ids)
             );
-            $conn->executeStatement(
-                "DELETE FROM tmp_pool_dup_ids WHERE id IN ($in)",
-                $ids
-            );
-            $jobService->updateProgress($jobId, $deleted, $totalToDelete, $deleted, 0);
+            $this->executeNamedSql($conn, 'remove_duplicates_delete_temp_batch', "DELETE FROM tmp_pool_dup_ids WHERE id IN ($in)", $ids);
+            $jobService->updateProgress($jobId, $deleted, $totalToDelete, $deleted, 0, [
+                'current_step' => 'remove_duplicates_batch',
+                'message' => sprintf('%d / %d duplicate kayıt temizlendi', $deleted, max(1, $totalToDelete)),
+                'last_processed_id' => (int) ($ids[count($ids) - 1] ?? 0),
+            ]);
         }
 
         $this->refreshListCounts($conn, $poolId);
@@ -413,6 +594,7 @@ class DataPoolJobsWorkCommand extends Command
         $fixed = 0;
         $lastId = 0;
         while (true) {
+            $this->assertNotCancelled($jobService, $jobId);
             $rows = $conn->fetchAllAssociative(
                 "SELECT id, email
                    FROM email_data_pool
@@ -457,7 +639,11 @@ class DataPoolJobsWorkCommand extends Command
                 $fixed++;
                 $processed++;
             }
-            $jobService->updateProgress($jobId, $processed, $totalToFix, $fixed, 0);
+            $jobService->updateProgress($jobId, $processed, $totalToFix, $fixed, 0, [
+                'current_step' => 'fix_gmail_typos_batch',
+                'message' => sprintf('%d / %d typo düzeltildi', $fixed, max(1, $totalToFix)),
+                'last_processed_id' => $lastId,
+            ]);
         }
 
         $this->refreshListCounts($conn, $poolId);
@@ -715,140 +901,181 @@ class DataPoolJobsWorkCommand extends Command
         $mode = (string) ($payload['mode'] ?? 'mark_duplicate');
         $priorityListIds = array_values(array_filter(array_map('intval', (array) ($payload['priority_list_ids'] ?? [])), static fn (int $id): bool => $id > 0));
         $where = $this->globalActiveWhereClause($conn, 'p');
-        $declaredTotal = max(1, (int) ($job['total_count'] ?? 1));
-
-        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.02), $declaredTotal, 0, 0);
-        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dup_norms');
-        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dedup_keep_ids');
-        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dedup_dup_ids');
-        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dup_norms (norm VARCHAR(320) NOT NULL PRIMARY KEY) ENGINE=InnoDB');
-        // MEMORY tabloları 15M+ datasetlerde "table is full" hatasına düşebildiği için InnoDB kullan.
-        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_keep_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=InnoDB');
-        $conn->executeStatement('CREATE TEMPORARY TABLE tmp_global_dedup_dup_ids (id BIGINT UNSIGNED PRIMARY KEY) ENGINE=InnoDB');
-        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.05), $declaredTotal, 0, 0);
-
-        $conn->executeStatement(
-            "INSERT INTO tmp_global_dup_norms (norm)
-             SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
-               FROM email_data_pool
-              WHERE " . $this->globalActiveWhereClause($conn) . "
-                AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
-              GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
-             HAVING COUNT(*) > 1"
-        );
-        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.18), $declaredTotal, 0, 0);
-
-        if ($strategy === 'keep_newest') {
-            $conn->executeStatement(
-                "INSERT INTO tmp_global_dedup_keep_ids (id)
-                 SELECT MAX(p.id) AS keep_id
-                   FROM email_data_pool p
-                   JOIN tmp_global_dup_norms d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
-                  WHERE {$where}
-                  GROUP BY d.norm"
-            );
-        } elseif ($strategy === 'keep_priority' && $priorityListIds !== []) {
-            $inPriority = implode(',', array_fill(0, count($priorityListIds), '?'));
-            $conn->executeStatement(
-                "INSERT INTO tmp_global_dedup_keep_ids (id)
-                 SELECT COALESCE(
-                            MIN(CASE WHEN p.pool_list_id IN ($inPriority) THEN p.id END),
-                            MIN(p.id)
-                        ) AS keep_id
-                   FROM email_data_pool p
-                   JOIN tmp_global_dup_norms d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
-                  WHERE {$where}
-                  GROUP BY d.norm",
-                $priorityListIds
-            );
-        } else {
-            $conn->executeStatement(
-                "INSERT INTO tmp_global_dedup_keep_ids (id)
-                 SELECT MIN(p.id) AS keep_id
-                   FROM email_data_pool p
-                   JOIN tmp_global_dup_norms d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
-                  WHERE {$where}
-                  GROUP BY d.norm"
-            );
-        }
-        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.30), $declaredTotal, 0, 0);
-
-        $conn->executeStatement(
-            "INSERT INTO tmp_global_dedup_dup_ids (id)
-             SELECT p.id
-               FROM email_data_pool p
-          LEFT JOIN tmp_global_dedup_keep_ids k ON k.id = p.id
-               JOIN tmp_global_dup_norms d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
-              WHERE {$where}
-                AND k.id IS NULL"
-        );
-        $jobService->updateProgress($jobId, (int) floor($declaredTotal * 0.40), $declaredTotal, 0, 0);
-
-        $totalToAffect = (int) $conn->fetchOne('SELECT COUNT(*) FROM tmp_global_dedup_dup_ids');
-        $processed = 0;
-        $affected = 0;
         $hasStatus = $this->hasColumn($conn, 'email_data_pool', 'status');
         $hasIsDuplicate = $this->hasColumn($conn, 'email_data_pool', 'is_duplicate');
         $globalBatchSize = max(5000, (int) ($_ENV['DATA_POOL_GLOBAL_DEDUP_BATCH_SIZE'] ?? $batchSize));
-        $limit = max(1000, min(100000, $globalBatchSize));
-        $phaseBase = (int) floor($declaredTotal * 0.40);
-        $phaseSpan = max(1, $declaredTotal - $phaseBase);
+        $groupBatch = max(200, min(5000, (int) ($_ENV['DATA_POOL_GLOBAL_DEDUP_GROUP_BATCH_SIZE'] ?? 1000)));
 
-        while (true) {
-            $ids = $conn->fetchFirstColumn("SELECT id FROM tmp_global_dedup_dup_ids ORDER BY id ASC LIMIT {$limit}");
-            if ($ids === []) {
-                break;
-            }
-            $ids = array_values(array_map('intval', $ids));
-            $in = implode(',', array_fill(0, count($ids), '?'));
+        $cursorRaw = json_decode((string) ($job['cursor_payload'] ?? ''), true);
+        $cursorRaw = is_array($cursorRaw) ? $cursorRaw : [];
+        $phase = (string) ($cursorRaw['phase'] ?? 'prepare');
+        $stageLastId = (int) ($cursorRaw['stage_last_id'] ?? 0);
+        $processed = (int) ($cursorRaw['processed_count'] ?? 0);
+        $affected = (int) ($cursorRaw['affected_count'] ?? 0);
+        $totalToAffect = (int) ($cursorRaw['total_to_affect'] ?? 0);
 
-            if ($mode === 'delete') {
-                $affected += $conn->executeStatement(
-                    "DELETE FROM email_data_pool WHERE id IN ($in)",
-                    $ids
-                );
+        $this->ensureDedupStagingTable($conn);
+
+        if ($phase === 'prepare') {
+            $this->assertNotCancelled($jobService, $jobId);
+            $jobService->updateProgress($jobId, 0, 100, 0, 0, [
+                'current_step' => 'prepare_staging',
+                'message' => 'Global duplicate staging hazırlanıyor',
+                'cursor_payload' => ['phase' => 'prepare'],
+            ]);
+
+            $this->executeNamedSql($conn, 'dedup_staging_clear_for_job', 'DELETE FROM data_pool_dedup_staging WHERE job_id = ?', [$jobId]);
+            $activeWhere = $this->globalActiveWhereClause($conn, 'p');
+            $insertParams = [$jobId];
+            if ($strategy === 'keep_newest') {
+                $keepExpr = 'MAX(p.id)';
+            } elseif ($strategy === 'keep_priority' && $priorityListIds !== []) {
+                $inPriority = implode(',', array_fill(0, count($priorityListIds), '?'));
+                $keepExpr = "COALESCE(MIN(CASE WHEN p.pool_list_id IN ($inPriority) THEN p.id END), MIN(p.id))";
+                foreach ($priorityListIds as $priorityListId) {
+                    $insertParams[] = $priorityListId;
+                }
             } else {
-                $setParts = ['updated_at = NOW()'];
-                if ($hasIsDuplicate) {
-                    $setParts[] = 'is_duplicate = 1';
-                }
-                if ($hasStatus) {
-                    $setParts[] = "status = 'duplicate'";
-                } else {
-                    $setParts[] = 'is_active = 0';
-                }
-                $setSql = implode(', ', $setParts);
-                $affected += $conn->executeStatement(
-                    "UPDATE email_data_pool SET {$setSql} WHERE id IN ($in)",
-                    $ids
-                );
+                $keepExpr = 'MIN(p.id)';
             }
 
-            $conn->executeStatement(
-                "DELETE FROM tmp_global_dedup_dup_ids WHERE id IN ($in)",
-                $ids
+            $this->executeNamedSql(
+                $conn,
+                'dedup_staging_insert',
+                "INSERT INTO data_pool_dedup_staging (job_id, normalized_email, keep_id, duplicate_count, processed, created_at, updated_at)
+                 SELECT ?, d.norm, {$keepExpr} AS keep_id, COUNT(*) - 1 AS duplicate_count, 0, NOW(), NOW()
+                   FROM email_data_pool p
+                   JOIN (
+                        SELECT COALESCE(normalized_email, LOWER(TRIM(email))) AS norm
+                          FROM email_data_pool
+                         WHERE " . $this->globalActiveWhereClause($conn) . "
+                           AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
+                         GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+                        HAVING COUNT(*) > 1
+                   ) d ON d.norm = COALESCE(p.normalized_email, LOWER(TRIM(p.email)))
+                  WHERE {$activeWhere}
+                  GROUP BY d.norm",
+                $insertParams
             );
-            $processed += count($ids);
-            $phaseProgress = (int) floor((($processed / max(1, $totalToAffect)) * $phaseSpan));
-            $jobService->updateProgress($jobId, min($declaredTotal, $phaseBase + $phaseProgress), $declaredTotal, $affected, 0);
+
+            $totalToAffect = (int) ($conn->fetchOne('SELECT COALESCE(SUM(duplicate_count), 0) FROM data_pool_dedup_staging WHERE job_id = ?', [$jobId]) ?? 0);
+            $phase = 'apply';
+            $stageLastId = 0;
+            $processed = 0;
+            $affected = 0;
+
+            $jobService->updateProgress($jobId, 0, max(1, $totalToAffect), 0, 0, [
+                'current_step' => 'dedup_batch_apply',
+                'message' => 'Duplicate işaretleme/silme başladı',
+                'cursor_payload' => [
+                    'phase' => $phase,
+                    'stage_last_id' => $stageLastId,
+                    'processed_count' => $processed,
+                    'affected_count' => $affected,
+                    'total_to_affect' => $totalToAffect,
+                ],
+            ]);
         }
-        $conn->executeStatement('DROP TEMPORARY TABLE IF EXISTS tmp_global_dup_norms');
-        $jobService->updateProgress($jobId, max((int) floor($declaredTotal * 0.95), $phaseBase), max(1, $declaredTotal), $affected, 0);
+
+        if ($phase === 'apply') {
+            while (true) {
+                $this->assertNotCancelled($jobService, $jobId);
+                $stagingRows = $conn->fetchAllAssociative(
+                    "SELECT id, normalized_email, keep_id
+                       FROM data_pool_dedup_staging
+                      WHERE job_id = ?
+                        AND processed = 0
+                        AND id > ?
+                   ORDER BY id ASC
+                      LIMIT {$groupBatch}",
+                    [$jobId, $stageLastId]
+                );
+                if ($stagingRows === []) {
+                    break;
+                }
+
+                foreach ($stagingRows as $stagingRow) {
+                    $stageId = (int) ($stagingRow['id'] ?? 0);
+                    $norm = (string) ($stagingRow['normalized_email'] ?? '');
+                    $keepId = (int) ($stagingRow['keep_id'] ?? 0);
+                    $stageLastId = max($stageLastId, $stageId);
+                    if ($norm === '' || $keepId < 1) {
+                        $this->executeNamedSql($conn, 'dedup_staging_mark_skipped', 'UPDATE data_pool_dedup_staging SET processed = 1, updated_at = NOW() WHERE id = ?', [$stageId]);
+                        continue;
+                    }
+
+                    $dupIds = $conn->fetchFirstColumn(
+                        "SELECT p.id
+                           FROM email_data_pool p
+                          WHERE {$where}
+                            AND COALESCE(p.normalized_email, LOWER(TRIM(p.email))) = ?
+                            AND p.id <> ?",
+                        [$norm, $keepId]
+                    );
+                    $dupIds = array_values(array_map('intval', $dupIds));
+                    if ($dupIds !== []) {
+                        foreach (array_chunk($dupIds, $globalBatchSize) as $chunkIds) {
+                            $in = implode(',', array_fill(0, count($chunkIds), '?'));
+                            if ($mode === 'delete') {
+                                $affected += $this->executeNamedSql($conn, 'global_dedup_delete_chunk', "DELETE FROM email_data_pool WHERE id IN ($in)", $chunkIds);
+                            } else {
+                                $setParts = ['updated_at = NOW()'];
+                                if ($hasIsDuplicate) {
+                                    $setParts[] = 'is_duplicate = 1';
+                                }
+                                if ($hasStatus) {
+                                    $setParts[] = "status = 'duplicate'";
+                                } else {
+                                    $setParts[] = 'is_active = 0';
+                                }
+                                $setSql = implode(', ', $setParts);
+                                $affected += $this->executeNamedSql($conn, 'global_dedup_mark_chunk', "UPDATE email_data_pool SET {$setSql} WHERE id IN ($in)", $chunkIds);
+                            }
+                            $processed += count($chunkIds);
+                        }
+                    }
+
+                    $this->executeNamedSql($conn, 'dedup_staging_mark_processed', 'UPDATE data_pool_dedup_staging SET processed = 1, updated_at = NOW() WHERE id = ?', [$stageId]);
+                    $jobService->updateProgress($jobId, $processed, max(1, $totalToAffect), $affected, 0, [
+                        'current_step' => 'dedup_batch_apply',
+                        'message' => sprintf('%d / %d duplicate kayıt işlendi', $processed, max(1, $totalToAffect)),
+                        'last_processed_id' => $stageLastId,
+                        'cursor_payload' => [
+                            'phase' => 'apply',
+                            'stage_last_id' => $stageLastId,
+                            'processed_count' => $processed,
+                            'affected_count' => $affected,
+                            'total_to_affect' => $totalToAffect,
+                        ],
+                    ]);
+                }
+            }
+
+            $phase = 'finalize';
+        }
 
         $this->refreshAllListCounts($conn);
-        $preview = $this->processGlobalDeduplicatePreview($em, $jobService, $jobId, $batchSize);
+        $remainingGroups = (int) ($conn->fetchOne(
+            "SELECT COUNT(*)
+               FROM (
+                    SELECT 1
+                      FROM email_data_pool
+                     WHERE " . $this->globalActiveWhereClause($conn) . "
+                       AND COALESCE(normalized_email, LOWER(TRIM(email))) <> ''
+                     GROUP BY COALESCE(normalized_email, LOWER(TRIM(email)))
+                    HAVING COUNT(*) > 1
+               ) t"
+        ) ?? 0);
         $reportUrl = $this->writeGlobalDedupReport([
             'mode' => $mode,
             'strategy' => $strategy,
             'priority_list_ids' => $priorityListIds,
             'affected_rows' => $affected,
-            'duplicate_groups' => (int) ($preview['duplicate_groups'] ?? 0),
-            'total_rows' => (int) ($preview['total_rows'] ?? 0),
-            'unique_emails' => (int) ($preview['unique_emails'] ?? 0),
-            'top_domains' => $preview['top_domains'] ?? [],
-            'by_list' => $preview['by_list'] ?? [],
+            'remaining_duplicate_groups' => $remainingGroups,
+            'processed_count' => $processed,
             'finished_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
         ]);
+        $this->executeNamedSql($conn, 'dedup_staging_cleanup_job_rows', 'DELETE FROM data_pool_dedup_staging WHERE job_id = ?', [$jobId]);
 
         return [
             'processed_count' => $processed,
@@ -856,11 +1083,12 @@ class DataPoolJobsWorkCommand extends Command
             'failed_count' => 0,
             'affected_rows' => $affected,
             'removed_count' => $mode === 'delete' ? $affected : 0,
-            'duplicate_groups' => (int) ($preview['duplicate_groups'] ?? 0),
-            'total_rows' => (int) ($preview['total_rows'] ?? 0),
-            'unique_emails' => (int) ($preview['unique_emails'] ?? 0),
+            'duplicate_groups' => $remainingGroups,
+            'total_rows' => (int) ($job['total_count'] ?? 0),
+            'unique_emails' => max(0, (int) ($job['total_count'] ?? 0) - $remainingGroups),
             'mode' => $mode,
             'strategy' => $strategy,
+            'phase' => $phase,
             'report_url' => $reportUrl,
         ];
     }
@@ -913,6 +1141,26 @@ class DataPoolJobsWorkCommand extends Command
         @file_put_contents($path, (string) json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
         return '/admin/email-data-pool/exports/' . rawurlencode($filename);
+    }
+
+    private function ensureDedupStagingTable(\Doctrine\DBAL\Connection $conn): void
+    {
+        $conn->executeStatement(
+            "CREATE TABLE IF NOT EXISTS data_pool_dedup_staging (
+                id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
+                job_id BIGINT UNSIGNED NOT NULL,
+                normalized_email VARCHAR(320) NOT NULL,
+                keep_id BIGINT UNSIGNED NOT NULL,
+                duplicate_count INT NOT NULL DEFAULT 0,
+                processed TINYINT(1) NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                INDEX idx_job_processed (job_id, processed, id),
+                INDEX idx_job_email (job_id, normalized_email),
+                INDEX idx_keep_id (keep_id),
+                PRIMARY KEY(id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
     }
 
     /**
@@ -975,10 +1223,11 @@ class DataPoolJobsWorkCommand extends Command
         $inserted = 0;
         $moved = 0;
         $processed = 0;
-        $lastId = 0;
+        $lastId = (int) ($conn->fetchOne('SELECT COALESCE(last_processed_id, 0) FROM data_pool_jobs WHERE id = ?', [$jobId]) ?? 0);
         $safeBatch = max(1000, min(100000, (int) ($_ENV['DATA_POOL_BALANCE_BATCH_SIZE'] ?? $batchSize)));
 
         while ($inserted < $need) {
+            $this->assertNotCancelled($jobService, $jobId);
             $limit = min($safeBatch, $need - $inserted);
             $rows = [];
             if ($sourceType === 'list') {
@@ -1052,15 +1301,20 @@ class DataPoolJobsWorkCommand extends Command
             }
             if ($insertValues !== []) {
                 $sql = 'INSERT INTO email_data_pool (pool_list_id, email, normalized_email, domain, name, is_gmail, is_duplicate, is_invalid, is_active, created_at, updated_at) VALUES ' . implode(',', $insertValues);
-                $insertedNow = $conn->executeStatement($sql, $insertParams);
+                $insertedNow = $this->executeNamedSql($conn, 'copy_like_insert_batch', $sql, $insertParams);
                 $inserted += $insertedNow;
             }
             if ($moveIds !== []) {
                 $in = implode(',', array_fill(0, count($moveIds), '?'));
-                $conn->executeStatement("DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)", array_merge([$sourceListId], $moveIds));
+                $this->executeNamedSql($conn, 'copy_like_move_delete_source_batch', "DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)", array_merge([$sourceListId], $moveIds));
                 $moved += count($moveIds);
             }
-            $jobService->updateProgress($jobId, $inserted, max(1, $total), $inserted, 0);
+            $jobService->updateProgress($jobId, $inserted, max(1, $total), $inserted, 0, [
+                'current_step' => 'copy_batch',
+                'message' => sprintf('%d / %d kayıt işlendi', $inserted, max(1, $total)),
+                'last_processed_id' => $lastId,
+                'cursor_payload' => ['last_id' => $lastId, 'inserted' => $inserted],
+            ]);
             if ($sourceType !== 'list' && $processed >= count(preg_split('/\r\n|\r|\n/', (string) ($payload['source_payload'] ?? '')) ?: [])) {
                 break;
             }
@@ -1106,6 +1360,7 @@ class DataPoolJobsWorkCommand extends Command
         $moved = 0;
         $safeBatch = max(1000, min(100000, (int) ($_ENV['DATA_POOL_BALANCE_BATCH_SIZE'] ?? $batchSize)));
         while ($moved < $overflow) {
+            $this->assertNotCancelled($jobService, $jobId);
             $limit = min($safeBatch, $overflow - $moved);
             $affected = $conn->executeStatement(
                 "UPDATE email_data_pool
@@ -1119,7 +1374,10 @@ class DataPoolJobsWorkCommand extends Command
                 break;
             }
             $moved += $affected;
-            $jobService->updateProgress($jobId, $moved, max(1, $overflow), $moved, 0);
+            $jobService->updateProgress($jobId, $moved, max(1, $overflow), $moved, 0, [
+                'current_step' => 'move_overflow_batch',
+                'message' => sprintf('%d / %d fazla kayıt taşındı', $moved, max(1, $overflow)),
+            ]);
         }
         $this->refreshListCounts($conn, $sourceListId);
         $this->refreshListCounts($conn, $targetListId);
@@ -1160,6 +1418,7 @@ class DataPoolJobsWorkCommand extends Command
         $currentCount = 0;
 
         while ($processed < $total) {
+            $this->assertNotCancelled($jobService, $jobId);
             if ($currentTargetId < 1 || $currentCount >= $chunkSize) {
                 $part++;
                 $name = $prefix . ' - ' . $part;
@@ -1199,18 +1458,25 @@ class DataPoolJobsWorkCommand extends Command
                 $insertParams[] = ((string) ($row['domain_name'] ?? '') === 'gmail.com') ? 1 : 0;
             }
             if ($insertValues !== []) {
-                $conn->executeStatement(
+                $this->executeNamedSql(
+                    $conn,
+                    'split_pool_insert_batch',
                     'INSERT INTO email_data_pool (pool_list_id, email, normalized_email, domain, name, is_gmail, is_duplicate, is_invalid, is_active, created_at, updated_at) VALUES ' . implode(',', $insertValues),
                     $insertParams
                 );
             }
             if ($mode === 'move' && $ids !== []) {
                 $in = implode(',', array_fill(0, count($ids), '?'));
-                $conn->executeStatement("DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)", array_merge([$sourceListId], $ids));
+                $this->executeNamedSql($conn, 'split_pool_delete_source_batch', "DELETE FROM email_data_pool WHERE pool_list_id = ? AND id IN ($in)", array_merge([$sourceListId], $ids));
             }
             $processed += count($rows);
             $currentCount += count($rows);
-            $jobService->updateProgress($jobId, $processed, max(1, $total), $processed, 0);
+            $jobService->updateProgress($jobId, $processed, max(1, $total), $processed, 0, [
+                'current_step' => 'split_pool_batch',
+                'message' => sprintf('%d / %d kayıt bölündü', $processed, max(1, $total)),
+                'last_processed_id' => $lastId,
+                'cursor_payload' => ['last_id' => $lastId, 'part' => $part],
+            ]);
         }
         $this->refreshListCounts($conn, $sourceListId);
         if ($createdLists !== []) {
@@ -1251,6 +1517,7 @@ class DataPoolJobsWorkCommand extends Command
         $processed = 0;
         $operations = 0;
         foreach ($poolIds as $poolId) {
+            $this->assertNotCancelled($jobService, $jobId);
             $current = (int) $conn->fetchOne('SELECT total_count FROM email_data_pool_lists WHERE id = ?', [$poolId]);
             if ($current > $targetLimit) {
                 $overflow = $current - $targetLimit;
@@ -1278,7 +1545,11 @@ class DataPoolJobsWorkCommand extends Command
                     }
                 }
             }
-            $jobService->updateProgress($jobId, $processed, max(1, count($poolIds) * $targetLimit), $processed, 0);
+            $jobService->updateProgress($jobId, $processed, max(1, count($poolIds) * $targetLimit), $processed, 0, [
+                'current_step' => 'balance_pool_batch',
+                'message' => sprintf('%d kayıt dengelendi', $processed),
+                'cursor_payload' => ['current_pool_id' => $poolId, 'operations' => $operations],
+            ]);
         }
         foreach ($poolIds as $poolId) {
             $this->refreshListCounts($conn, $poolId);
@@ -1528,8 +1799,11 @@ class DataPoolJobsWorkCommand extends Command
         $endpoint = rtrim((string) ($_ENV['ALIBABA_DM_ENDPOINT'] ?? 'https://dm.aliyuncs.com/'), '/') . '/';
         $accessKeyId = trim((string) ($_ENV['ALIBABA_DM_ACCESS_KEY_ID'] ?? ''));
         $accessKeySecret = trim((string) ($_ENV['ALIBABA_DM_ACCESS_KEY_SECRET'] ?? ''));
-        if ($accessKeyId === '' || $accessKeySecret === '') {
-            throw new \RuntimeException('Alibaba AccessKey ayarları eksik.');
+        if ($accessKeyId === '') {
+            throw new \RuntimeException('Alibaba AccessKey tanımlı değil.');
+        }
+        if ($accessKeySecret === '') {
+            throw new \RuntimeException('Alibaba AccessKey Secret tanımlı değil.');
         }
 
         $startDate = (string) ($payload['start_date'] ?? date('Y-m-d'));
@@ -1553,6 +1827,7 @@ class DataPoolJobsWorkCommand extends Command
             foreach ($ranges as $range) {
                 $cursor = '';
                 while (true) {
+                    $this->assertNotCancelled($jobService, $jobId);
                     $page++;
                     $params = [
                         'Action' => $action,
@@ -1589,7 +1864,11 @@ class DataPoolJobsWorkCommand extends Command
                         'status' => 'running',
                         'error_message' => null,
                     ]);
-                    $jobService->updateProgress($jobId, $fetched, max(1, $fetched + 1), $saved, 0);
+                    $jobService->updateProgress($jobId, $fetched, max(1, $fetched + 1), $saved, 0, [
+                        'current_step' => 'alibaba_fetch_page',
+                        'message' => sprintf('Alibaba sayfa %d işlendi, %d kayıt alındı', $page, $fetched),
+                        'cursor_payload' => ['next_start' => $nextStart, 'page' => $page],
+                    ]);
                     if ($cursor === '') {
                         break;
                     }
@@ -1687,6 +1966,7 @@ class DataPoolJobsWorkCommand extends Command
 
         $cleaned = 0;
         while ($cleaned < $matched) {
+            $this->assertNotCancelled($jobService, $jobId);
             $ids = $conn->fetchFirstColumn(
                 "SELECT p.id
                    FROM email_data_pool p
@@ -1717,7 +1997,10 @@ class DataPoolJobsWorkCommand extends Command
                 );
             }
             $cleaned += max(0, (int) $affected);
-            $jobService->updateProgress($jobId, $cleaned, max(1, $matched), $cleaned, 0);
+            $jobService->updateProgress($jobId, $cleaned, max(1, $matched), $cleaned, 0, [
+                'current_step' => 'alibaba_clean_batch',
+                'message' => sprintf('%d / %d kayıt temizlendi', $cleaned, max(1, $matched)),
+            ]);
         }
 
         $this->refreshAllListCounts($conn);
@@ -1812,14 +2095,30 @@ class DataPoolJobsWorkCommand extends Command
             $decoded = is_array($decoded) ? $decoded : [];
             $errorCode = (string) ($decoded['Code'] ?? '');
             $errorMsg = (string) ($decoded['Message'] ?? '');
-            $isThrottle = str_contains(strtolower($errorCode), 'thrott') || str_contains(strtolower($errorMsg), 'thrott') || $httpCode === 429;
+            $lowerCode = strtolower($errorCode);
+            $lowerMsg = strtolower($errorMsg);
+            $isThrottle = str_contains($lowerCode, 'thrott') || str_contains($lowerMsg, 'thrott') || $httpCode === 429;
+            $isTimeout = str_contains($lowerMsg, 'timeout') || str_contains(strtolower($transportError), 'timed out');
+            $isTimestamp = str_contains($lowerCode, 'timestamp') || str_contains($lowerMsg, 'timestamp');
+            $isSignature = str_contains($lowerCode, 'signature') || str_contains($lowerMsg, 'signature');
+            $isCredential = str_contains($lowerCode, 'accesskey') || str_contains($lowerMsg, 'accesskey') || str_contains($lowerCode, 'invalidsecuritytoken');
+            $isTransientHttp = $httpCode >= 500 || $httpCode === 429;
             $hasError = $raw === false || $transportError !== '' || $errorCode !== '' || $httpCode >= 400;
             if (!$hasError) {
                 return ['data' => $decoded, 'retries' => $attempt - 1];
             }
-            if (!$isThrottle || $attempt > ($maxRetry + 1)) {
+            $retryable = $isThrottle || $isTimeout || $isTransientHttp || str_contains(strtolower($transportError), 'connection');
+            if (!$retryable || $attempt > ($maxRetry + 1)) {
                 $snippet = is_string($raw) ? trim(substr($raw, 0, 180)) : '';
-                $detail = $errorCode !== '' ? $errorCode : ($transportError !== '' ? $transportError : ('HTTP_' . $httpCode));
+                if ($isCredential) {
+                    $detail = 'ACCESS_KEY_ERROR';
+                } elseif ($isSignature) {
+                    $detail = 'SIGNATURE_ERROR';
+                } elseif ($isTimestamp) {
+                    $detail = 'TIMESTAMP_ERROR';
+                } else {
+                    $detail = $errorCode !== '' ? $errorCode : ($transportError !== '' ? $transportError : ('HTTP_' . $httpCode));
+                }
                 if ($errorMsg !== '') {
                     $detail .= ' - ' . $errorMsg;
                 } elseif ($snippet !== '' && $errorCode === '') {
@@ -2012,6 +2311,174 @@ class DataPoolJobsWorkCommand extends Command
                 PRIMARY KEY(id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+    }
+
+    private function touchWorkerHeartbeat(\Doctrine\DBAL\Connection $conn, string $workerId, ?int $currentJobId, string $status): void
+    {
+        $hostname = gethostname() ?: 'unknown';
+        $pid = getmypid() ?: 0;
+        $conn->executeStatement(
+            'INSERT INTO data_pool_worker_heartbeats
+                (worker_id, hostname, pid, current_job_id, status, heartbeat_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, NOW(), NOW(), NOW())
+             ON DUPLICATE KEY UPDATE
+                hostname = VALUES(hostname),
+                pid = VALUES(pid),
+                current_job_id = VALUES(current_job_id),
+                status = VALUES(status),
+                heartbeat_at = VALUES(heartbeat_at),
+                updated_at = VALUES(updated_at)',
+            [$workerId, $hostname, $pid, $currentJobId, $status]
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     */
+    private function handleJobFailure(
+        EmailDataPoolJobService $jobService,
+        array $job,
+        \Throwable $e,
+        string $workerId,
+        SymfonyStyle $io
+    ): void {
+        $jobId = (int) ($job['id'] ?? 0);
+        $message = trim($e->getMessage());
+        $errorCode = $this->extractErrorCode($e, $message);
+        $failedStep = $this->extractFailedStep($message);
+        $lastSqlName = $this->extractLastSqlName($message);
+
+        if (str_starts_with($message, self::CANCELLED_EXCEPTION_PREFIX)) {
+            $jobService->markCancelled($jobId, trim(substr($message, strlen(self::CANCELLED_EXCEPTION_PREFIX))));
+            $io->warning(sprintf('#%d iptal edildi: %s', $jobId, trim(substr($message, strlen(self::CANCELLED_EXCEPTION_PREFIX)))));
+            return;
+        }
+
+        $attempts = max(1, (int) ($job['attempts'] ?? 1));
+        $maxAttempts = max(1, (int) ($job['max_attempts'] ?? 3));
+        if ($this->isRetryableException($e) && $attempts < $maxAttempts) {
+            $delay = $this->retryBackoffSeconds($attempts);
+            $jobService->requeueForRetry($jobId, $delay, sprintf('Geçici hata nedeniyle retry planlandı (%d/%d)', $attempts, $maxAttempts));
+            $io->warning(sprintf('#%d geçici hata, %ds sonra retry: %s', $jobId, $delay, $message));
+            return;
+        }
+
+        $userMessage = $this->userFacingErrorMessage((string) ($job['type'] ?? ''), $message);
+        $jobService->markFailed($jobId, $userMessage, [
+            'error_code' => $errorCode,
+            'exception_class' => $e::class,
+            'failed_step' => $failedStep,
+            'last_sql_name' => $lastSqlName,
+            'worker_id' => $workerId,
+            'status_message' => 'İşlem hata ile sonlandı.',
+        ]);
+        $io->error(sprintf('#%d basarisiz [%s]: %s', $jobId, $errorCode, $message));
+    }
+
+    private function retryBackoffSeconds(int $attempt): int
+    {
+        $base = max(2, (int) ($_ENV['DATA_POOL_JOB_RETRY_BASE_SECONDS'] ?? 5));
+        $max = max(10, (int) ($_ENV['DATA_POOL_JOB_RETRY_MAX_SECONDS'] ?? 300));
+        $delay = $base * (2 ** max(0, $attempt - 1));
+
+        return (int) min($max, $delay);
+    }
+
+    private function isRetryableException(\Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+        if (str_contains($message, 'deadlock') || str_contains($message, 'lock wait timeout')) {
+            return true;
+        }
+        if (str_contains($message, 'server has gone away') || str_contains($message, 'lost connection')) {
+            return true;
+        }
+        if (str_contains($message, 'timeout') || str_contains($message, 'timed out') || str_contains($message, 'temporarily unavailable')) {
+            return true;
+        }
+        if (str_contains($message, 'cURL error') || str_contains($message, 'CURL_ERROR')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function extractErrorCode(\Throwable $e, string $message): string
+    {
+        if (preg_match('/SQLSTATE\[(.*?)\]/', $message, $m)) {
+            return (string) ($m[1] ?? 'UNKNOWN');
+        }
+        $code = (string) $e->getCode();
+        if ($code !== '' && $code !== '0') {
+            return $code;
+        }
+        if (preg_match('/Alibaba API çağrısı başarısız:\s*([A-Z0-9_:-]+)/u', $message, $m)) {
+            return (string) ($m[1] ?? 'ALIBABA_API_ERROR');
+        }
+
+        return 'RUNTIME_ERROR';
+    }
+
+    private function extractFailedStep(string $message): string
+    {
+        if (preg_match('/FAILED_STEP:([a-zA-Z0-9_\-]+)/', $message, $m)) {
+            return (string) ($m[1] ?? 'unknown');
+        }
+
+        return 'handle';
+    }
+
+    private function extractLastSqlName(string $message): ?string
+    {
+        if (preg_match('/SQL_NAME:([a-zA-Z0-9_\-]+)/', $message, $m)) {
+            return (string) ($m[1] ?? null);
+        }
+
+        return null;
+    }
+
+    private function userFacingErrorMessage(string $jobType, string $rawMessage): string
+    {
+        $m = strtolower($rawMessage);
+        if (str_contains($m, 'sqlstate[hy093]')) {
+            return 'İşlem SQL parametre uyumsuzluğu nedeniyle başarısız oldu.';
+        }
+        if (str_contains($m, 'table') && str_contains($m, 'is full')) {
+            return 'İşlem geçici depolama limiti nedeniyle tamamlanamadı.';
+        }
+        if (str_contains($m, 'accesskey') || str_contains($m, 'signature')) {
+            return 'Alibaba kimlik doğrulama bilgileri geçersiz veya eksik.';
+        }
+        if (str_contains($m, 'timeout')) {
+            return 'İşlem zaman aşımı nedeniyle başarısız oldu.';
+        }
+
+        return sprintf('%s işlemi hata nedeniyle tamamlanamadı.', $jobType !== '' ? $jobType : 'Worker');
+    }
+
+    private function assertNotCancelled(EmailDataPoolJobService $jobService, int $jobId): void
+    {
+        if ($jobService->isCancelRequested($jobId)) {
+            throw new \RuntimeException(self::CANCELLED_EXCEPTION_PREFIX . 'Kullanıcı iptal talebi gönderdi.');
+        }
+    }
+
+    /**
+     * @param array<int, mixed> $params
+     */
+    private function executeNamedSql(\Doctrine\DBAL\Connection $conn, string $sqlName, string $sql, array $params = []): int
+    {
+        $placeholderCount = substr_count($sql, '?');
+        if ($placeholderCount !== count($params)) {
+            throw new \RuntimeException(sprintf(
+                'FAILED_STEP:sql_execute SQL_NAME:%s SQLSTATE[HY093] Parametre sayısı eşleşmedi (%d != %d).',
+                $sqlName,
+                $placeholderCount,
+                count($params)
+            ));
+        }
+
+        return $conn->executeStatement($sql, $params);
     }
 
     private function refreshListCounts(\Doctrine\DBAL\Connection $conn, int $poolId): void
