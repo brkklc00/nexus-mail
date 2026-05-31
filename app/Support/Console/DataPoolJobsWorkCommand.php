@@ -1038,7 +1038,7 @@ class DataPoolJobsWorkCommand extends Command
                 $name = (string) ($row['name'] ?? '');
                 $domain = strtolower((string) substr(strrchr($email, '@') ?: '', 1));
                 $isGmail = $domain === 'gmail.com' ? 1 : 0;
-                $insertValues[] = '(?, ?, ?, ?, ?, 0, 0, 1, NOW(), NOW())';
+                $insertValues[] = '(?, ?, ?, ?, ?, ?, 0, 0, 1, NOW(), NOW())';
                 $insertParams[] = $targetListId;
                 $insertParams[] = $email;
                 $insertParams[] = $norm;
