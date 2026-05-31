@@ -456,7 +456,9 @@ const approvalState = {
     orderId: null,
     orderTotal: 0,
     isPoolOrder: false,
+    selectedDataPoolId: null,
     selectedCustomer: null,
+    balanceInfo: null,
     usersPage: 1,
     usersTotalPages: 1,
     usersQuery: '',
@@ -623,20 +625,85 @@ function saveOrderTemplate() {
     });
 }
 
-function approvalContextUrl(orderId) {
-    return `/admin/email-orders/${orderId}/approval-context`;
+function orderSummaryUrl(orderId) {
+    return `/admin/email-orders/${orderId}/details?section=summary`;
 }
 
-function externalBalanceUsersUrl(page, query) {
-    return `/admin/external-balance/users?page=${page}&limit=20&q=${encodeURIComponent(query || '')}`;
+function customerSearchUrl(page, query) {
+    return `/admin/email-orders/customers/search?page=${page}&per_page=20&q=${encodeURIComponent(query || '')}`;
 }
 
-function externalBalanceUserUrl(id) {
-    return `/admin/external-balance/users/${id}`;
+function customerBalanceUrl(id, orderId) {
+    return `/admin/email-orders/customers/${id}/balance?order_id=${orderId}`;
 }
 
-function approveWithBalanceUrl(orderId) {
-    return `/admin/email-orders/${orderId}/approve-with-balance`;
+function dataPoolsUrl(orderId) {
+    return `/admin/email-orders/data-pools?order_id=${orderId}`;
+}
+
+function approveStartUrl(orderId) {
+    return `/admin/email-orders/${orderId}/approve-start`;
+}
+
+function parseApiErrorMessage(text, status) {
+    let parsed = null;
+    try {
+        parsed = JSON.parse(text);
+    } catch (e) {}
+    if (parsed && typeof parsed === 'object' && parsed.message) {
+        return String(parsed.message);
+    }
+    const normalizedText = (text || '').trim().toLowerCase();
+    if (normalizedText.startsWith('<!doctype') || normalizedText.startsWith('<html')) {
+        return status === 401 || status === 403
+            ? 'Oturum süresi dolmuş veya yetkiniz yok. Lütfen tekrar giriş yapın.'
+            : 'Sunucu beklenmeyen HTML döndü. Oturum kontrolü yapın.';
+    }
+    if (status === 401 || status === 403) {
+        return 'Oturum süresi dolmuş veya yetkiniz yok.';
+    }
+    if (status === 404) {
+        return 'İstenen API endpoint bulunamadı.';
+    }
+    if (status === 419) {
+        return 'Güvenlik doğrulaması başarısız oldu. Sayfayı yenileyip tekrar deneyin.';
+    }
+    return 'İstek başarısız oldu.';
+}
+
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, {
+        ...options,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            ...(options.headers || {})
+        }
+    });
+
+    const text = await response.text();
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch (e) {
+        if (response.ok) {
+            const parseErr = new Error('Sunucudan geçerli JSON alınamadı.');
+            parseErr.status = response.status;
+            throw parseErr;
+        }
+    }
+
+    if (!response.ok) {
+        const err = new Error((data && data.message) ? data.message : parseApiErrorMessage(text, response.status));
+        err.status = response.status;
+        err.data = data;
+        throw err;
+    }
+
+    if (!data || typeof data !== 'object') {
+        throw new Error('API yanıtı boş veya geçersiz.');
+    }
+
+    return data;
 }
 
 function resetApprovalControllers() {
@@ -651,8 +718,7 @@ function resetApprovalControllers() {
 }
 
 function isApprovalViewActive(openKey) {
-    const modalEl = document.getElementById('approvalModal');
-    return approvalState.openKey === openKey && !!modalEl && modalEl.classList.contains('show');
+    return approvalState.openKey === openKey && approvalState.orderId !== null;
 }
 
 function approveOrder(orderId, isPoolOrder) {
@@ -663,7 +729,9 @@ function approveOrder(orderId, isPoolOrder) {
     approvalState.orderId = orderId;
     approvalState.isPoolOrder = !!isPoolOrder;
     approvalState.orderTotal = 0;
+    approvalState.selectedDataPoolId = null;
     approvalState.selectedCustomer = null;
+    approvalState.balanceInfo = null;
     approvalState.usersPage = 1;
     approvalState.usersTotalPages = 1;
     approvalState.usersQuery = '';
@@ -690,8 +758,9 @@ function approveOrder(orderId, isPoolOrder) {
     approvalState.modal.show();
     setTimeout(() => { approvalState.busy = false; }, 200);
 
-    loadApprovalData(orderId, approvalState.openKey);
-    loadExternalUsers(1, '', approvalState.openKey);
+    loadOrderSummary(orderId, approvalState.openKey);
+    loadDataPools(orderId, approvalState.openKey);
+    loadCustomers(1, '', approvalState.openKey);
 }
 
 function renderApprovalAlert(message, type = 'danger') {
@@ -700,25 +769,21 @@ function renderApprovalAlert(message, type = 'danger') {
         : '';
 }
 
-function loadApprovalData(orderId, openKey) {
+function loadOrderSummary(orderId, openKey) {
     approvalState.contextController = new AbortController();
-    fetch(approvalContextUrl(orderId), {
-        signal: approvalState.contextController.signal,
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    fetchJson(orderSummaryUrl(orderId), {
+        signal: approvalState.contextController.signal
     })
-        .then(r => r.json())
         .then(data => {
             if (!isApprovalViewActive(openKey)) return;
             if (!data.success) {
-                renderApprovalAlert(data.message || 'Onay verileri alınamadı.');
+                renderApprovalAlert(data.message || 'Sipariş özeti alınamadı.');
                 return;
             }
-
             const order = data.order || {};
             const template = order.template || {};
             approvalState.orderTotal = Number(order.total || 0);
             approvalState.isPoolOrder = !!order.is_pool_order;
-            approvalState.lists = Array.isArray(data.data_lists) ? data.data_lists : [];
             document.getElementById('approvalOrderTotal').value = String(approvalState.orderTotal);
 
             const summaryHtml = `
@@ -731,31 +796,64 @@ function loadApprovalData(orderId, openKey) {
             document.getElementById('approvalSummaryLoading').classList.add('d-none');
             document.getElementById('approvalSummaryContent').classList.remove('d-none');
 
-            const listSelect = document.getElementById('approvalDataListSelect');
-            listSelect.innerHTML = '';
-            if (!approvalState.lists.length) {
-                listSelect.innerHTML = '<option value="">Liste bulunamadı</option>';
+            if (approvalState.selectedCustomer) {
+                loadCustomerBalance(approvalState.selectedCustomer.id, openKey);
             } else {
-                approvalState.lists.forEach(row => {
-                    const opt = document.createElement('option');
-                    opt.value = String(row.id);
-                    opt.textContent = `${row.name} - ${Number(row.active_count || 0).toLocaleString('tr-TR')} aktif`;
-                    if (Number(order.selected_data_list_id || 0) === Number(row.id)) {
-                        opt.selected = true;
-                    }
-                    listSelect.appendChild(opt);
-                });
+                updateApprovalActionState();
             }
-            updateApprovalActionState();
         })
         .catch(err => {
             if (err.name === 'AbortError') return;
             if (!isApprovalViewActive(openKey)) return;
-            renderApprovalAlert('Onay verileri alınamadı. Lütfen tekrar deneyin.');
+            renderApprovalAlert(err.message || 'Sipariş özeti alınamadı.');
+            document.getElementById('approvalSummaryLoading').classList.add('d-none');
         });
 }
 
-function loadExternalUsers(page = 1, query = '', openKey = approvalState.openKey) {
+function loadDataPools(orderId, openKey) {
+    fetchJson(dataPoolsUrl(orderId))
+        .then(data => {
+            if (!isApprovalViewActive(openKey)) return;
+            if (!data.success) {
+                renderApprovalAlert(data.message || 'Veri listesi alınamadı.');
+                return;
+            }
+            const payload = data.data || {};
+            approvalState.lists = Array.isArray(payload.items) ? payload.items : [];
+            approvalState.selectedDataPoolId = Number(payload.selectedId || 0) || null;
+
+            const listSelect = document.getElementById('approvalDataListSelect');
+            listSelect.innerHTML = '';
+            if (!approvalState.lists.length) {
+                listSelect.innerHTML = '<option value="">Liste bulunamadı</option>';
+                approvalState.selectedDataPoolId = null;
+            } else {
+                approvalState.lists.forEach(row => {
+                    const opt = document.createElement('option');
+                    opt.value = String(row.id);
+                    opt.textContent = `${row.name} - ${Number(row.activeCount || 0).toLocaleString('tr-TR')} aktif`;
+                    if (approvalState.selectedDataPoolId && Number(row.id) === approvalState.selectedDataPoolId) {
+                        opt.selected = true;
+                    }
+                    listSelect.appendChild(opt);
+                });
+                if (!approvalState.selectedDataPoolId && listSelect.options.length) {
+                    listSelect.options[0].selected = true;
+                    approvalState.selectedDataPoolId = Number(listSelect.options[0].value || 0) || null;
+                }
+            }
+            updateApprovalActionState();
+        })
+        .catch(err => {
+            if (!isApprovalViewActive(openKey)) return;
+            renderApprovalAlert(err.message || 'Veri listesi alınamadı.');
+            document.getElementById('approvalDataListSelect').innerHTML = '<option value="">Liste yüklenemedi</option>';
+            approvalState.selectedDataPoolId = null;
+            updateApprovalActionState();
+        });
+}
+
+function loadCustomers(page = 1, query = '', openKey = approvalState.openKey) {
     approvalState.usersPage = page;
     approvalState.usersQuery = query;
     document.getElementById('approvalCustomersLoading').textContent = 'Müşteriler yükleniyor...';
@@ -763,11 +861,9 @@ function loadExternalUsers(page = 1, query = '', openKey = approvalState.openKey
         try { approvalState.usersController.abort(); } catch (e) {}
     }
     approvalState.usersController = new AbortController();
-    fetch(externalBalanceUsersUrl(page, query), {
-        signal: approvalState.usersController.signal,
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    fetchJson(customerSearchUrl(page, query), {
+        signal: approvalState.usersController.signal
     })
-        .then(r => r.json())
         .then(data => {
             if (!isApprovalViewActive(openKey)) return;
             if (!data.success) {
@@ -776,15 +872,18 @@ function loadExternalUsers(page = 1, query = '', openKey = approvalState.openKey
                 return;
             }
 
-            const users = Array.isArray(data.users) ? data.users : [];
+            const payload = data.data || {};
+            const users = Array.isArray(payload.items) ? payload.items : [];
             const select = document.getElementById('approvalCustomerSelect');
             select.innerHTML = '';
             if (!users.length) {
-                select.innerHTML = '<option value="">Kayıt bulunamadı</option>';
+                select.innerHTML = '<option value="">Müşteri bulunamadı</option>';
                 approvalState.selectedCustomer = null;
+                approvalState.balanceInfo = null;
+                document.getElementById('approvalBalanceSummary').textContent = 'Müşteri seçilmedi.';
             } else {
                 users.forEach(user => {
-                    const balance = Number(user.mail_balance || 0);
+                    const balance = Number(user.balance || user.credit || 0);
                     const opt = document.createElement('option');
                     opt.value = String(user.id);
                     opt.dataset.balance = String(balance);
@@ -794,11 +893,12 @@ function loadExternalUsers(page = 1, query = '', openKey = approvalState.openKey
                     select.appendChild(opt);
                 });
                 select.selectedIndex = 0;
-                handleCustomerSelection();
+                handleCustomerSelection(openKey);
             }
 
-            const pagination = data.pagination || {};
-            approvalState.usersTotalPages = Number(pagination.total_pages || 1);
+            const pagination = payload.pagination || {};
+            approvalState.usersTotalPages = Math.max(1, Math.ceil(Number(pagination.total || users.length || 0) / Number(pagination.perPage || 20)));
+            approvalState.usersPage = Number(pagination.page || page);
             document.getElementById('approvalUsersPageInfo').textContent = `Sayfa ${approvalState.usersPage} / ${approvalState.usersTotalPages}`;
             document.getElementById('approvalUsersPrevBtn').disabled = approvalState.usersPage <= 1;
             document.getElementById('approvalUsersNextBtn').disabled = approvalState.usersPage >= approvalState.usersTotalPages;
@@ -808,16 +908,17 @@ function loadExternalUsers(page = 1, query = '', openKey = approvalState.openKey
         .catch(err => {
             if (err.name === 'AbortError') return;
             if (!isApprovalViewActive(openKey)) return;
-            renderApprovalAlert('Müşteriler yüklenemedi.');
+            renderApprovalAlert(err.message || 'Müşteriler yüklenemedi.');
             document.getElementById('approvalCustomersLoading').textContent = 'Müşteriler yüklenemedi.';
         });
 }
 
-function handleCustomerSelection() {
+function handleCustomerSelection(openKey = approvalState.openKey) {
     const select = document.getElementById('approvalCustomerSelect');
     const opt = select.options[select.selectedIndex];
     if (!opt || !opt.value) {
         approvalState.selectedCustomer = null;
+        approvalState.balanceInfo = null;
         document.getElementById('approvalBalanceSummary').textContent = 'Müşteri seçilmedi.';
         updateApprovalActionState();
         return;
@@ -829,38 +930,63 @@ function handleCustomerSelection() {
         email: opt.dataset.email || '',
         currentBalance: current
     };
-    renderBalanceSummary(current);
-    updateApprovalActionState();
+    loadCustomerBalance(approvalState.selectedCustomer.id, openKey);
+}
+
+function loadCustomerBalance(customerId, openKey = approvalState.openKey) {
+    if (!approvalState.orderId || !customerId) {
+        approvalState.balanceInfo = null;
+        document.getElementById('approvalBalanceSummary').textContent = 'Müşteri seçilmedi.';
+        updateApprovalActionState();
+        return;
+    }
 
     if (approvalState.userDetailController) {
         try { approvalState.userDetailController.abort(); } catch (e) {}
     }
     approvalState.userDetailController = new AbortController();
-    fetch(externalBalanceUserUrl(approvalState.selectedCustomer.id), {
-        signal: approvalState.userDetailController.signal,
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    fetchJson(customerBalanceUrl(customerId, approvalState.orderId), {
+        signal: approvalState.userDetailController.signal
     })
-    .then(r => r.json())
-    .then(data => {
-        if (!data.success) return;
-        const apiUser = data.user || {};
-        const userBalance = Number(apiUser.mail_balance || approvalState.selectedCustomer.currentBalance || 0);
-        approvalState.selectedCustomer.currentBalance = userBalance;
-        renderBalanceSummary(userBalance);
-        updateApprovalActionState();
-    })
-    .catch(err => {
-        if (err.name !== 'AbortError') {
-            renderBalanceSummary(current);
+        .then(data => {
+            if (!isApprovalViewActive(openKey)) return;
+            if (!data.success) {
+                approvalState.balanceInfo = null;
+                renderApprovalAlert(data.message || 'Bakiye özeti alınamadı.');
+                document.getElementById('approvalBalanceSummary').textContent = 'Bakiye bilgisi alınamadı.';
+                updateApprovalActionState();
+                return;
+            }
+
+            const balanceData = data.data || {};
+            approvalState.balanceInfo = {
+                balance: Number(balanceData.balance || 0),
+                required: Number(balanceData.required || approvalState.orderTotal || 0),
+                remaining: Number(balanceData.remaining || 0),
+                canApprove: !!balanceData.canApprove
+            };
+            approvalState.selectedCustomer.currentBalance = approvalState.balanceInfo.balance;
+            renderBalanceSummary();
             updateApprovalActionState();
-        }
-    });
+        })
+        .catch(err => {
+            if (err.name === 'AbortError') return;
+            if (!isApprovalViewActive(openKey)) return;
+            approvalState.balanceInfo = null;
+            renderApprovalAlert(err.message || 'Bakiye özeti alınamadı.');
+            document.getElementById('approvalBalanceSummary').textContent = 'Bakiye bilgisi alınamadı.';
+            updateApprovalActionState();
+        });
 }
 
-function renderBalanceSummary(currentBalance) {
-    const current = Number(currentBalance || 0);
-    const toDeduct = Number(approvalState.orderTotal || 0);
-    const remaining = current - toDeduct;
+function renderBalanceSummary() {
+    if (!approvalState.balanceInfo) {
+        document.getElementById('approvalBalanceSummary').textContent = 'Bakiye bilgisi alınamadı.';
+        return;
+    }
+    const current = Number(approvalState.balanceInfo.balance || 0);
+    const toDeduct = Number(approvalState.balanceInfo.required || approvalState.orderTotal || 0);
+    const remaining = Number(approvalState.balanceInfo.remaining || (current - toDeduct));
 
     document.getElementById('approvalBalanceSummary').innerHTML = `
         <div>Mevcut bakiye: <strong>${current.toLocaleString('tr-TR')}</strong></div>
@@ -871,58 +997,77 @@ function renderBalanceSummary(currentBalance) {
     if (remaining < 0) {
         renderApprovalAlert(`Yetersiz mail bakiyesi. Gerekli: ${toDeduct.toLocaleString('tr-TR')}, Mevcut: ${current.toLocaleString('tr-TR')}`);
     } else {
-        renderApprovalAlert('');
+        const currentAlert = document.getElementById('approvalAlertWrap').textContent || '';
+        if (currentAlert.includes('Yetersiz mail bakiyesi')) {
+            renderApprovalAlert('');
+        }
     }
 }
 
 function updateApprovalActionState() {
     const btn = document.getElementById('approvalConfirmBtn');
-    const listId = Number(document.getElementById('approvalDataListSelect').value || 0);
+    const listId = Number(document.getElementById('approvalDataListSelect').value || 0) || null;
+    approvalState.selectedDataPoolId = listId;
     const hasCustomer = !!approvalState.selectedCustomer;
-    const enoughBalance = hasCustomer && approvalState.selectedCustomer.currentBalance >= Number(approvalState.orderTotal || 0);
-    let listOk = approvalState.isPoolOrder ? listId > 0 : true;
-    if (approvalState.isPoolOrder && listId > 0) {
-        const selectedList = approvalState.lists.find(item => Number(item.id) === listId);
-        if (selectedList && Number(selectedList.active_count || 0) < Number(approvalState.orderTotal || 0)) {
+    const enoughBalance = !!(approvalState.balanceInfo && approvalState.balanceInfo.canApprove);
+    let listOk = approvalState.isPoolOrder ? !!approvalState.selectedDataPoolId : true;
+    if (approvalState.isPoolOrder && approvalState.selectedDataPoolId) {
+        const selectedList = approvalState.lists.find(item => Number(item.id) === approvalState.selectedDataPoolId);
+        if (selectedList && Number(selectedList.activeCount || 0) < Number(approvalState.orderTotal || 0)) {
             listOk = false;
-            renderApprovalAlert(`Seçilen veri listesinde yeterli aktif kayıt yok. Gerekli: ${Number(approvalState.orderTotal || 0).toLocaleString('tr-TR')}, Mevcut: ${Number(selectedList.active_count || 0).toLocaleString('tr-TR')}`);
+            renderApprovalAlert(`Seçilen veri listesinde yeterli aktif kayıt yok. Gerekli: ${Number(approvalState.orderTotal || 0).toLocaleString('tr-TR')}, Mevcut: ${Number(selectedList.activeCount || 0).toLocaleString('tr-TR')}`);
         }
     }
     btn.disabled = !(hasCustomer && enoughBalance && listOk && approvalState.orderTotal > 0);
 }
 
 function submitApprove(orderId) {
-    const selectedListId = Number(document.getElementById('approvalDataListSelect').value || 0);
+    const selectedListId = Number(document.getElementById('approvalDataListSelect').value || 0) || null;
     const payload = {
-        external_user_id: Number(approvalState.selectedCustomer?.id || 0)
+        orderId: Number(orderId || 0),
+        userId: Number(approvalState.selectedCustomer?.id || 0),
+        dataPoolId: selectedListId,
+        sendCount: Number(approvalState.orderTotal || 0)
     };
-    if (approvalState.isPoolOrder && selectedListId > 0) {
-        payload.data_list_id = selectedListId;
+    if (approvalState.isPoolOrder && !selectedListId) {
+        renderApprovalAlert('Lütfen bir veri listesi seçin.');
+        return;
+    }
+    if (!payload.orderId || !payload.userId || !payload.sendCount) {
+        renderApprovalAlert('Onay için gerekli alanlar eksik.');
+        return;
+    }
+    if (!approvalState.balanceInfo || !approvalState.balanceInfo.canApprove) {
+        renderApprovalAlert('Yetersiz bakiye nedeniyle onay verilemiyor.');
+        return;
     }
 
     const btn = document.getElementById('approvalConfirmBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Bakiye düşülüyor ve gönderim başlatılıyor...';
 
-    fetch(approveWithBalanceUrl(orderId), {
+    fetchJson(approveStartUrl(orderId), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
-    .then(r => r.json())
     .then(data => {
         if (data.success) {
-            alert('Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.');
+            if (approvalState.modal) {
+                approvalState.modal.hide();
+            }
+            alert(data.message || 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.');
             location.reload();
         } else {
             renderApprovalAlert(data.message || 'Onaylanamadı.');
-            btn.disabled = false;
+            updateApprovalActionState();
             btn.innerHTML = 'Onayla ve Başlat';
         }
     })
     .catch((err) => {
-        renderApprovalAlert('Onay sırasında hata oluştu: ' + err.message);
-        btn.disabled = false;
+        console.error('Onay hatası:', err);
+        renderApprovalAlert(err.message || ('Onay sırasında hata oluştu: ' + err.message));
+        updateApprovalActionState();
         btn.innerHTML = 'Onayla ve Başlat';
     });
 }
@@ -1323,29 +1468,31 @@ document.addEventListener('DOMContentLoaded', function() {
         resetApprovalControllers();
         approvalState.openKey = 0;
         approvalState.orderId = null;
+        approvalState.selectedDataPoolId = null;
         approvalState.selectedCustomer = null;
+        approvalState.balanceInfo = null;
     });
 
     document.getElementById('approvalCustomerSearchBtn')?.addEventListener('click', function() {
         const query = document.getElementById('approvalCustomerSearch').value || '';
-        loadExternalUsers(1, query);
+        loadCustomers(1, query);
     });
     document.getElementById('approvalCustomerSearch')?.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') {
             e.preventDefault();
-            loadExternalUsers(1, document.getElementById('approvalCustomerSearch').value || '');
+            loadCustomers(1, document.getElementById('approvalCustomerSearch').value || '');
         }
     });
     document.getElementById('approvalCustomerSelect')?.addEventListener('change', handleCustomerSelection);
     document.getElementById('approvalDataListSelect')?.addEventListener('change', updateApprovalActionState);
     document.getElementById('approvalUsersPrevBtn')?.addEventListener('click', function() {
         if (approvalState.usersPage > 1) {
-            loadExternalUsers(approvalState.usersPage - 1, approvalState.usersQuery);
+            loadCustomers(approvalState.usersPage - 1, approvalState.usersQuery);
         }
     });
     document.getElementById('approvalUsersNextBtn')?.addEventListener('click', function() {
         if (approvalState.usersPage < approvalState.usersTotalPages) {
-            loadExternalUsers(approvalState.usersPage + 1, approvalState.usersQuery);
+            loadCustomers(approvalState.usersPage + 1, approvalState.usersQuery);
         }
     });
     document.getElementById('approvalConfirmBtn')?.addEventListener('click', function() {

@@ -250,6 +250,14 @@ return function (App $app) {
 
             $group->get('', [\App\Controllers\Admin\EmailOrderController::class, 'index'])->setName('admin.email-orders.index')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->get('/customers/search', [\App\Controllers\Admin\EmailOrderController::class, 'searchCustomers'])->setName('admin.email-orders.customers.search')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->get('/customers/{id}/balance', [\App\Controllers\Admin\EmailOrderController::class, 'getCustomerBalance'])->setName('admin.email-orders.customers.balance')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->get('/data-pools', [\App\Controllers\Admin\EmailOrderController::class, 'getAvailableDataPools'])->setName('admin.email-orders.data-pools')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->post('/{id}/approve-start', [\App\Controllers\Admin\EmailOrderController::class, 'approveAndStart'])->setName('admin.email-orders.approve-start')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->get('/{id}/details', [\App\Controllers\Admin\EmailOrderController::class, 'getDetails'])->setName('admin.email-orders.details')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->get('/{id}/approval-data', [\App\Controllers\Admin\EmailOrderController::class, 'approvalData'])->setName('admin.email-orders.approval-data')

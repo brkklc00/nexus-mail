@@ -426,6 +426,174 @@ class EmailOrderController
                 'selected_data_list_id' => $summary['pool_list_id'] ?: $defaultPoolListId,
             ],
             'data_lists' => $poolListsPayload,
+            'data' => [
+                'order' => [
+                    'id' => $summary['id'],
+                    'subject' => $summary['subject'],
+                    'total' => (int) $summary['total'],
+                    'status' => $summary['status'],
+                    'template' => [
+                        'id' => $summary['template_id'],
+                        'name' => $summary['template_name'],
+                    ],
+                    'isPoolOrder' => (bool) $summary['is_pool_order'],
+                    'selectedDataPoolId' => $summary['pool_list_id'] ?: $defaultPoolListId,
+                ],
+                'dataPools' => array_map(function (array $list): array {
+                    return [
+                        'id' => (int) ($list['id'] ?? 0),
+                        'name' => (string) ($list['name'] ?? ''),
+                        'activeCount' => (int) ($list['active_count'] ?? 0),
+                    ];
+                }, $poolListsPayload),
+            ],
+        ]);
+    }
+
+    public function showOrder(Request $request, Response $response, array $args): Response
+    {
+        $orderId = (int) ($args['id'] ?? 0);
+        if ($orderId <= 0) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz sipariş ID'], 400);
+        }
+
+        $order = $this->em->find(EmailOrder::class, $orderId);
+        if (!$order) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Sipariş bulunamadı'], 404);
+        }
+
+        $summary = $this->buildOrderSummaryPayload($order, false);
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'data' => [
+                'order' => [
+                    'id' => (int) ($summary['id'] ?? 0),
+                    'subject' => (string) ($summary['subject'] ?? ''),
+                    'total' => (int) ($summary['total'] ?? 0),
+                    'status' => (string) ($summary['status'] ?? ''),
+                    'template' => [
+                        'id' => isset($summary['template']['id']) ? (int) $summary['template']['id'] : null,
+                        'name' => (string) ($summary['template']['name'] ?? ''),
+                    ],
+                    'isPoolOrder' => (bool) ($summary['is_pool_order'] ?? false),
+                    'selectedDataPoolId' => isset($summary['pool_list_id']) ? (int) $summary['pool_list_id'] : null,
+                    'sendCount' => (int) ($summary['total'] ?? 0),
+                ],
+            ],
+        ]);
+    }
+
+    public function searchCustomers(Request $request, Response $response): Response
+    {
+        $query = $request->getQueryParams();
+        $search = trim((string) ($query['q'] ?? ''));
+        $page = max(1, (int) ($query['page'] ?? 1));
+        $perPage = max(1, min(100, (int) ($query['per_page'] ?? $query['limit'] ?? 20)));
+
+        $result = $this->externalMailBalanceApi->listUsers($search, $page, $perPage);
+        if (!$result['success']) {
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'message' => $this->translateExternalApiError($result) ?: 'Müşteri listesi yüklenemedi.',
+            ], (int) ($result['status'] ?? 500));
+        }
+
+        $items = array_map(function (array $user): array {
+            $balance = (int) ($user['mail_balance'] ?? $user['balance'] ?? 0);
+            return [
+                'id' => (int) ($user['id'] ?? 0),
+                'name' => (string) ($user['name'] ?? ''),
+                'email' => (string) ($user['email'] ?? ''),
+                'balance' => $balance,
+                'credit' => $balance,
+            ];
+        }, (array) ($result['users'] ?? []));
+        $pagination = $this->normalizeAdminPagination($result['pagination'] ?? [], $page, $perPage, count($items));
+
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'data' => [
+                'items' => $items,
+                'pagination' => $pagination,
+            ],
+        ]);
+    }
+
+    public function getCustomerBalance(Request $request, Response $response, array $args): Response
+    {
+        $customerId = (int) ($args['id'] ?? 0);
+        if ($customerId <= 0) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz müşteri ID'], 400);
+        }
+
+        $query = $request->getQueryParams();
+        $orderId = (int) ($query['order_id'] ?? 0);
+        $required = 0;
+        if ($orderId > 0) {
+            $order = $this->em->find(EmailOrder::class, $orderId);
+            if (!$order) {
+                return $this->jsonResponse($response, ['success' => false, 'message' => 'Sipariş bulunamadı'], 404);
+            }
+            $required = (int) $order->getTotal();
+        }
+
+        $result = $this->externalMailBalanceApi->getUser($customerId);
+        if (!$result['success']) {
+            return $this->jsonResponse($response, [
+                'success' => false,
+                'message' => $this->translateExternalApiError($result) ?: 'Müşteri bakiyesi alınamadı.',
+            ], (int) ($result['status'] ?? 500));
+        }
+
+        $user = is_array($result['user'] ?? null) ? $result['user'] : [];
+        $balance = (int) ($user['mail_balance'] ?? $user['balance'] ?? 0);
+        $remaining = $balance - $required;
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'data' => [
+                'userId' => $customerId,
+                'balance' => $balance,
+                'required' => $required,
+                'remaining' => $remaining,
+                'canApprove' => $remaining >= 0,
+            ],
+        ]);
+    }
+
+    public function getAvailableDataPools(Request $request, Response $response): Response
+    {
+        $query = $request->getQueryParams();
+        $orderId = (int) ($query['order_id'] ?? 0);
+
+        $required = 0;
+        $selectedId = null;
+        if ($orderId > 0) {
+            $order = $this->em->find(EmailOrder::class, $orderId);
+            if (!$order) {
+                return $this->jsonResponse($response, ['success' => false, 'message' => 'Sipariş bulunamadı'], 404);
+            }
+            $required = (int) $order->getTotal();
+            $selectedId = $order->getPoolList()?->getId();
+        }
+
+        [$poolListsPayload] = $this->loadPoolListsPayload();
+        $items = array_map(function (array $list) use ($required): array {
+            $activeCount = (int) ($list['active_count'] ?? 0);
+            return [
+                'id' => (int) ($list['id'] ?? 0),
+                'name' => (string) ($list['name'] ?? ''),
+                'activeCount' => $activeCount,
+                'canUse' => $required > 0 ? $activeCount >= $required : true,
+            ];
+        }, $poolListsPayload);
+
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'data' => [
+                'items' => $items,
+                'selectedId' => $selectedId,
+                'required' => $required,
+            ],
         ]);
     }
 
@@ -501,6 +669,11 @@ class EmailOrderController
         return $this->approveWithBalance($request, $response, $args);
     }
 
+    public function approveAndStart(Request $request, Response $response, array $args): Response
+    {
+        return $this->approveWithBalance($request, $response, $args);
+    }
+
     public function approveWithBalance(Request $request, Response $response, array $args): Response
     {
         $externalDebitDone = false;
@@ -527,14 +700,18 @@ class EmailOrderController
             }
             $externalUserId = isset($payload['external_user_id'])
                 ? (int) $payload['external_user_id']
-                : (isset($payload['external_customer_id']) ? (int) $payload['external_customer_id'] : 0);
+                : (isset($payload['external_customer_id'])
+                    ? (int) $payload['external_customer_id']
+                    : (isset($payload['userId']) ? (int) $payload['userId'] : 0));
             if ($externalUserId <= 0) {
                 return $this->jsonResponse($response, ['success' => false, 'message' => 'Lütfen müşteri seçin.'], 400);
             }
 
             $requestedPoolListId = isset($payload['data_list_id'])
                 ? (int) $payload['data_list_id']
-                : (isset($payload['pool_list_id']) ? (int) $payload['pool_list_id'] : null);
+                : (isset($payload['pool_list_id'])
+                    ? (int) $payload['pool_list_id']
+                    : (isset($payload['dataPoolId']) ? (int) $payload['dataPoolId'] : null));
             $conn = $this->em->getConnection();
             $conn->beginTransaction();
 
@@ -550,7 +727,18 @@ class EmailOrderController
                 return $this->jsonResponse($response, [
                     'success' => false,
                     'message' => 'Bu sipariş zaten onay sürecinde veya onaylanmış.'
-                ], 409);
+                ], 422);
+            }
+
+            if (isset($payload['sendCount'])) {
+                $sendCount = (int) $payload['sendCount'];
+                if ($sendCount <= 0 || $sendCount !== (int) $order->getTotal()) {
+                    $conn->rollBack();
+                    return $this->jsonResponse($response, [
+                        'success' => false,
+                        'message' => 'Gönderim adedi sipariş verisi ile uyuşmuyor.',
+                    ], 422);
+                }
             }
 
             if ($order->isPoolOrder()) {
@@ -559,12 +747,12 @@ class EmailOrderController
                     return $this->jsonResponse($response, [
                         'success' => false,
                         'message' => 'Sistem havuzu siparişi için hangi veri listesinin kullanılacağını seçmelisiniz.',
-                    ], 400);
+                    ], 422);
                 }
                 $poolList = $this->em->find(EmailDataPoolList::class, $requestedPoolListId);
                 if (!$poolList) {
                     $conn->rollBack();
-                    return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz havuz listesi'], 400);
+                    return $this->jsonResponse($response, ['success' => false, 'message' => 'Veri listesi bulunamadı'], 404);
                 }
                 $availableInList = (int) $this->em->createQueryBuilder()
                     ->select('COUNT(p.id)')
@@ -584,7 +772,7 @@ class EmailOrderController
                             $order->getTotal(),
                             $availableInList
                         ),
-                    ], 400);
+                    ], 422);
                 }
                 $order->setPoolList($poolList);
                 $selectedDataListId = $poolList->getId();
@@ -696,9 +884,13 @@ class EmailOrderController
             return $this->jsonResponse($response, [
                 'success' => true,
                 'message' => 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.',
-                'order_id' => $order->getId(),
-                'external_user_id' => $externalUserId,
-                'amount' => $orderTotal,
+                'data' => [
+                    'orderId' => $order->getId(),
+                    'userId' => $externalUserId,
+                    'dataPoolId' => $selectedDataListId,
+                    'sendCount' => $orderTotal,
+                    'amount' => $orderTotal,
+                ],
             ]);
         } catch (\Throwable $e) {
             if (isset($conn) && $conn->isTransactionActive()) {
@@ -1504,6 +1696,23 @@ class EmailOrderController
                 'total' => $total,
                 'totalPages' => $totalPages,
             ],
+        ];
+    }
+
+    private function normalizeAdminPagination(array $pagination, int $fallbackPage, int $fallbackPerPage, int $fallbackTotal): array
+    {
+        $page = max(1, (int) ($pagination['page'] ?? $fallbackPage));
+        $perPage = max(1, (int) ($pagination['limit'] ?? $pagination['perPage'] ?? $fallbackPerPage));
+        $total = max(0, (int) ($pagination['total'] ?? $fallbackTotal));
+        $hasNext = array_key_exists('has_next', $pagination)
+            ? (bool) $pagination['has_next']
+            : ($page < max(1, (int) ceil($total / $perPage)));
+
+        return [
+            'page' => $page,
+            'perPage' => $perPage,
+            'total' => $total,
+            'hasNext' => $hasNext,
         ];
     }
 
