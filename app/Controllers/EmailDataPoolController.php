@@ -894,7 +894,10 @@ class EmailDataPoolController
         @set_time_limit(0);
         if (function_exists('ini_set')) {
             @ini_set('max_execution_time', '0');
-            @ini_set('memory_limit', '512M');
+            @ini_set('memory_limit', (string) ($_ENV['EMAIL_POOL_EXPORT_MEMORY_LIMIT'] ?? '1024M'));
+        }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
         }
 
         $params = $request->getQueryParams();
@@ -944,7 +947,10 @@ class EmailDataPoolController
         @set_time_limit(0);
         if (function_exists('ini_set')) {
             @ini_set('max_execution_time', '0');
-            @ini_set('memory_limit', '512M');
+            @ini_set('memory_limit', (string) ($_ENV['EMAIL_POOL_EXPORT_MEMORY_LIMIT'] ?? '1024M'));
+        }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_write_close();
         }
 
         $params = $request->getQueryParams();
@@ -1007,9 +1013,31 @@ class EmailDataPoolController
      */
     private function fetchPoolExportBatch(int $poolListId, string $search, int $lastId, int $limit): array
     {
-        $limit = max(1, min(20000, $limit));
+        $limit = max(1, min(50000, $limit));
         $conn = $this->em->getConnection();
         $sql = 'SELECT id, email, name, is_active, created_at FROM email_data_pool WHERE pool_list_id = ? AND id > ?';
+        $params = [$poolListId, $lastId];
+        if ($search !== '') {
+            $sql .= ' AND (email LIKE ? OR name LIKE ?)';
+            $term = '%' . $search . '%';
+            $params[] = $term;
+            $params[] = $term;
+        }
+        $sql .= ' ORDER BY id ASC LIMIT ' . $limit;
+
+        return $conn->fetchAllAssociative($sql, $params);
+    }
+
+    /**
+     * TXT export için en hafif payload: sadece id + email.
+     *
+     * @return list<array{id:mixed,email:mixed}>
+     */
+    private function fetchPoolExportTxtBatch(int $poolListId, string $search, int $lastId, int $limit): array
+    {
+        $limit = max(1, min(100000, $limit));
+        $conn = $this->em->getConnection();
+        $sql = 'SELECT id, email FROM email_data_pool WHERE pool_list_id = ? AND id > ?';
         $params = [$poolListId, $lastId];
         if ($search !== '') {
             $sql .= ' AND (email LIKE ? OR name LIKE ?)';
@@ -1099,10 +1127,10 @@ class EmailDataPoolController
             throw new \RuntimeException('Geçici dosya açılamadı.');
         }
 
-        $batchSize = max(2000, min(20000, (int) ($_ENV['EMAIL_POOL_TXT_EXPORT_BATCH'] ?? 10000)));
+        $batchSize = max(5000, min(100000, (int) ($_ENV['EMAIL_POOL_TXT_EXPORT_BATCH'] ?? 50000)));
         $lastId = 0;
         do {
-            $batch = $this->fetchPoolExportBatch($poolListId, $search, $lastId, $batchSize);
+            $batch = $this->fetchPoolExportTxtBatch($poolListId, $search, $lastId, $batchSize);
             foreach ($batch as $row) {
                 $lastId = (int) ($row['id'] ?? 0);
                 $email = trim((string) ($row['email'] ?? ''));
@@ -1402,8 +1430,8 @@ class EmailDataPoolController
                 return $this->jsonResponse($response, $status);
             }
 
-            $totalCount = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?', [(int) $poolList->getId()]);
-            $chunkSize = max(10000, min(50000, (int) ($_ENV['EMAIL_POOL_ANALYSIS_CHUNK_SIZE'] ?? 25000)));
+            $totalCount = $this->getListTotalCountFast((int) $poolList->getId(), (int) $poolList->getTotalCount());
+            $chunkSize = max(2000, min(20000, (int) ($_ENV['EMAIL_POOL_ANALYSIS_CHUNK_SIZE'] ?? 12000)));
             $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
             $conn->executeStatement(
                 "INSERT INTO email_data_pool_analysis_jobs
@@ -1502,10 +1530,7 @@ class EmailDataPoolController
                 $locks[] = $this->acquireListLock((int) $sourceList->getId());
             }
 
-            $currentTotal = (int) $this->em->getConnection()->fetchOne(
-                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
-                [(int) $targetList->getId()]
-            );
+            $currentTotal = $this->getListTotalCountFast((int) $targetList->getId(), (int) $targetList->getTotalCount());
             $missing = max(0, $targetCount - $currentTotal);
             if ($missing < 1) {
                 return $this->jsonResponse($response, [
@@ -1684,10 +1709,7 @@ class EmailDataPoolController
             $locks[] = $this->acquireListLock((int) $sourceList->getId());
             $locks[] = $this->acquireListLock((int) $targetList->getId());
 
-            $currentTotal = (int) $this->em->getConnection()->fetchOne(
-                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
-                [(int) $sourceList->getId()]
-            );
+            $currentTotal = $this->getListTotalCountFast((int) $sourceList->getId(), (int) $sourceList->getTotalCount());
             $overflow = max(0, $currentTotal - $targetCount);
             if ($overflow < 1) {
                 return $this->jsonResponse($response, [
@@ -1998,19 +2020,13 @@ class EmailDataPoolController
     {
         $targetList = $this->resolveExistingPoolListById((int) ($data['target_list_id'] ?? 0));
         $targetCount = max(0, (int) ($data['target_count'] ?? 0));
-        $current = (int) $this->em->getConnection()->fetchOne(
-            'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
-            [(int) $targetList->getId()]
-        );
+        $current = $this->getListTotalCountFast((int) $targetList->getId(), (int) $targetList->getTotalCount());
         $need = max(0, $targetCount - $current);
         $sourceType = (string) ($data['source_type'] ?? 'list');
         $available = 0;
         if ($sourceType === 'list') {
             $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
-            $available = (int) $this->em->getConnection()->fetchOne(
-                'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
-                [(int) $sourceList->getId()]
-            );
+            $available = $this->getListTotalCountFast((int) $sourceList->getId(), (int) $sourceList->getTotalCount());
         } else {
             $raw = (string) ($data['source_payload'] ?? $data['emails'] ?? '');
             $parsed = $this->parseImportInput($raw, false);
@@ -2033,10 +2049,7 @@ class EmailDataPoolController
     {
         $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
         $targetCount = max(0, (int) ($data['target_count'] ?? 0));
-        $current = (int) $this->em->getConnection()->fetchOne(
-            'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
-            [(int) $sourceList->getId()]
-        );
+        $current = $this->getListTotalCountFast((int) $sourceList->getId(), (int) $sourceList->getTotalCount());
         $overflow = max(0, $current - $targetCount);
 
         return [
@@ -2053,10 +2066,7 @@ class EmailDataPoolController
     {
         $sourceList = $this->resolveExistingPoolListById((int) ($data['source_list_id'] ?? 0));
         $chunkSize = max(1000, (int) ($data['chunk_size'] ?? 0));
-        $total = (int) $this->em->getConnection()->fetchOne(
-            'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
-            [(int) $sourceList->getId()]
-        );
+        $total = $this->getListTotalCountFast((int) $sourceList->getId(), (int) $sourceList->getTotalCount());
         $parts = (int) ceil($total / $chunkSize);
 
         return [
@@ -2125,6 +2135,9 @@ class EmailDataPoolController
             'total' => (int) ($row['total_count'] ?? 0),
             'processed' => (int) ($row['processed_count'] ?? 0),
             'percent' => (int) ($row['percent'] ?? 0),
+            'gmail_count' => (int) ($row['gmail_count'] ?? 0),
+            'non_gmail_count' => (int) ($row['non_gmail_count'] ?? 0),
+            'invalid_gmail_count' => (int) ($row['invalid_gmail_count'] ?? 0),
             'message' => (string) ($row['message'] ?? 'Liste analiz ediliyor...'),
         ];
     }
@@ -2147,6 +2160,11 @@ class EmailDataPoolController
             'total' => (int) ($row['total_count'] ?? 0),
             'processed' => (int) ($row['processed_count'] ?? 0),
             'percent' => (int) ($row['percent'] ?? 0),
+            'gmail_count' => (int) ($row['gmail_count'] ?? 0),
+            'non_gmail_count' => (int) ($row['non_gmail_count'] ?? 0),
+            'invalid_gmail_count' => (int) ($row['invalid_gmail_count'] ?? 0),
+            'duplicate_count' => (int) ($row['duplicate_count'] ?? 0),
+            'deletable_count' => (int) ($row['deletable_count'] ?? 0),
             'message' => (string) ($row['message'] ?? ''),
             'error' => (string) ($row['error_message'] ?? ''),
         ];
@@ -2200,10 +2218,10 @@ class EmailDataPoolController
             }
 
             $listId = (int) ($job['list_id'] ?? 0);
-            $chunkSize = max(10000, min(50000, (int) ($job['chunk_size'] ?? 25000)));
+            $chunkSize = max(2000, min(20000, (int) ($job['chunk_size'] ?? 12000)));
             $lastId = (int) ($job['last_id'] ?? 0);
             $rows = $conn->fetchAllAssociative(
-                "SELECT id, email, COALESCE(normalized_email, LOWER(TRIM(email))) AS normalized_email, COALESCE(domain, SUBSTRING_INDEX(LOWER(TRIM(email)), '@', -1)) AS domain
+                "SELECT id, email, domain
                    FROM email_data_pool
                   WHERE pool_list_id = ?
                     AND id > ?
@@ -2573,6 +2591,27 @@ class EmailDataPoolController
         }
 
         return $this->hasNormalizationColumns;
+    }
+
+    private function getListTotalCountFast(int $listId, ?int $fallbackCount = null): int
+    {
+        if ($fallbackCount !== null && $fallbackCount > 0) {
+            return $fallbackCount;
+        }
+
+        $conn = $this->em->getConnection();
+        $fromList = $conn->fetchOne(
+            'SELECT total_count FROM email_data_pool_lists WHERE id = ?',
+            [$listId]
+        );
+        if ($fromList !== false && $fromList !== null) {
+            return max(0, (int) $fromList);
+        }
+
+        return (int) $conn->fetchOne(
+            'SELECT COUNT(*) FROM email_data_pool WHERE pool_list_id = ?',
+            [$listId]
+        );
     }
 
     private function createPoolList(string $name): EmailDataPoolList

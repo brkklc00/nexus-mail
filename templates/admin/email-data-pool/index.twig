@@ -1821,17 +1821,20 @@ function renderCleanerStats(stats) {
 
     const num = value => Number(value || 0).toLocaleString('tr-TR');
     const completed = cleanerState.analysisStatus === 'completed';
-    document.getElementById('kpiTotal').textContent = completed ? num(cleanerState.stats.total) : 'Henüz analiz yapılmadı';
-    document.getElementById('kpiGmail').textContent = completed ? num(cleanerState.stats.gmail_count) : '-';
-    document.getElementById('kpiNonGmail').textContent = completed ? num(cleanerState.stats.non_gmail_count) : '-';
-    document.getElementById('kpiTypo').textContent = completed ? num(cleanerState.stats.typo_gmail_count) : '-';
-    document.getElementById('kpiDuplicate').textContent = completed ? num(cleanerState.stats.duplicate_count) : '-';
-    document.getElementById('kpiDeletable').textContent = completed ? num(cleanerState.stats.deletable_count) : '-';
+    const running = cleanerState.analysisStatus === 'running';
+    const showLive = completed || running;
+    document.getElementById('kpiTotal').textContent = showLive ? num(cleanerState.stats.total) : 'Henüz analiz yapılmadı';
+    document.getElementById('kpiGmail').textContent = showLive ? num(cleanerState.stats.gmail_count) : '-';
+    document.getElementById('kpiNonGmail').textContent = showLive ? num(cleanerState.stats.non_gmail_count) : '-';
+    document.getElementById('kpiTypo').textContent = showLive ? num(cleanerState.stats.typo_gmail_count) : '-';
+    document.getElementById('kpiDuplicate').textContent = completed ? num(cleanerState.stats.duplicate_count) : (running ? 'Hesaplanıyor...' : '-');
+    document.getElementById('kpiDeletable').textContent = showLive ? num(cleanerState.stats.deletable_count) : '-';
     kpiGrid.classList.remove('d-none');
     const analysisMeta = document.getElementById('cleanerAnalysisMeta');
     if (analysisMeta) {
-        if (cleanerState.analysisStatus === 'running') {
-            analysisMeta.textContent = 'Liste analiz ediliyor...';
+        if (running) {
+            const percent = Number(cleanerState.stats.analysis_percent || cleanerState.stats.percent || 0);
+            analysisMeta.textContent = `Liste analiz ediliyor... %${Math.max(0, Math.min(100, percent))}`;
         } else if (completed && cleanerState.stats.last_analyzed_at) {
             analysisMeta.textContent = `Son analiz: ${cleanerState.stats.last_analyzed_at}`;
         } else {
@@ -1891,6 +1894,22 @@ async function pollAnalysisStatus(jobId, showSuccessToast = false) {
     cleanerState.analysisJobId = jobId;
     cleanerState.analysisStatus = data.status || 'idle';
     if (data.status === 'running') {
+        const total = Number(data.total || cleanerState.stats.total || 0);
+        const gmail = Number(data.gmail_count || 0);
+        const nonGmail = Number(data.non_gmail_count || 0);
+        const typo = Number(data.invalid_gmail_count || 0);
+        cleanerState.stats = Object.assign({}, cleanerState.stats || {}, {
+            analysis_status: 'running',
+            analysis_percent: Number(data.percent || 0),
+            total,
+            gmail_count: gmail,
+            non_gmail_count: nonGmail,
+            typo_gmail_count: typo,
+            duplicate_count: Number(data.duplicate_count || 0),
+            deletable_count: nonGmail + Number(data.duplicate_count || 0),
+            last_analyzed_at: (cleanerState.stats && cleanerState.stats.last_analyzed_at) ? cleanerState.stats.last_analyzed_at : null
+        });
+        renderCleanerStats(cleanerState.stats);
         setCleanerProgress(data.message || 'Liste analiz ediliyor...', data.percent || 0);
         return;
     }
@@ -2114,9 +2133,15 @@ async function loadTopStats(showToast = false) {
         document.getElementById('statTopGmailDesc').textContent = completed
             ? `${fmt(total)} kayıt içinde Gmail${data.last_analyzed_at ? ` · Son analiz: ${data.last_analyzed_at}` : ''}`
             : (data.analysis_status === 'running' ? 'Güncelleniyor...' : 'Henüz analiz yapılmadı');
-        document.getElementById('statTopNonGmail').textContent = completed ? fmt(data.non_gmail_count || 0) : '-';
-        document.getElementById('statTopDuplicate').textContent = completed ? fmt(data.duplicate_count || 0) : '-';
-        document.getElementById('statTopTypo').textContent = completed ? fmt(data.typo_gmail_count || 0) : '-';
+        const runningJob = data.running_job || null;
+        const running = data.analysis_status === 'running' && runningJob;
+        document.getElementById('statTopNonGmail').textContent = completed
+            ? fmt(data.non_gmail_count || 0)
+            : (running ? fmt(runningJob.non_gmail_count || 0) : '-');
+        document.getElementById('statTopDuplicate').textContent = completed ? fmt(data.duplicate_count || 0) : (running ? 'Hesaplanıyor...' : '-');
+        document.getElementById('statTopTypo').textContent = completed
+            ? fmt(data.typo_gmail_count || 0)
+            : (running ? fmt(runningJob.invalid_gmail_count || 0) : '-');
         const target = data.target_limit;
         document.getElementById('targetCurrentBadge').textContent = `Mevcut: ${fmt(total)}`;
         if (!target) {
