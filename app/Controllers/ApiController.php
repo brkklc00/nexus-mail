@@ -154,8 +154,7 @@ class ApiController
             // Claim edilebilir kayıtları DB saatine göre seç.
             // PHP/DB timezone farkı lock filtresinde yanlış pozitif üretebiliyor.
             $claimTtlSeconds = max(60, (int) ($_ENV['EMAIL_CLAIM_TTL_SECONDS'] ?? 900));
-            $claimableIds = $this->em->getConnection()->fetchFirstColumn(
-                "SELECT id
+            $claimSql = "SELECT id
                  FROM email_orders
                  WHERE worker_paused = 0
                    AND (
@@ -169,9 +168,12 @@ class ApiController
                         )
                     )
                  ORDER BY created_at ASC
-                 LIMIT ?",
-                [$claimTtlSeconds, $limit],
-                [ParameterType::INTEGER, ParameterType::INTEGER]
+                 LIMIT " . (int) $limit;
+
+            $claimableIds = $this->em->getConnection()->fetchFirstColumn(
+                $claimSql,
+                [$claimTtlSeconds],
+                [ParameterType::INTEGER]
             );
 
             if (empty($claimableIds)) {

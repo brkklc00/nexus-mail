@@ -967,7 +967,13 @@ class EmailOrderController
                 ], 500);
             }
 
-            error_log('Email Order Approve Error: ' . $e->getMessage());
+            error_log(sprintf(
+                'Email Order Approve Error: %s in %s:%d',
+                $e->getMessage(),
+                $e->getFile(),
+                $e->getLine()
+            ));
+            error_log($e->getTraceAsString());
             $schemaAwareMessage = $this->buildSchemaAwareApprovalErrorMessage($e);
             return $this->jsonResponse($response, [
                 'success' => false,
