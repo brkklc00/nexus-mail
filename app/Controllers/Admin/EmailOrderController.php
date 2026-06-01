@@ -14,7 +14,7 @@ use App\Domain\Enum\EmailOrderStatus;
 use App\Services\ExternalMailBalanceService;
 use App\Support\EnumHelper;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\LockMode;
+use Doctrine\DBAL\LockMode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Twig\Environment;
