@@ -103,6 +103,370 @@
 })();
 </script>
 
+{% if _session.is_admin|default(false) %}
+<script>
+(function () {
+    const modalEl = document.getElementById('telegramNotificationsModal');
+    if (!modalEl) return;
+
+    const apiBase = '/admin/telegram-notifications';
+    const state = {
+        loaded: false,
+        loading: false,
+        csrfToken: '',
+        dirty: false,
+        eventLabels: {},
+    };
+    const defaults = {
+        enabled: false,
+        chat_id: '',
+        has_bot_token: false,
+        masked_bot_token: '',
+        events: {},
+        templates: {},
+        last_test_at: null,
+        last_error: '',
+    };
+
+    function toast(type, message) {
+        if (typeof iziToast !== 'undefined') {
+            const fn = (iziToast[type] || iziToast.info).bind(iziToast);
+            fn({ title: type === 'success' ? 'Başarılı' : 'Bilgi', message, position: 'topRight' });
+            return;
+        }
+        alert(message);
+    }
+
+    function setBusy(busy) {
+        const saveBtn = modalEl.querySelector('[data-telegram-save]');
+        const testBtn = modalEl.querySelector('[data-telegram-test]');
+        const resetBtn = modalEl.querySelector('[data-telegram-reset]');
+        [saveBtn, testBtn, resetBtn].forEach((btn) => {
+            if (btn) btn.disabled = busy;
+        });
+    }
+
+    function normalizeData(data) {
+        return {
+            ...defaults,
+            ...(data || {}),
+            events: { ...(defaults.events || {}), ...((data && data.events) || {}) },
+            templates: { ...(defaults.templates || {}), ...((data && data.templates) || {}) },
+        };
+    }
+
+    function renderEvents(events) {
+        const wrap = modalEl.querySelector('[data-telegram-events]');
+        if (!wrap) return;
+        wrap.innerHTML = '';
+        const entries = Object.entries(state.eventLabels || {});
+        entries.forEach(([key, label]) => {
+            const checked = !!events[key];
+            const id = `telegramEvent_${key}`;
+            const row = document.createElement('div');
+            row.className = 'form-check mb-2';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.className = 'form-check-input telegram-event-input';
+            input.id = id;
+            input.setAttribute('data-event-key', key);
+            input.checked = checked;
+
+            const labelEl = document.createElement('label');
+            labelEl.className = 'form-check-label';
+            labelEl.htmlFor = id;
+            labelEl.textContent = String(label || key);
+
+            row.appendChild(input);
+            row.appendChild(labelEl);
+            wrap.appendChild(row);
+        });
+    }
+
+    function renderTemplates(templates) {
+        const wrap = modalEl.querySelector('[data-telegram-templates]');
+        if (!wrap) return;
+        wrap.innerHTML = '';
+        const entries = Object.entries(state.eventLabels || {});
+        entries.forEach(([key, label]) => {
+            const id = `telegramTemplate_${key}`;
+            const value = templates[key] || '';
+            const row = document.createElement('div');
+            row.className = 'mb-3';
+            const labelEl = document.createElement('label');
+            labelEl.className = 'form-label small fw-semibold';
+            labelEl.htmlFor = id;
+            labelEl.textContent = String(label || key);
+
+            const textarea = document.createElement('textarea');
+            textarea.className = 'form-control form-control-sm telegram-template-input';
+            textarea.id = id;
+            textarea.rows = 4;
+            textarea.setAttribute('data-template-key', key);
+            textarea.value = String(value || '');
+
+            row.appendChild(labelEl);
+            row.appendChild(textarea);
+            wrap.appendChild(row);
+        });
+    }
+
+    function fillForm(data) {
+        const normalized = normalizeData(data);
+        state.csrfToken = normalized.csrf_token || state.csrfToken || '';
+        state.eventLabels = normalized.event_labels || state.eventLabels || {};
+
+        const enabledEl = modalEl.querySelector('[name="telegram_enabled"]');
+        const chatEl = modalEl.querySelector('[name="telegram_chat_id"]');
+        const tokenEl = modalEl.querySelector('[name="telegram_bot_token"]');
+        const tokenHint = modalEl.querySelector('[data-telegram-token-mask]');
+        const statusEl = modalEl.querySelector('[data-telegram-status]');
+
+        if (enabledEl) enabledEl.checked = !!normalized.enabled;
+        if (chatEl) chatEl.value = normalized.chat_id || '';
+        if (tokenEl) tokenEl.value = '';
+        if (tokenHint) {
+            tokenHint.textContent = normalized.has_bot_token
+                ? `Kayıtlı token: ${normalized.masked_bot_token || '********'}`
+                : 'Henüz token kaydedilmemiş.';
+        }
+        if (statusEl) {
+            const lastTest = normalized.last_test_at || '-';
+            const lastError = normalized.last_error || '-';
+            statusEl.textContent = `Son test: ${lastTest} | Son hata: ${lastError}`;
+        }
+
+        renderEvents(normalized.events || {});
+        renderTemplates(normalized.templates || {});
+        state.dirty = false;
+    }
+
+    function collectPayload() {
+        const enabledEl = modalEl.querySelector('[name="telegram_enabled"]');
+        const chatEl = modalEl.querySelector('[name="telegram_chat_id"]');
+        const tokenEl = modalEl.querySelector('[name="telegram_bot_token"]');
+        const events = {};
+        modalEl.querySelectorAll('.telegram-event-input').forEach((el) => {
+            events[el.getAttribute('data-event-key')] = !!el.checked;
+        });
+        const templates = {};
+        modalEl.querySelectorAll('.telegram-template-input').forEach((el) => {
+            templates[el.getAttribute('data-template-key')] = el.value || '';
+        });
+
+        return {
+            _csrf: state.csrfToken,
+            enabled: enabledEl && enabledEl.checked ? 1 : 0,
+            chat_id: (chatEl && chatEl.value ? chatEl.value : '').trim(),
+            bot_token: (tokenEl && tokenEl.value ? tokenEl.value : '').trim(),
+            events,
+            templates,
+        };
+    }
+
+    async function loadSettings(force = false) {
+        if (state.loading || (state.loaded && !force)) return;
+        state.loading = true;
+        setBusy(true);
+        try {
+            const res = await fetch(`${apiBase}/settings`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                credentials: 'same-origin',
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Telegram ayarları alınamadı.');
+            }
+            fillForm(data.data || {});
+            state.loaded = true;
+        } catch (err) {
+            toast('error', err.message || 'Telegram ayarları yüklenemedi.');
+        } finally {
+            state.loading = false;
+            setBusy(false);
+        }
+    }
+
+    async function saveSettings() {
+        const payload = collectPayload();
+        if (!payload.chat_id) {
+            toast('error', 'Telegram Chat ID zorunludur.');
+            return;
+        }
+        setBusy(true);
+        try {
+            const res = await fetch(`${apiBase}/settings`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-Token': state.csrfToken || '',
+                    'Accept': 'application/json',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Ayarlar kaydedilemedi.');
+            }
+            fillForm(data.data || {});
+            toast('success', data.message || 'Telegram ayarları kaydedildi.');
+        } catch (err) {
+            toast('error', err.message || 'Telegram ayarları kaydedilemedi.');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function testMessage() {
+        const payload = collectPayload();
+        setBusy(true);
+        try {
+            const res = await fetch(`${apiBase}/test`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-Token': state.csrfToken || '',
+                    'Accept': 'application/json',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Test mesajı gönderilemedi.');
+            }
+            toast('success', data.message || 'Test mesajı gönderildi.');
+            await loadSettings(true);
+        } catch (err) {
+            toast('error', err.message || 'Test mesajı gönderilemedi.');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function resetTemplates() {
+        setBusy(true);
+        try {
+            const res = await fetch(`${apiBase}/reset-template`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-Token': state.csrfToken || '',
+                    'Accept': 'application/json',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ _csrf: state.csrfToken }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Şablonlar sıfırlanamadı.');
+            }
+            fillForm(data.data || {});
+            toast('success', data.message || 'Varsayılan şablonlar yüklendi.');
+        } catch (err) {
+            toast('error', err.message || 'Şablonlar sıfırlanamadı.');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    modalEl.addEventListener('show.bs.modal', function () {
+        loadSettings(false);
+    });
+    modalEl.addEventListener('change', function (e) {
+        if (e.target.matches('input, textarea, select')) {
+            state.dirty = true;
+        }
+    });
+    modalEl.addEventListener('hidden.bs.modal', function () {
+        state.dirty = false;
+    });
+
+    const closeButtons = modalEl.querySelectorAll('[data-bs-dismiss="modal"]');
+    closeButtons.forEach((btn) => {
+        btn.addEventListener('click', function (e) {
+            if (!state.dirty) return;
+            if (!confirm('Kaydedilmemiş değişiklikler var. Kapatmak istiyor musunuz?')) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        });
+    });
+
+    const saveBtn = modalEl.querySelector('[data-telegram-save]');
+    const testBtn = modalEl.querySelector('[data-telegram-test]');
+    const resetBtn = modalEl.querySelector('[data-telegram-reset]');
+    if (saveBtn) saveBtn.addEventListener('click', saveSettings);
+    if (testBtn) testBtn.addEventListener('click', testMessage);
+    if (resetBtn) resetBtn.addEventListener('click', resetTemplates);
+})();
+</script>
+
+<!-- Telegram Bildirim Ayarları Modal -->
+<div class="modal fade" id="telegramNotificationsModal" tabindex="-1" aria-labelledby="telegramNotificationsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="telegramNotificationsModalLabel">
+                    <i data-feather="send" class="icon-sm me-2"></i> Telegram Bildirim Ayarları
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#telegramTabConnection" type="button">Bağlantı</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#telegramTabEvents" type="button">Eventler</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#telegramTabTemplates" type="button">Şablonlar</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#telegramTabTest" type="button">Test</button></li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="telegramTabConnection">
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="telegramEnabled" name="telegram_enabled">
+                            <label class="form-check-label" for="telegramEnabled">Bildirimler aktif</label>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="telegramBotToken">Telegram Bot Token</label>
+                            <input type="password" class="form-control" id="telegramBotToken" name="telegram_bot_token" placeholder="Telegram Bot Token">
+                            <small class="text-muted d-block mt-1" data-telegram-token-mask>Henüz token kaydedilmemiş.</small>
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label" for="telegramChatId">Telegram Chat ID / Grup ID</label>
+                            <input type="text" class="form-control" id="telegramChatId" name="telegram_chat_id" placeholder="-4808406081">
+                            <small class="text-muted">Örnek grup ID: -4808406081</small>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="telegramTabEvents">
+                        <div data-telegram-events></div>
+                    </div>
+                    <div class="tab-pane fade" id="telegramTabTemplates">
+                        <div class="alert alert-light border small">
+                            Kullanılabilir değişkenler: {order_id}, {campaign_subject}, {template_name}, {user_name}, {user_email}, {send_count}, {success_count}, {failed_count}, {bounce_count}, {invalid_count}, {status}, {data_pool_name}, {created_at}, {started_at}, {completed_at}, {error_message}, {worker_name}, {remaining_balance}
+                        </div>
+                        <div data-telegram-templates></div>
+                    </div>
+                    <div class="tab-pane fade" id="telegramTabTest">
+                        <p class="mb-2">Test mesajı:</p>
+                        <pre class="bg-light p-2 rounded border small">✅ Nexus Mail Telegram bildirimi başarıyla çalışıyor.</pre>
+                        <div class="small text-muted" data-telegram-status>Son test: - | Son hata: -</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Kapat</button>
+                <button type="button" class="btn btn-outline-primary" data-telegram-reset>Varsayılan Şablonları Yükle</button>
+                <button type="button" class="btn btn-outline-success" data-telegram-test>Test Mesajı Gönder</button>
+                <button type="button" class="btn btn-primary" data-telegram-save>Kaydet</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Profil Modal -->
 <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-end modal-dialog-vertical">

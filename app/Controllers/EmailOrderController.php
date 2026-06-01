@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Application\Services\TelegramNotificationService;
 use App\Domain\Entities\EmailOrder;
 use App\Domain\Entities\EmailOrderEmail;
 use App\Domain\Entities\EmailPhonebook;
@@ -21,7 +22,8 @@ class EmailOrderController
 {
     public function __construct(
         private EntityManagerInterface $em,
-        private Environment $twig
+        private Environment $twig,
+        private TelegramNotificationService $telegramNotificationService
     ) {
     }
 
@@ -386,6 +388,21 @@ class EmailOrderController
             // Siparişi persist et
             $this->em->persist($order);
             $this->em->flush();
+
+            try {
+                $this->telegramNotificationService->notifyEvent(
+                    TelegramNotificationService::EVENT_PENDING_APPROVAL,
+                    $order,
+                    [
+                        'status' => EmailOrderStatus::PENDING_APPROVAL->value,
+                        'send_count' => $totalEmails,
+                        'template_name' => $bodyTemplate?->getName() ?? '-',
+                        'data_pool_name' => $order->getPoolList()?->getName() ?? '-',
+                    ]
+                );
+            } catch (\Throwable $notifyError) {
+                error_log('Telegram pending_approval notify error: ' . $notifyError->getMessage());
+            }
             
             // Pool dışı siparişler için EmailOrderEmail oluştur (Pool: Worker havuzdan çekecek)
             if ($poolRequestedCount <= 0 && !empty($emails)) {

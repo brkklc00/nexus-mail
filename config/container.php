@@ -10,6 +10,7 @@ use App\Application\Services\EmailSmtpService;
 use App\Application\Services\EmailSmtpSelector;
 use App\Application\Services\AlibabaDirectMailReportService;
 use App\Application\Services\TransactionalEmailService;
+use App\Application\Services\TelegramNotificationService;
 use App\Application\Services\DomainConfigService;
 use App\Services\ExternalMailBalanceApiService;
 use App\Services\ExternalMailBalanceService;
@@ -267,7 +268,8 @@ return array_merge($settings, [
             $settings,
             $c->get(\App\Application\Services\EmailSmtpService::class),
             $c->get(\App\Application\Services\EmailSmtpSelector::class),
-            $c->get(\App\Application\Services\EmailSendingConfigService::class)
+            $c->get(\App\Application\Services\EmailSendingConfigService::class),
+            $c->get(TelegramNotificationService::class)
         );
     }),
 
@@ -357,7 +359,8 @@ return array_merge($settings, [
     \App\Controllers\EmailOrderController::class => factory(function (ContainerInterface $c) {
         return new \App\Controllers\EmailOrderController(
             $c->get(EntityManager::class),
-            $c->get(TwigEnvironment::class)
+            $c->get(TwigEnvironment::class),
+            $c->get(TelegramNotificationService::class)
         );
     }),
 
@@ -440,7 +443,20 @@ return array_merge($settings, [
         return new \App\Controllers\Admin\EmailOrderController(
             $c->get(EntityManager::class),
             $c->get(TwigEnvironment::class),
-            $c->get(ExternalMailBalanceService::class)
+            $c->get(ExternalMailBalanceService::class),
+            $c->get(TelegramNotificationService::class)
+        );
+    }),
+
+    TelegramNotificationService::class => factory(function (ContainerInterface $c) {
+        return new TelegramNotificationService(
+            $c->get(EntityManager::class)
+        );
+    }),
+
+    \App\Controllers\Admin\TelegramNotificationController::class => factory(function (ContainerInterface $c) {
+        return new \App\Controllers\Admin\TelegramNotificationController(
+            $c->get(TelegramNotificationService::class)
         );
     }),
 

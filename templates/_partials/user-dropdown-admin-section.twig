@@ -13,6 +13,12 @@
     <i data-feather="terminal" class="nx-dd-icon"></i>
     <span>Worker Terminali</span>
 </a>
+{% if _session.is_admin|default(false) %}
+<a class="dropdown-item nx-dd-item" href="#" data-bs-toggle="modal" data-bs-target="#telegramNotificationsModal">
+    <i data-feather="send" class="nx-dd-icon"></i>
+    <span>Telegram Bildirimleri</span>
+</a>
+{% endif %}
 {% endif %}
 
 {% endif %}

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Application\Services\TelegramNotificationService;
 use App\Domain\Entities\EmailOrder;
 use App\Domain\Entities\EmailOrderEmail;
 use App\Domain\Entities\EmailDataPool;
@@ -28,13 +29,15 @@ class ApiController
     private \App\Application\Services\EmailSmtpService $emailSmtpService;
     private \App\Application\Services\EmailSmtpSelector $emailSmtpSelector;
     private \App\Application\Services\EmailSendingConfigService $emailSendingConfigService;
+    private TelegramNotificationService $telegramNotificationService;
 
     public function __construct(
         EntityManager $em,
         array $settings,
         \App\Application\Services\EmailSmtpService $emailSmtpService,
         \App\Application\Services\EmailSmtpSelector $emailSmtpSelector,
-        \App\Application\Services\EmailSendingConfigService $emailSendingConfigService
+        \App\Application\Services\EmailSendingConfigService $emailSendingConfigService,
+        TelegramNotificationService $telegramNotificationService
     )
     {
         $this->em = $em;
@@ -42,6 +45,7 @@ class ApiController
         $this->emailSmtpService = $emailSmtpService;
         $this->emailSmtpSelector = $emailSmtpSelector;
         $this->emailSendingConfigService = $emailSendingConfigService;
+        $this->telegramNotificationService = $telegramNotificationService;
     }
 
     /**
@@ -321,6 +325,20 @@ class ApiController
                 $lockInfo['locked_by'] ?? 'null',
                 $lockInfo['locked_at'] ?? 'null'
             );
+        } else {
+            $order = $this->em->find(EmailOrder::class, $orderId);
+            if ($order instanceof EmailOrder) {
+                $this->notifyTelegramSafely(
+                    TelegramNotificationService::EVENT_PROCESSING,
+                    $order,
+                    [
+                        'status' => 'processing',
+                        'worker_name' => $workerId,
+                        'worker_id' => $workerId,
+                        'started_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                    ]
+                );
+            }
         }
 
         $response->getBody()->write(json_encode([
@@ -375,6 +393,25 @@ class ApiController
         }
 
         $this->em->flush();
+        if ($action === 'pause' || $action === 'stop') {
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_PAUSED,
+                $order,
+                [
+                    'status' => $order->getStatus()->value,
+                    'worker_name' => 'worker-control',
+                ]
+            );
+        } elseif ($action === 'resume') {
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_RESTARTED,
+                $order,
+                [
+                    'status' => $order->getStatus()->value,
+                    'worker_name' => 'worker-control',
+                ]
+            );
+        }
 
         $response->getBody()->write(json_encode([
             'success' => true,
@@ -723,6 +760,9 @@ class ApiController
             $response->getBody()->write(json_encode(['success' => false, 'error' => 'Order not found']));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
         }
+        $previousStatus = $order->getStatus()->value;
+        $errorMessage = isset($data['error_message']) ? trim((string) $data['error_message']) : '';
+        $workerName = isset($data['worker_name']) ? trim((string) $data['worker_name']) : (string) ($data['worker_id'] ?? '');
 
         // String'i EmailOrderStatus enum'a çevir
         try {
@@ -779,6 +819,61 @@ class ApiController
         // kampanyayı uzun süre gereksiz kilitli bırakabiliyor.
 
         $this->em->flush();
+        $currentStatus = $order->getStatus()->value;
+        if ($previousStatus !== $currentStatus) {
+            $this->notifyTelegramStatusChangeSafely($order, $currentStatus, [
+                'status' => $currentStatus,
+                'worker_name' => $workerName,
+                'worker_id' => $workerName,
+                'error_message' => $errorMessage,
+                'success_count' => $order->getDelivered(),
+                'failed_count' => $order->getFailed(),
+                'bounce_count' => $order->getBounced(),
+                'send_count' => $order->getTotal(),
+                'completed_at' => $order->getCompletedAt()?->format('Y-m-d H:i:s'),
+            ]);
+        }
+
+        $failedCount = max(0, (int) $order->getFailed());
+        $totalCount = max(1, (int) $order->getTotal());
+        $failedRatio = $failedCount / $totalCount;
+        if ($failedCount >= 20 && $failedRatio >= 0.4) {
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_HIGH_ERROR_RATE,
+                $order,
+                [
+                    'status' => $currentStatus,
+                    'failed_count' => $failedCount,
+                    'send_count' => $totalCount,
+                    'error_message' => $errorMessage,
+                    'worker_name' => $workerName,
+                ]
+            );
+        }
+
+        if ($errorMessage !== '' && str_contains(strtolower($errorMessage), 'throttle')) {
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_SMTP_THROTTLE_WARNING,
+                $order,
+                [
+                    'status' => $currentStatus,
+                    'error_message' => $errorMessage,
+                    'worker_name' => $workerName,
+                ]
+            );
+        }
+
+        if ($currentStatus === 'failed' && $errorMessage !== '') {
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_WORKER_ERROR,
+                $order,
+                [
+                    'status' => $currentStatus,
+                    'error_message' => $errorMessage,
+                    'worker_name' => $workerName,
+                ]
+            );
+        }
 
         $response->getBody()->write(json_encode(['success' => true]));
         return $response->withHeader('Content-Type', 'application/json');
@@ -1230,6 +1325,24 @@ class ApiController
             error_log("refundFailedEmails error: " . $e->getMessage());
             $response->getBody()->write(json_encode(['success' => false, 'error' => $e->getMessage()]));
             return $response->withStatus(500)->withHeader('Content-Type', 'application/json');
+        }
+    }
+
+    private function notifyTelegramSafely(string $eventType, ?EmailOrder $order, array $context = []): void
+    {
+        try {
+            $this->telegramNotificationService->notifyEvent($eventType, $order, $context);
+        } catch (\Throwable $e) {
+            error_log('Telegram notify error (' . $eventType . '): ' . $e->getMessage());
+        }
+    }
+
+    private function notifyTelegramStatusChangeSafely(EmailOrder $order, string $status, array $context = []): void
+    {
+        try {
+            $this->telegramNotificationService->notifyEmailOrderStatusChanged($order, $status, $context);
+        } catch (\Throwable $e) {
+            error_log('Telegram status notify error (' . $status . '): ' . $e->getMessage());
         }
     }
 

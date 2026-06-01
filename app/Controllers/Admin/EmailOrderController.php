@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Application\Services\TelegramNotificationService;
 use App\Domain\Entities\EmailDataPool;
 use App\Domain\Entities\EmailDataPoolList;
 use App\Domain\Entities\EmailOrder;
@@ -23,7 +24,8 @@ class EmailOrderController
     public function __construct(
         private EntityManagerInterface $em,
         private Environment $twig,
-        private ExternalMailBalanceService $externalMailBalanceApi
+        private ExternalMailBalanceService $externalMailBalanceApi,
+        private TelegramNotificationService $telegramNotificationService
     ) {
     }
 
@@ -827,6 +829,17 @@ class EmailOrderController
                 : (is_array($externalUserResult['data']) ? $externalUserResult['data'] : []);
             $currentBalance = (int) ($externalUserData['mail_balance'] ?? $externalUserData['balance'] ?? 0);
             if ($currentBalance > 0 && $currentBalance < $orderTotal) {
+                $this->notifyTelegramSafely(
+                    TelegramNotificationService::EVENT_BALANCE_INSUFFICIENT,
+                    $order,
+                    [
+                        'status' => $order->getStatus()->value,
+                        'send_count' => $orderTotal,
+                        'remaining_balance' => $currentBalance,
+                        'user_name' => (string) ($externalUserData['name'] ?? ''),
+                        'user_email' => (string) ($externalUserData['email'] ?? ''),
+                    ]
+                );
                 $conn->rollBack();
                 return $this->jsonResponse($response, [
                     'success' => false,
@@ -887,6 +900,17 @@ class EmailOrderController
             ], $conn);
 
             $conn->commit();
+            $commonContext = [
+                'status' => EmailOrderStatus::PENDING->value,
+                'send_count' => $orderTotal,
+                'remaining_balance' => (int) ($balanceData['new_balance'] ?? 0),
+                'data_pool_name' => $selectedDataListName ?? ($order->getPoolList()?->getName() ?? '-'),
+                'template_name' => $order->getTemplate()?->getName() ?? '-',
+                'user_name' => (string) ($externalUserData['name'] ?? ''),
+                'user_email' => (string) ($externalUserData['email'] ?? ''),
+            ];
+            $this->notifyTelegramSafely(TelegramNotificationService::EVENT_APPROVED, $order, $commonContext);
+            $this->notifyTelegramSafely(TelegramNotificationService::EVENT_QUEUED, $order, $commonContext);
             return $this->jsonResponse($response, [
                 'success' => true,
                 'message' => 'Gönderim onaylandı, müşteri bakiyesi düşüldü ve sipariş kuyruğa alındı.',
@@ -1167,6 +1191,15 @@ class EmailOrderController
 
                 $this->em->flush();
                 $conn->commit();
+                $this->notifyTelegramSafely(
+                    TelegramNotificationService::EVENT_RESTARTED,
+                    $order,
+                    [
+                        'status' => EmailOrderStatus::PENDING->value,
+                        'send_count' => $totalEmails,
+                        'data_pool_name' => $order->getPoolList()?->getName() ?? '-',
+                    ]
+                );
 
                 $msg = $chargeCredit
                     ? 'Kampanya yeniden kuyruğa alındı; mail kredisi kesildi. Worker işleyecek.'
@@ -1226,6 +1259,11 @@ class EmailOrderController
             $order->setStatus(EmailOrderStatus::CANCELLED);
             $order->setCompletedAt(new \DateTime());
             $this->em->flush();
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_CANCELLED,
+                $order,
+                ['status' => EmailOrderStatus::CANCELLED->value]
+            );
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -1879,6 +1917,15 @@ class EmailOrderController
         $defaultPoolListId = $poolListsPayload[0]['id'] ?? null;
 
         return [$poolListsPayload, $defaultPoolListId];
+    }
+
+    private function notifyTelegramSafely(string $eventType, ?EmailOrder $order, array $context = []): void
+    {
+        try {
+            $this->telegramNotificationService->notifyEvent($eventType, $order, $context);
+        } catch (\Throwable $e) {
+            error_log('Telegram notify error (' . $eventType . '): ' . $e->getMessage());
+        }
     }
 
     private function buildSchemaAwareApprovalErrorMessage(\Throwable $e): ?string

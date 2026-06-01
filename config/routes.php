@@ -285,6 +285,20 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
         });
 
+        $group->group('/admin/telegram-notifications', function (RouteCollectorProxy $group) use ($container) {
+            $em = $container->get(EntityManager::class);
+            $twig = $container->get(Environment::class);
+
+            $group->get('/settings', [\App\Controllers\Admin\TelegramNotificationController::class, 'settings'])->setName('admin.telegram-notifications.settings')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->post('/settings', [\App\Controllers\Admin\TelegramNotificationController::class, 'saveSettings'])->setName('admin.telegram-notifications.save')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->post('/test', [\App\Controllers\Admin\TelegramNotificationController::class, 'test'])->setName('admin.telegram-notifications.test')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->post('/reset-template', [\App\Controllers\Admin\TelegramNotificationController::class, 'resetTemplate'])->setName('admin.telegram-notifications.reset-template')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+        });
+
         $group->group('/admin/external-balance', function (RouteCollectorProxy $group) use ($container) {
             $em = $container->get(EntityManager::class);
             $twig = $container->get(Environment::class);
