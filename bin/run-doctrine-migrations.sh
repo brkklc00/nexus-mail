@@ -39,6 +39,11 @@ fi
 echo "PHP: $PHP_BIN"
 echo "Running Doctrine migrations..."
 
+if [ ! -x "vendor/bin/doctrine-migrations" ]; then
+  echo "HATA: vendor/bin/doctrine-migrations bulunamadı. Önce composer install çalıştırın."
+  exit 1
+fi
+
 DB_CONFIG="migrations-db.php"
 if [ ! -f "$DB_CONFIG" ] && [ -f "config/migrations-db.php" ]; then
   DB_CONFIG="config/migrations-db.php"
@@ -46,12 +51,22 @@ fi
 
 # İki ayrı migrations dizini (database/migrations ve database/migrations_doctrine) için
 # sırayla migrate — tek config ile diğer klasör hiç çalışmıyordu.
+RAN_ANY=0
 for MIGRATIONS_CONFIG in "config/migrations.php" "config/migrations-doctrine.php"; do
   if [ -f "$MIGRATIONS_CONFIG" ]; then
+    RAN_ANY=1
     echo "==> doctrine-migrations ($MIGRATIONS_CONFIG)"
-    $PHP_BIN vendor/bin/doctrine-migrations migrate --no-interaction \
+    if ! $PHP_BIN vendor/bin/doctrine-migrations migrate --no-interaction \
       --db-configuration="$DB_CONFIG" \
       --configuration="$MIGRATIONS_CONFIG" \
-      "$@"
+      "$@"; then
+      echo "HATA: Migration çalıştırma başarısız oldu ($MIGRATIONS_CONFIG)."
+      exit 1
+    fi
   fi
 done
+
+if [ "$RAN_ANY" -eq 0 ]; then
+  echo "HATA: Migration config dosyası bulunamadı (config/migrations.php veya config/migrations-doctrine.php)."
+  exit 1
+fi

@@ -54,6 +54,7 @@ return function (App $app) {
         $group->get('/smtp/select-best', [ApiController::class, 'selectBestSmtp'])->setName('api.smtp.select-best');
         $group->post('/smtp/{id}/usage', [ApiController::class, 'recordSmtpUsage'])->setName('api.smtp.usage');
         $group->get('/email-sending/runtime-config', [ApiController::class, 'getEmailSendingRuntimeConfig'])->setName('api.email-sending.runtime-config');
+        $group->get('/email-worker/health', [ApiController::class, 'getEmailWorkerHealth'])->setName('api.email-worker.health');
 
         // API Key Management
         $group->post('/regenerate-key', [ApiController::class, 'regenerateApiKey'])->setName('api.regenerate-key');

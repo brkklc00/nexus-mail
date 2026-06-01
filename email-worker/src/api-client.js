@@ -31,6 +31,8 @@ export class ApiClient {
             config.api.batchTimeout || 300000
         );
         this.apiToken = config.api.token;
+        this.errorThrottleMs = Math.max(5000, parseInt(process.env.WORKER_ERROR_THROTTLE_MS || '60000', 10) || 60000);
+        this.lastErrorLogAt = new Map();
         /** Panelden gelen worker ayarları (runtime-config veya select-best) */
         this.workerRuntime = null;
 
@@ -42,6 +44,19 @@ export class ApiClient {
                 'X-Api-Token': this.apiToken,
             }
         });
+    }
+
+    logThrottledError(key, message) {
+        const now = Date.now();
+        const lastAt = this.lastErrorLogAt.get(key) || 0;
+        const elapsed = now - lastAt;
+        if (elapsed >= this.errorThrottleMs) {
+            this.lastErrorLogAt.set(key, now);
+            Logger.error(message);
+            return;
+        }
+        const remainingSec = Math.max(1, Math.ceil((this.errorThrottleMs - elapsed) / 1000));
+        Logger.debug(`${message} (aynı hata için ${remainingSec}s throttle)`);
     }
 
     /**
@@ -63,9 +78,17 @@ export class ApiClient {
             return response.data.campaigns || [];
         } catch (error) {
             const detail = error.response?.data;
-            const hint = typeof detail === 'object' && detail?.hint ? ` — ${detail.hint}` : '';
-            const msg = typeof detail === 'object' && detail?.message ? detail.message : error.message;
-            Logger.error(`getPendingEmailCampaigns error: ${msg}${hint}`);
+            const status = error.response?.status || 0;
+            const hint = typeof detail === 'object' && detail?.hint ? String(detail.hint) : '';
+            const reason = typeof detail === 'object' && detail?.message ? String(detail.message) : String(error.message || 'Bilinmeyen hata');
+            const key = `${status}:${reason}:${hint}`;
+            const line = [
+                'getPendingEmailCampaigns failed',
+                `HTTP=${status || 'N/A'}`,
+                `Reason=${reason}`,
+                hint ? `Fix=${hint}` : null,
+            ].filter(Boolean).join(' | ');
+            this.logThrottledError(key, line);
             return [];
         }
     }

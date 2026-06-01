@@ -767,7 +767,8 @@ function parseApiErrorMessage(text, status) {
         parsed = JSON.parse(text);
     } catch (e) {}
     if (parsed && typeof parsed === 'object' && parsed.message) {
-        return String(parsed.message);
+        const hint = parsed.hint ? ` ${String(parsed.hint)}` : '';
+        return `${String(parsed.message)}${hint}`.trim();
     }
     const normalizedText = (text || '').trim().toLowerCase();
     if (normalizedText.startsWith('<!doctype') || normalizedText.startsWith('<html')) {
@@ -783,6 +784,9 @@ function parseApiErrorMessage(text, status) {
     }
     if (status === 419) {
         return 'Güvenlik doğrulaması başarısız oldu. Sayfayı yenileyip tekrar deneyin.';
+    }
+    if (text && !normalizedText.startsWith('<!doctype') && !normalizedText.startsWith('<html')) {
+        return String(text).slice(0, 240);
     }
     return 'İstek başarısız oldu.';
 }

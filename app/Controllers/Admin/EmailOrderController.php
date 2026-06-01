@@ -944,9 +944,10 @@ class EmailOrderController
             }
 
             error_log('Email Order Approve Error: ' . $e->getMessage());
+            $schemaAwareMessage = $this->buildSchemaAwareApprovalErrorMessage($e);
             return $this->jsonResponse($response, [
                 'success' => false,
-                'message' => 'Onay işlemi sırasında sistem hatası oluştu. Lütfen tekrar deneyin.'
+                'message' => $schemaAwareMessage ?? 'Onay işlemi sırasında sistem hatası oluştu. Lütfen tekrar deneyin.'
             ], 500);
         }
     }
@@ -1878,6 +1879,81 @@ class EmailOrderController
         $defaultPoolListId = $poolListsPayload[0]['id'] ?? null;
 
         return [$poolListsPayload, $defaultPoolListId];
+    }
+
+    private function buildSchemaAwareApprovalErrorMessage(\Throwable $e): ?string
+    {
+        $raw = trim((string) $e->getMessage());
+        if ($raw === '') {
+            return null;
+        }
+
+        $lower = strtolower($raw);
+        $schemaKeywords = [
+            'worker_paused',
+            'worker_stop_requested',
+            'campaign_batch_metrics',
+            'campaign_runtime_summary',
+            'unknown column',
+            "doesn't exist",
+        ];
+
+        $matched = false;
+        foreach ($schemaKeywords as $keyword) {
+            if (str_contains($lower, $keyword)) {
+                $matched = true;
+                break;
+            }
+        }
+
+        if (!$matched) {
+            return null;
+        }
+
+        $missing = $this->detectMissingWorkerSchemaItems();
+        if (!empty($missing)) {
+            return 'Veritabanı migration eksik: ' . implode(', ', $missing) . '. Lütfen `bash bin/run-doctrine-migrations.sh` komutunu çalıştırın.';
+        }
+
+        return 'Veritabanı migration eksik veya worker şeması güncel değil. Lütfen `bash bin/run-doctrine-migrations.sh` komutunu çalıştırın.';
+    }
+
+    private function detectMissingWorkerSchemaItems(): array
+    {
+        try {
+            $conn = $this->em->getConnection();
+            $dbName = (string) ($conn->getDatabase() ?: $conn->fetchOne('SELECT DATABASE()'));
+            $missing = [];
+
+            $requiredColumns = [
+                'email_orders' => ['worker_paused', 'worker_stop_requested'],
+            ];
+            foreach ($requiredColumns as $table => $columns) {
+                foreach ($columns as $column) {
+                    $exists = (int) $conn->fetchOne(
+                        'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                        [$dbName, $table, $column]
+                    ) > 0;
+                    if (!$exists) {
+                        $missing[] = $table . '.' . $column;
+                    }
+                }
+            }
+
+            foreach (['campaign_batch_metrics', 'campaign_runtime_summary'] as $table) {
+                $exists = (int) $conn->fetchOne(
+                    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+                    [$dbName, $table]
+                ) > 0;
+                if (!$exists) {
+                    $missing[] = $table;
+                }
+            }
+
+            return $missing;
+        } catch (\Throwable) {
+            return [];
+        }
     }
 }
 

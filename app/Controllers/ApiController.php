@@ -15,6 +15,14 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 class ApiController
 {
+    private const WORKER_SCHEMA_REQUIRED_COLUMNS = [
+        'email_orders' => ['worker_paused', 'worker_stop_requested'],
+    ];
+    private const WORKER_SCHEMA_REQUIRED_TABLES = [
+        'campaign_batch_metrics',
+        'campaign_runtime_summary',
+    ];
+
     private EntityManager $em;
     private array $settings;
     private \App\Application\Services\EmailSmtpService $emailSmtpService;
@@ -240,16 +248,12 @@ class ApiController
             return $response->withHeader('Content-Type', 'application/json');
         } catch (\Throwable $e) {
             error_log('getPendingEmailCampaigns: ' . $e->getMessage());
-            $debug = filter_var($_ENV['APP_DEBUG'] ?? getenv('APP_DEBUG') ?: false, FILTER_VALIDATE_BOOLEAN);
-            $hint = 'Sunucuda Doctrine migration çalıştırın: `bash bin/run-doctrine-migrations.sh` (ör. Version20260511 — email_orders.worker_paused, campaign_batch_metrics).';
-            $response->getBody()->write(json_encode([
-                'success' => false,
-                'error' => 'pending_campaigns_failed',
-                'message' => $debug ? $e->getMessage() : 'Email kampanya listesi alınamadı.',
-                'hint' => $hint,
-            ], JSON_UNESCAPED_UNICODE));
+            $errorPayload = $this->buildWorkerSchemaAwareErrorPayload($e, 'pending_campaigns_failed', 'Email kampanya listesi alınamadı.');
+            $statusCode = (int) ($errorPayload['status_code'] ?? 500);
+            unset($errorPayload['status_code']);
+            $response->getBody()->write(json_encode($errorPayload, JSON_UNESCAPED_UNICODE));
 
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+            return $response->withHeader('Content-Type', 'application/json')->withStatus($statusCode);
         }
     }
 
@@ -295,6 +299,12 @@ class ApiController
             $claimed = $affected > 0;
         } catch (\Throwable $e) {
             error_log('claimEmailCampaign error: ' . $e->getMessage());
+            $errorPayload = $this->buildWorkerSchemaAwareErrorPayload($e, 'claim_campaign_failed', 'Kampanya claim işlemi başarısız oldu.');
+            $statusCode = (int) ($errorPayload['status_code'] ?? 500);
+            unset($errorPayload['status_code']);
+            $response->getBody()->write(json_encode($errorPayload, JSON_UNESCAPED_UNICODE));
+
+            return $response->withHeader('Content-Type', 'application/json')->withStatus($statusCode);
         }
 
         $claimReason = null;
@@ -390,21 +400,64 @@ class ApiController
         $orderId = (int) ($args['id'] ?? 0);
         $conn = $this->em->getConnection();
 
-        $summary = $conn->fetchAssociative(
-            'SELECT * FROM campaign_runtime_summary WHERE campaign_id = ?',
-            [$orderId]
-        );
+        try {
+            $summary = $conn->fetchAssociative(
+                'SELECT * FROM campaign_runtime_summary WHERE campaign_id = ?',
+                [$orderId]
+            );
 
-        $batches = $conn->fetchAllAssociative(
-            'SELECT * FROM campaign_batch_metrics WHERE campaign_id = ? ORDER BY id DESC LIMIT 50',
-            [$orderId]
-        );
+            $batches = $conn->fetchAllAssociative(
+                'SELECT * FROM campaign_batch_metrics WHERE campaign_id = ? ORDER BY id DESC LIMIT 50',
+                [$orderId]
+            );
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'campaign_id' => $orderId,
+                'runtime_summary' => $summary ?: null,
+                'recent_batches' => $batches,
+            ], JSON_UNESCAPED_UNICODE));
+
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Throwable $e) {
+            error_log('getEmailCampaignRuntimeMetrics: ' . $e->getMessage());
+            $errorPayload = $this->buildWorkerSchemaAwareErrorPayload($e, 'runtime_metrics_failed', 'Kampanya çalışma metrikleri alınamadı.');
+            $statusCode = (int) ($errorPayload['status_code'] ?? 500);
+            unset($errorPayload['status_code']);
+            $response->getBody()->write(json_encode($errorPayload, JSON_UNESCAPED_UNICODE));
+
+            return $response->withHeader('Content-Type', 'application/json')->withStatus($statusCode);
+        }
+    }
+
+    public function getEmailWorkerHealth(Request $request, Response $response): Response
+    {
+        $tokenError = $this->validateApiToken($request, $response);
+        if ($tokenError) {
+            return $tokenError;
+        }
+
+        $schemaHealth = $this->getWorkerSchemaHealth();
+        $conn = $this->em->getConnection();
+
+        $pendingCampaignCount = 0;
+        $pausedCampaignCount = 0;
+        try {
+            $pendingCampaignCount = (int) $conn->fetchOne("SELECT COUNT(*) FROM email_orders WHERE status = 'pending'");
+            $pausedCampaignCount = (int) $conn->fetchOne("SELECT COUNT(*) FROM email_orders WHERE worker_paused = 1");
+        } catch (\Throwable $e) {
+            error_log('getEmailWorkerHealth counters error: ' . $e->getMessage());
+        }
 
         $response->getBody()->write(json_encode([
             'success' => true,
-            'campaign_id' => $orderId,
-            'runtime_summary' => $summary ?: null,
-            'recent_batches' => $batches,
+            'worker_schema_ok' => $schemaHealth['ok'],
+            'missing_schema_items' => $schemaHealth['missing'],
+            'migration_hint' => $schemaHealth['hint'],
+            'pending_campaign_count' => $pendingCampaignCount,
+            'worker_paused_campaign_count' => $pausedCampaignCount,
+            'last_successful_poll_at' => null,
+            'last_error' => $schemaHealth['ok'] ? null : 'Veritabanı migration eksik. Email worker kampanya çekemiyor.',
         ], JSON_UNESCAPED_UNICODE));
 
         return $response->withHeader('Content-Type', 'application/json');
@@ -1178,5 +1231,85 @@ class ApiController
             $response->getBody()->write(json_encode(['success' => false, 'error' => $e->getMessage()]));
             return $response->withStatus(500)->withHeader('Content-Type', 'application/json');
         }
+    }
+
+    private function getWorkerSchemaHealth(): array
+    {
+        $conn = $this->em->getConnection();
+        $dbName = (string) ($conn->getDatabase() ?: $conn->fetchOne('SELECT DATABASE()'));
+        $missing = [];
+
+        foreach (self::WORKER_SCHEMA_REQUIRED_COLUMNS as $table => $columns) {
+            foreach ($columns as $column) {
+                try {
+                    $exists = (int) $conn->fetchOne(
+                        'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                        [$dbName, $table, $column]
+                    ) > 0;
+                } catch (\Throwable) {
+                    $exists = false;
+                }
+
+                if (!$exists) {
+                    $missing[] = $table . '.' . $column;
+                }
+            }
+        }
+
+        foreach (self::WORKER_SCHEMA_REQUIRED_TABLES as $table) {
+            try {
+                $exists = (int) $conn->fetchOne(
+                    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+                    [$dbName, $table]
+                ) > 0;
+            } catch (\Throwable) {
+                $exists = false;
+            }
+            if (!$exists) {
+                $missing[] = $table;
+            }
+        }
+
+        return [
+            'ok' => empty($missing),
+            'missing' => $missing,
+            'hint' => 'Sunucuda Doctrine migration çalıştırın: `bash bin/run-doctrine-migrations.sh`',
+        ];
+    }
+
+    private function buildWorkerSchemaAwareErrorPayload(\Throwable $e, string $errorCode, string $defaultMessage): array
+    {
+        $debug = filter_var($_ENV['APP_DEBUG'] ?? getenv('APP_DEBUG') ?: false, FILTER_VALIDATE_BOOLEAN);
+        $schemaHealth = $this->getWorkerSchemaHealth();
+        $rawMessage = trim((string) $e->getMessage());
+        $lowerMessage = strtolower($rawMessage);
+        $schemaKeywordMatched = str_contains($lowerMessage, 'worker_paused')
+            || str_contains($lowerMessage, 'worker_stop_requested')
+            || str_contains($lowerMessage, 'campaign_batch_metrics')
+            || str_contains($lowerMessage, 'campaign_runtime_summary')
+            || str_contains($lowerMessage, 'unknown column')
+            || str_contains($lowerMessage, "doesn't exist");
+        $isSchemaError = !$schemaHealth['ok'] || $schemaKeywordMatched;
+
+        $payload = [
+            'success' => false,
+            'error' => $errorCode,
+            'message' => $debug ? ($rawMessage !== '' ? $rawMessage : $defaultMessage) : $defaultMessage,
+            'hint' => null,
+            'status_code' => 500,
+        ];
+
+        if ($isSchemaError) {
+            $missing = $schemaHealth['missing'];
+            if (!empty($missing)) {
+                $payload['message'] = 'Veritabanı migration eksik: ' . implode(', ', $missing) . '.';
+            } else {
+                $payload['message'] = 'Veritabanı migration eksik veya şema worker ile uyumlu değil.';
+            }
+            $payload['hint'] = $schemaHealth['hint'];
+            $payload['error'] = 'migration_required';
+        }
+
+        return $payload;
     }
 }
