@@ -371,9 +371,15 @@ export class CampaignProcessor {
             }
         } finally {
             this.processing.delete(campaign.id);
-            
-            // SMTP connection pool'u temizle
-            this.cleanupSmtpPool();
+
+            // Aynı anda birden fazla kampanya işlenirken global pool'u kapatmak,
+            // diğer kampanyalarda "Connection pool was closed" hatası üretir.
+            // Bu yüzden yalnızca aktif kampanya kalmadığında temizle.
+            if (this.processing.size === 0) {
+                this.cleanupSmtpPool();
+            } else {
+                Logger.debug(`SMTP pool korunuyor (aktif kampanya: ${this.processing.size})`);
+            }
         }
     }
 

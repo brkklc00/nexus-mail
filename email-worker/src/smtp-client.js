@@ -183,6 +183,45 @@ export class SmtpClient {
                 response: info.response
             };
         } catch (error) {
+            // Nodemailer pool bazen dışarıdan kapatıldığında bu hata döner.
+            // Tek seferlik reconnect+retry ile transient kırılmaları toparla.
+            const errMsg = String(error?.message || '').toLowerCase();
+            if (errMsg.includes('connection pool was closed')) {
+                Logger.warn(`SMTP pool kapalı bulundu (${this.config.host}:${this.config.port}), yeniden bağlanıp tekrar denenecek`);
+                try {
+                    this.transporter = null;
+                    this.isConnected = false;
+                    const reconnected = await this.connect();
+                    if (reconnected && this.transporter) {
+                        const senderEmail = fromEmail || this.config.from_email;
+                        const appTitle = process.env.SITE_TITLE || 'Nexus Panel';
+                        const senderName = fromName || this.config.from_name || appTitle;
+                        const textVersion = body.replace(/<[^>]*>/g, '')
+                            .replace(/&nbsp;/g, ' ')
+                            .replace(/&amp;/g, '&')
+                            .replace(/&lt;/g, '<')
+                            .replace(/&gt;/g, '>')
+                            .replace(/&quot;/g, '"')
+                            .trim();
+                        const retryMailOptions = {
+                            from: `"${senderName}" <${senderEmail}>`,
+                            to: toAddr,
+                            subject: subject,
+                            html: body,
+                            text: textVersion || subject
+                        };
+                        const retryInfo = await this.transporter.sendMail(retryMailOptions);
+                        return {
+                            success: true,
+                            messageId: retryInfo.messageId,
+                            response: retryInfo.response
+                        };
+                    }
+                } catch (retryError) {
+                    Logger.error(`Reconnect retry başarısız (${toAddr}): ${retryError.message}`);
+                }
+            }
+
             Logger.error(`Email gönderim hatası (${toAddr}): ${error.message}`);
             const classification = this.classifySendError(error);
             return {

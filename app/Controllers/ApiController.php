@@ -342,6 +342,16 @@ class ApiController
                         'started_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
                     ]
                 );
+                $this->notifyTelegramSafely(
+                    TelegramNotificationService::EVENT_WORKER_STARTED,
+                    $order,
+                    [
+                        'status' => 'processing',
+                        'worker_name' => $workerId,
+                        'worker_id' => $workerId,
+                        'started_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                    ]
+                );
             }
         }
 
@@ -400,6 +410,14 @@ class ApiController
         if ($action === 'pause' || $action === 'stop') {
             $this->notifyTelegramSafely(
                 TelegramNotificationService::EVENT_PAUSED,
+                $order,
+                [
+                    'status' => $order->getStatus()->value,
+                    'worker_name' => 'worker-control',
+                ]
+            );
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_WORKER_STOPPED,
                 $order,
                 [
                     'status' => $order->getStatus()->value,
@@ -836,6 +854,25 @@ class ApiController
                 'send_count' => $order->getTotal(),
                 'completed_at' => $order->getCompletedAt()?->format('Y-m-d H:i:s'),
             ]);
+        } elseif ($currentStatus === 'processing') {
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_PROGRESS,
+                $order,
+                [
+                    'status' => $currentStatus,
+                    'worker_name' => $workerName,
+                    'worker_id' => $workerName,
+                    'error_message' => $errorMessage,
+                    'success_count' => $order->getDelivered(),
+                    'failed_count' => $order->getFailed(),
+                    'bounce_count' => $order->getBounced(),
+                    'send_count' => $order->getTotal(),
+                    'sent_count' => $order->getDelivered() + $order->getFailed() + $order->getBounced(),
+                    'progress_percent' => $order->getTotal() > 0
+                        ? round((($order->getDelivered() + $order->getFailed() + $order->getBounced()) / $order->getTotal()) * 100, 2)
+                        : 0,
+                ]
+            );
         }
 
         $failedCount = max(0, (int) $order->getFailed());
@@ -865,11 +902,29 @@ class ApiController
                     'worker_name' => $workerName,
                 ]
             );
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_DAILY_LIMIT_REACHED,
+                $order,
+                [
+                    'status' => $currentStatus,
+                    'error_message' => $errorMessage,
+                    'worker_name' => $workerName,
+                ]
+            );
         }
 
         if ($currentStatus === 'failed' && $errorMessage !== '') {
             $this->notifyTelegramSafely(
                 TelegramNotificationService::EVENT_WORKER_ERROR,
+                $order,
+                [
+                    'status' => $currentStatus,
+                    'error_message' => $errorMessage,
+                    'worker_name' => $workerName,
+                ]
+            );
+            $this->notifyTelegramSafely(
+                TelegramNotificationService::EVENT_SMTP_ERROR,
                 $order,
                 [
                     'status' => $currentStatus,

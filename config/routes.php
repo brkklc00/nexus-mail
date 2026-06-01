@@ -293,8 +293,24 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->post('/settings', [\App\Controllers\Admin\TelegramNotificationController::class, 'saveSettings'])->setName('admin.telegram-notifications.save')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->get('/events', [\App\Controllers\Admin\TelegramNotificationController::class, 'events'])->setName('admin.telegram-notifications.events')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->post('/events', [\App\Controllers\Admin\TelegramNotificationController::class, 'saveEvents'])->setName('admin.telegram-notifications.events.save')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->get('/templates', [\App\Controllers\Admin\TelegramNotificationController::class, 'templates'])->setName('admin.telegram-notifications.templates')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
+            $group->post('/templates', [\App\Controllers\Admin\TelegramNotificationController::class, 'saveTemplates'])->setName('admin.telegram-notifications.templates.save')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->put('/templates/{id}', [\App\Controllers\Admin\TelegramNotificationController::class, 'updateTemplate'])->setName('admin.telegram-notifications.templates.update')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->post('/load-defaults', [\App\Controllers\Admin\TelegramNotificationController::class, 'loadDefaults'])->setName('admin.telegram-notifications.load-defaults')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/test', [\App\Controllers\Admin\TelegramNotificationController::class, 'test'])->setName('admin.telegram-notifications.test')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->post('/test-template', [\App\Controllers\Admin\TelegramNotificationController::class, 'testTemplate'])->setName('admin.telegram-notifications.test-template')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->get('/logs', [\App\Controllers\Admin\TelegramNotificationController::class, 'logs'])->setName('admin.telegram-notifications.logs')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'read'));
             $group->post('/reset-template', [\App\Controllers\Admin\TelegramNotificationController::class, 'resetTemplate'])->setName('admin.telegram-notifications.reset-template')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
         });

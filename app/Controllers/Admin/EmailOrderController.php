@@ -830,7 +830,7 @@ class EmailOrderController
             $currentBalance = (int) ($externalUserData['mail_balance'] ?? $externalUserData['balance'] ?? 0);
             if ($currentBalance > 0 && $currentBalance < $orderTotal) {
                 $this->notifyTelegramSafely(
-                    TelegramNotificationService::EVENT_BALANCE_INSUFFICIENT,
+                    TelegramNotificationService::EVENT_BALANCE_LOW,
                     $order,
                     [
                         'status' => $order->getStatus()->value,
@@ -840,6 +840,19 @@ class EmailOrderController
                         'user_email' => (string) ($externalUserData['email'] ?? ''),
                     ]
                 );
+                if ($currentBalance <= 0) {
+                    $this->notifyTelegramSafely(
+                        TelegramNotificationService::EVENT_BALANCE_INSUFFICIENT,
+                        $order,
+                        [
+                            'status' => $order->getStatus()->value,
+                            'send_count' => $orderTotal,
+                            'remaining_balance' => $currentBalance,
+                            'user_name' => (string) ($externalUserData['name'] ?? ''),
+                            'user_email' => (string) ($externalUserData['email'] ?? ''),
+                        ]
+                    );
+                }
                 $conn->rollBack();
                 return $this->jsonResponse($response, [
                     'success' => false,

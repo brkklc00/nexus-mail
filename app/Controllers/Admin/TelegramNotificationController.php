@@ -12,7 +12,7 @@ final class TelegramNotificationController
 {
     private const CSRF_SESSION_KEY = 'telegram_notifications_csrf';
 
-    public function __construct(private TelegramNotificationService $telegramService)
+    public function __construct(private TelegramNotificationService $service)
     {
     }
 
@@ -21,15 +21,13 @@ final class TelegramNotificationController
         if (!$this->isAdmin()) {
             return $this->json($response, ['success' => false, 'message' => 'Yetkisiz işlem.'], 403);
         }
-
-        $responsePayload = $this->telegramService->getSettingsForAdmin();
-        $responsePayload['csrf_token'] = $this->getOrCreateCsrfToken();
-        $responsePayload['event_labels'] = $this->telegramService->getEventLabels();
-
-        return $this->json($response, [
-            'success' => true,
-            'data' => $responsePayload,
-        ]);
+        try {
+            $data = $this->service->getSettingsForAdmin();
+            $data['csrf_token'] = $this->getOrCreateCsrfToken();
+            return $this->json($response, ['success' => true, 'data' => $data]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Telegram ayarları alınamadı. Migration çalıştırın: bash bin/run-doctrine-migrations.sh'], 500);
+        }
     }
 
     public function saveSettings(Request $request, Response $response): Response
@@ -37,17 +35,91 @@ final class TelegramNotificationController
         if (!$this->validateAdminAndCsrf($request)) {
             return $this->json($response, ['success' => false, 'message' => 'Yetkisiz veya geçersiz güvenlik tokenı.'], 403);
         }
+        try {
+            $saved = $this->service->saveSettings($this->parseBody($request));
+            $saved['csrf_token'] = $this->getOrCreateCsrfToken();
+            return $this->json($response, ['success' => true, 'message' => 'Telegram ayarları kaydedildi.', 'data' => $saved]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Telegram ayarları kaydedilemedi: ' . $e->getMessage()], 422);
+        }
+    }
 
-        $data = $this->parseBody($request);
-        $saved = $this->telegramService->saveSettings($data);
-        $saved['csrf_token'] = $this->getOrCreateCsrfToken();
-        $saved['event_labels'] = $this->telegramService->getEventLabels();
+    public function events(Request $request, Response $response): Response
+    {
+        if (!$this->isAdmin()) {
+            return $this->json($response, ['success' => false, 'message' => 'Yetkisiz işlem.'], 403);
+        }
+        try {
+            return $this->json($response, ['success' => true, 'data' => $this->service->getEventsForAdmin()]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Event listesi alınamadı. Migration çalıştırın.'], 500);
+        }
+    }
 
-        return $this->json($response, [
-            'success' => true,
-            'message' => 'Telegram bildirim ayarları kaydedildi.',
-            'data' => $saved,
-        ]);
+    public function saveEvents(Request $request, Response $response): Response
+    {
+        if (!$this->validateAdminAndCsrf($request)) {
+            return $this->json($response, ['success' => false, 'message' => 'Yetkisiz veya geçersiz güvenlik tokenı.'], 403);
+        }
+        try {
+            $rows = $this->service->saveEvents($this->parseBody($request));
+            return $this->json($response, ['success' => true, 'message' => 'Event ayarları kaydedildi.', 'data' => $rows]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Event ayarları kaydedilemedi: ' . $e->getMessage()], 422);
+        }
+    }
+
+    public function templates(Request $request, Response $response): Response
+    {
+        if (!$this->isAdmin()) {
+            return $this->json($response, ['success' => false, 'message' => 'Yetkisiz işlem.'], 403);
+        }
+        try {
+            return $this->json($response, ['success' => true, 'data' => $this->service->getTemplatesForAdmin()]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Şablonlar alınamadı. Migration çalıştırın.'], 500);
+        }
+    }
+
+    public function saveTemplates(Request $request, Response $response): Response
+    {
+        if (!$this->validateAdminAndCsrf($request)) {
+            return $this->json($response, ['success' => false, 'message' => 'Yetkisiz veya geçersiz güvenlik tokenı.'], 403);
+        }
+        try {
+            $rows = $this->service->saveTemplates($this->parseBody($request));
+            return $this->json($response, ['success' => true, 'message' => 'Şablonlar kaydedildi.', 'data' => $rows]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Şablonlar kaydedilemedi: ' . $e->getMessage()], 422);
+        }
+    }
+
+    public function updateTemplate(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->validateAdminAndCsrf($request)) {
+            return $this->json($response, ['success' => false, 'message' => 'Yetkisiz veya geçersiz güvenlik tokenı.'], 403);
+        }
+        try {
+            $id = (int) ($args['id'] ?? 0);
+            $row = $this->service->updateTemplateById($id, $this->parseBody($request));
+            return $this->json($response, ['success' => true, 'message' => 'Şablon güncellendi.', 'data' => $row]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Şablon güncellenemedi: ' . $e->getMessage()], 422);
+        }
+    }
+
+    public function loadDefaults(Request $request, Response $response): Response
+    {
+        if (!$this->validateAdminAndCsrf($request)) {
+            return $this->json($response, ['success' => false, 'message' => 'Yetkisiz veya geçersiz güvenlik tokenı.'], 403);
+        }
+        try {
+            $data = $this->service->loadDefaults();
+            $data['csrf_token'] = $this->getOrCreateCsrfToken();
+            return $this->json($response, ['success' => true, 'message' => 'Varsayılan şablonlar yüklendi.', 'data' => $data]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Varsayılanlar yüklenemedi: ' . $e->getMessage()], 422);
+        }
     }
 
     public function test(Request $request, Response $response): Response
@@ -55,40 +127,55 @@ final class TelegramNotificationController
         if (!$this->validateAdminAndCsrf($request)) {
             return $this->json($response, ['success' => false, 'message' => 'Yetkisiz veya geçersiz güvenlik tokenı.'], 403);
         }
-
         $data = $this->parseBody($request);
-        $token = isset($data['bot_token']) ? trim((string) $data['bot_token']) : null;
-        $chatId = isset($data['chat_id']) ? trim((string) $data['chat_id']) : null;
-        $result = $this->telegramService->sendTestMessage($token ?: null, $chatId ?: null);
-
-        if (!$result['success']) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => (string) ($result['message'] ?? 'Test mesajı gönderilemedi.'),
-            ], 422);
-        }
-
+        $res = $this->service->sendTestMessage(
+            isset($data['bot_token']) ? trim((string) $data['bot_token']) : null,
+            isset($data['chat_id']) ? trim((string) $data['chat_id']) : null,
+            isset($data['message']) ? (string) $data['message'] : null
+        );
+        $status = !empty($res['success']) ? 200 : 422;
         return $this->json($response, [
-            'success' => true,
-            'message' => 'Test mesajı Telegram grubuna gönderildi.',
-        ]);
+            'success' => !empty($res['success']),
+            'message' => (string) ($res['message'] ?? ''),
+            'data' => [
+                'last_test_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                'last_test_status' => !empty($res['success']) ? 'success' : 'failed',
+                'last_error' => !empty($res['success']) ? '' : (string) ($res['message'] ?? ''),
+            ],
+        ], $status);
     }
 
-    public function resetTemplate(Request $request, Response $response): Response
+    public function testTemplate(Request $request, Response $response): Response
     {
         if (!$this->validateAdminAndCsrf($request)) {
             return $this->json($response, ['success' => false, 'message' => 'Yetkisiz veya geçersiz güvenlik tokenı.'], 403);
         }
-
-        $settings = $this->telegramService->resetTemplates();
-        $settings['csrf_token'] = $this->getOrCreateCsrfToken();
-        $settings['event_labels'] = $this->telegramService->getEventLabels();
-
+        $data = $this->parseBody($request);
+        $key = trim((string) ($data['template_key'] ?? ''));
+        $res = $this->service->sendTemplateTest($key, is_array($data['sample_variables'] ?? null) ? $data['sample_variables'] : []);
         return $this->json($response, [
-            'success' => true,
-            'message' => 'Varsayılan şablonlar geri yüklendi.',
-            'data' => $settings,
-        ]);
+            'success' => !empty($res['success']),
+            'message' => (string) ($res['message'] ?? ''),
+        ], !empty($res['success']) ? 200 : 422);
+    }
+
+    public function logs(Request $request, Response $response): Response
+    {
+        if (!$this->isAdmin()) {
+            return $this->json($response, ['success' => false, 'message' => 'Yetkisiz işlem.'], 403);
+        }
+        try {
+            $limit = max(1, min(500, (int) ($request->getQueryParams()['limit'] ?? 100)));
+            return $this->json($response, ['success' => true, 'data' => $this->service->getLogs($limit)]);
+        } catch (\Throwable $e) {
+            return $this->json($response, ['success' => false, 'message' => 'Loglar alınamadı. Migration çalıştırın.'], 500);
+        }
+    }
+
+    // Backward compatibility old route
+    public function resetTemplate(Request $request, Response $response): Response
+    {
+        return $this->loadDefaults($request, $response);
     }
 
     private function parseBody(Request $request): array
@@ -97,12 +184,10 @@ final class TelegramNotificationController
         if (is_array($parsed) && $parsed !== []) {
             return $parsed;
         }
-
         $raw = (string) $request->getBody();
         if ($raw === '') {
             return [];
         }
-
         $decoded = json_decode($raw, true);
         return is_array($decoded) ? $decoded : [];
     }
@@ -122,18 +207,13 @@ final class TelegramNotificationController
 
     private function isValidCsrf(Request $request): bool
     {
-        $sessionToken = $_SESSION[self::CSRF_SESSION_KEY] ?? null;
-        if (!is_string($sessionToken) || $sessionToken === '') {
+        $token = $_SESSION[self::CSRF_SESSION_KEY] ?? null;
+        if (!is_string($token) || $token === '') {
             return false;
         }
-
         $body = $this->parseBody($request);
         $candidate = (string) ($body['_csrf'] ?? $request->getHeaderLine('X-CSRF-Token'));
-        if ($candidate === '') {
-            return false;
-        }
-
-        return hash_equals($sessionToken, $candidate);
+        return $candidate !== '' && hash_equals($token, $candidate);
     }
 
     private function getOrCreateCsrfToken(): string
@@ -141,13 +221,11 @@ final class TelegramNotificationController
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
-
         $token = $_SESSION[self::CSRF_SESSION_KEY] ?? '';
         if (!is_string($token) || $token === '') {
             $token = bin2hex(random_bytes(24));
             $_SESSION[self::CSRF_SESSION_KEY] = $token;
         }
-
         return $token;
     }
 
