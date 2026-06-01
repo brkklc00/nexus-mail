@@ -10,6 +10,7 @@ use App\Domain\Entities\EmailOrderEmail;
 use App\Domain\Entities\EmailDataPool;
 use App\Domain\Entities\EmailSmtp;
 use App\Domain\Entities\User;
+use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\EntityManager;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -169,7 +170,8 @@ class ApiController
                     )
                  ORDER BY created_at ASC
                  LIMIT ?",
-                [$claimTtlSeconds, $limit]
+                [$claimTtlSeconds, $limit],
+                [ParameterType::INTEGER, ParameterType::INTEGER]
             );
 
             if (empty($claimableIds)) {
