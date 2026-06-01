@@ -105,7 +105,7 @@
 
 {% if _session.is_admin|default(false) %}
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
     const modalEl = document.getElementById('telegramNotificationsModal');
     if (!modalEl) return;
     const apiBase = '/admin/telegram-notifications';
@@ -294,6 +294,19 @@
             S.csrf = S.settings.csrf_token || S.csrf;
             S.templateKey = S.templates[0]?.template_key || '';
 
+            // İlk açılışta event/şablon boş gelirse otomatik varsayılanları yükle.
+            if (!S.events.length || !S.templates.length) {
+                if (S.csrf) {
+                    await api(`${apiBase}/load-defaults`, 'POST', { _csrf: S.csrf });
+                    const refreshed = await api(`${apiBase}/settings`);
+                    S.settings = refreshed.data || S.settings;
+                    S.events = Array.isArray(S.settings.events) ? S.settings.events : [];
+                    S.templates = Array.isArray(S.settings.templates) ? S.settings.templates : [];
+                    S.csrf = S.settings.csrf_token || S.csrf;
+                    S.templateKey = S.templates[0]?.template_key || '';
+                }
+            }
+
             $('[name="telegram_enabled"]').checked = !!S.settings.enabled;
             $('[name="telegram_chat_id"]').value = S.settings.chat_id || '';
             $('[name="telegram_bot_token"]').value = '';
@@ -431,12 +444,12 @@
         previewTemplate();
         S.dirty = true;
     }));
-})();
+});
 </script>
 
 <!-- Telegram Bildirim Ayarları Modal -->
 <div class="modal fade" id="telegramNotificationsModal" tabindex="-1" aria-labelledby="telegramNotificationsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xxl modal-dialog-scrollable">
+    <div class="modal-dialog modal-xxl modal-dialog-scrollable" style="max-width: 1500px; width: 96vw;">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="telegramNotificationsModalLabel"><i data-feather="send" class="icon-sm me-2"></i> Telegram Bildirim Ayarları</h5>
