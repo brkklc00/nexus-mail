@@ -20,6 +20,62 @@
         editingFilePath: null,
         createType: 'file',
         backups: { database: [], files: [] },
+        maintenanceSummary: null,
+        maintenanceCards: [],
+        maintenancePreviewByOperation: {},
+        maintenancePollingTimer: null,
+        maintenanceJobIds: {},
+    };
+
+    const maintenanceOperationConfig = {
+        cleanup_email_orders: {
+            label: 'Email Siparişleri',
+            desc: 'Order özetleri korunur; detaylar temizlenir veya arşivlenir.',
+            targetTable: 'email_orders,email_order_emails',
+            risk: 'medium'
+        },
+        cleanup_email_order_details: {
+            label: 'Alıcı / Recipient Detayları',
+            desc: 'Recipient detay satırları cursor-batch ile işlenir.',
+            targetTable: 'email_order_emails',
+            risk: 'low'
+        },
+        cleanup_email_send_results: {
+            label: 'Gönderim Sonuçları',
+            desc: 'Gönderim sonuçları (status/error/message) detayları temizlenir.',
+            targetTable: 'email_order_emails',
+            risk: 'low'
+        },
+        cleanup_worker_batch_results: {
+            label: 'Worker Job Geçmişi',
+            desc: 'Campaign batch metrik ve geçmiş verileri temizlenir.',
+            targetTable: 'campaign_batch_metrics',
+            risk: 'medium'
+        },
+        cleanup_system_logs: {
+            label: 'Loglar',
+            desc: 'Log/audit tablosu satırları retention ile temizlenir.',
+            targetTable: 'email_order_approval_logs,email_template_test_logs',
+            risk: 'medium'
+        },
+        cleanup_export_files: {
+            label: 'Export / Temp Dosyalar',
+            desc: 'Eski export dosyaları worker tarafında silinir.',
+            targetTable: 'storage/exports',
+            risk: 'low'
+        },
+        cleanup_temp_files: {
+            label: 'Geçici Dosyalar',
+            desc: 'Tmp/cache dosyaları güvenli eşik ile temizlenir.',
+            targetTable: 'storage/tmp',
+            risk: 'low'
+        },
+        database_optimize_tables: {
+            label: 'Veritabanı Optimizasyonu',
+            desc: 'OPTIMIZE TABLE işlemi worker ile kontrollü çalıştırılır.',
+            targetTable: 'email_orders,email_order_emails,data_pool_jobs',
+            risk: 'high'
+        }
     };
 
     function api(url, options) {
@@ -487,6 +543,221 @@
             .catch(function (err) { toast(err.message, 'error'); });
     }
 
+    function getMaintenanceFilters() {
+        const mode = document.getElementById('smMaintenanceMode').value || 'purge_details_keep_summary';
+        const dateBefore = document.getElementById('smMaintenanceDateBefore').value || '';
+        const batchSize = Number(document.getElementById('smMaintenanceBatchSize').value || '50000');
+        const statusesRaw = document.getElementById('smMaintenanceStatuses').value || '';
+        const statuses = statusesRaw.split(',').map(function (item) { return item.trim(); }).filter(Boolean);
+        const hardDeleteConfirmed = !!document.getElementById('smMaintenanceHardDeleteConfirm').checked;
+        return {
+            mode: mode,
+            date_before: dateBefore,
+            batch_size: Math.max(1000, batchSize || 50000),
+            statuses: statuses,
+            hard_delete_confirmed: hardDeleteConfirmed ? '1' : '0'
+        };
+    }
+
+    function numberFmt(val) {
+        const n = Number(val || 0);
+        if (!Number.isFinite(n)) return '-';
+        return n.toLocaleString('tr-TR');
+    }
+
+    function relativeTimeText(value) {
+        if (!value) return '-';
+        const ts = Date.parse(String(value).replace(' ', 'T'));
+        if (!Number.isFinite(ts)) return String(value);
+        const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+        if (diffSec < 60) return diffSec + ' sn önce';
+        if (diffSec < 3600) return Math.floor(diffSec / 60) + ' dk önce';
+        if (diffSec < 86400) return Math.floor(diffSec / 3600) + ' sa önce';
+        return Math.floor(diffSec / 86400) + ' gün önce';
+    }
+
+    function riskBadgeClass(risk) {
+        if (risk === 'high') return 'nx-sm-risk high';
+        if (risk === 'medium') return 'nx-sm-risk medium';
+        return 'nx-sm-risk low';
+    }
+
+    function riskLabel(risk) {
+        if (risk === 'high') return 'Yüksek Risk';
+        if (risk === 'medium') return 'Orta Risk';
+        return 'Düşük Risk';
+    }
+
+    function updateMaintenanceSummaryUI(summary) {
+        state.maintenanceSummary = summary || {};
+        document.getElementById('smMaintDbSize').textContent = summary.database_size || '-';
+        document.getElementById('smMaintEstimatedRows').textContent = numberFmt(summary.estimated_cleanable_rows);
+        document.getElementById('smMaintEstimatedSize').textContent = summary.estimated_cleanable_size || '-';
+        document.getElementById('smMaintActiveJob').textContent = summary.active_job_label || '-';
+        document.getElementById('smMaintLastMaintenance').textContent = summary.last_maintenance_at || '-';
+    }
+
+    function renderMaintenanceCards() {
+        const wrap = document.getElementById('smMaintenanceCards');
+        const cards = state.maintenanceCards || [];
+        if (!cards.length) {
+            wrap.innerHTML = '<div class="nx-sm-empty">Bakım kartı verisi bulunamadı.</div>';
+            return;
+        }
+        wrap.innerHTML = cards.map(function (card) {
+            const conf = maintenanceOperationConfig[card.operation] || {};
+            const risk = card.risk || conf.risk || 'low';
+            const progress = card.running_job || null;
+            const progressHtml = progress
+                ? '<div class="nx-sm-maint-progress mt-2">' +
+                    '<div><strong>Job #' + numberFmt(progress.job_id) + '</strong> · ' + escapeHtml(progress.status || '-') + ' · %' + numberFmt(progress.percent || 0) + '</div>' +
+                    '<div>İşlenen: <strong>' + numberFmt(progress.processed || 0) + '</strong> / ' + numberFmt(progress.total || 0) + '</div>' +
+                    '<div>Temizlenen: <strong>' + numberFmt(progress.cleaned_count || progress.success_count || 0) + '</strong> · Arşivlenen: <strong>' + numberFmt(progress.archived_count || 0) + '</strong> · Hatalı: <strong>' + numberFmt(progress.failed_count || 0) + '</strong></div>' +
+                    '<div>Step: <strong>' + escapeHtml(progress.current_step || '-') + '</strong> · Worker: <strong>' + escapeHtml(progress.worker_id || '-') + '</strong> · Heartbeat: <strong>' + escapeHtml(progress.heartbeat_at || '-') + '</strong></div>' +
+                    '<div class="mt-2 d-flex flex-wrap gap-1">' +
+                        '<button class="btn btn-sm btn-outline-secondary sm-maint-refresh-job-btn" data-job-id="' + escapeHtmlAttr(progress.job_id) + '">Durumu Yenile</button>' +
+                        '<button class="btn btn-sm btn-outline-warning sm-maint-pause-job-btn" data-job-id="' + escapeHtmlAttr(progress.job_id) + '">Pause</button>' +
+                        '<button class="btn btn-sm btn-outline-success sm-maint-resume-job-btn" data-job-id="' + escapeHtmlAttr(progress.job_id) + '">Resume</button>' +
+                        '<button class="btn btn-sm btn-outline-danger sm-maint-cancel-job-btn" data-job-id="' + escapeHtmlAttr(progress.job_id) + '">Cancel</button>' +
+                        '<button class="btn btn-sm btn-outline-dark sm-maint-fail-job-btn" data-job-id="' + escapeHtmlAttr(progress.job_id) + '">Mark Failed</button>' +
+                    '</div>' +
+                  '</div>'
+                : '<div class="nx-sm-maint-progress mt-2">Aktif job yok.</div>';
+            return '<div class="nx-sm-maint-item">' +
+                '<div class="d-flex justify-content-between align-items-start gap-2">' +
+                    '<h6>' + escapeHtml(conf.label || card.label || card.operation) + '</h6>' +
+                    '<span class="' + riskBadgeClass(risk) + '">' + riskLabel(risk) + '</span>' +
+                '</div>' +
+                '<p class="sub">' + escapeHtml(conf.desc || card.description || '') + '</p>' +
+                '<div class="meta">' +
+                    '<div>Tahmini kayıt: <strong>' + numberFmt(card.estimated_count) + '</strong></div>' +
+                    '<div>Tahmini boyut: <strong>' + escapeHtml(card.estimated_size || '-') + '</strong></div>' +
+                    '<div>Temizlenebilir: <strong>' + numberFmt(card.cleanable_count) + '</strong></div>' +
+                    '<div>Son bakım: <strong>' + escapeHtml(card.last_maintenance_at || '-') + '</strong></div>' +
+                '</div>' +
+                '<div class="d-flex flex-wrap gap-1">' +
+                    '<button class="btn btn-sm btn-outline-primary sm-maint-preview-btn" data-operation="' + escapeHtmlAttr(card.operation) + '">Önizle</button>' +
+                    '<button class="btn btn-sm btn-primary sm-maint-start-btn" data-operation="' + escapeHtmlAttr(card.operation) + '">Worker ile Başlat</button>' +
+                    '<button class="btn btn-sm btn-outline-secondary sm-maint-detail-btn" data-operation="' + escapeHtmlAttr(card.operation) + '">Detay</button>' +
+                '</div>' +
+                progressHtml +
+                '</div>';
+        }).join('');
+    }
+
+    function loadMaintenanceSummary() {
+        return api('/admin/email-data-pool/maintenance/summary')
+            .then(function (res) {
+                const payload = res.data || {};
+                state.maintenanceCards = payload.cards || [];
+                updateMaintenanceSummaryUI(payload.summary || {});
+                renderMaintenanceCards();
+            })
+            .catch(function (err) {
+                toast('Bakım özeti yüklenemedi: ' + err.message, 'error');
+            });
+    }
+
+    function maintenancePreview(operation) {
+        const filters = getMaintenanceFilters();
+        const form = new URLSearchParams();
+        form.set('operation', operation);
+        form.set('mode', filters.mode);
+        form.set('date_before', filters.date_before);
+        form.set('batch_size', String(filters.batch_size));
+        form.set('statuses', filters.statuses.join(','));
+        form.set('hard_delete_confirmed', filters.hard_delete_confirmed);
+        return api('/admin/email-data-pool/maintenance/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: form.toString()
+        }).then(function (res) {
+            const preview = res.data || {};
+            state.maintenancePreviewByOperation[operation] = preview;
+            const warnings = (preview.warnings || []).map(function (w) { return '- ' + w; }).join('\n');
+            toast('Önizleme hazır: ' + operation + ' · Tahmini kayıt: ' + numberFmt(preview.estimatedRows || 0), 'info');
+            if (warnings) {
+                toast('<pre class="mb-0">' + escapeHtml(warnings) + '</pre>', 'warning');
+            }
+            return preview;
+        });
+    }
+
+    function maintenanceStart(operation) {
+        const filters = getMaintenanceFilters();
+        if (filters.mode === 'hard_delete' && filters.hard_delete_confirmed !== '1') {
+            toast('Hard delete için onay kutusunu işaretleyin.', 'warning');
+            return Promise.resolve();
+        }
+        const cachedPreview = state.maintenancePreviewByOperation[operation];
+        if (!cachedPreview || !cachedPreview.previewToken) {
+            toast('Önce önizleme alınmalı.', 'warning');
+            return Promise.resolve();
+        }
+        const form = new URLSearchParams();
+        form.set('operation', operation);
+        form.set('mode', filters.mode);
+        form.set('date_before', filters.date_before);
+        form.set('batch_size', String(filters.batch_size));
+        form.set('statuses', filters.statuses.join(','));
+        form.set('hard_delete_confirmed', filters.hard_delete_confirmed);
+        form.set('preview_token', String(cachedPreview.previewToken || ''));
+        return api('/admin/email-data-pool/maintenance/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: form.toString()
+        }).then(function (res) {
+            const data = res.data || {};
+            if (data.jobId) {
+                state.maintenanceJobIds[operation] = data.jobId;
+                toast('Bakım job kuyruğa alındı (#' + data.jobId + ')', 'success');
+            }
+            startMaintenancePolling();
+            return loadMaintenanceSummary();
+        }).catch(function (err) {
+            toast('Bakım job başlatılamadı: ' + err.message, 'error');
+        });
+    }
+
+    function startMaintenancePolling() {
+        if (state.maintenancePollingTimer) {
+            return;
+        }
+        state.maintenancePollingTimer = window.setInterval(function () {
+            loadMaintenanceSummary();
+        }, 5000);
+    }
+
+    function stopMaintenancePolling() {
+        if (!state.maintenancePollingTimer) return;
+        clearInterval(state.maintenancePollingTimer);
+        state.maintenancePollingTimer = null;
+    }
+
+    function maintenanceJobAction(jobId, action) {
+        const endpointMap = {
+            refresh: '/admin/email-data-pool/jobs/' + encodeURIComponent(jobId) + '/status',
+            pause: '/admin/email-data-pool/jobs/' + encodeURIComponent(jobId) + '/pause',
+            resume: '/admin/email-data-pool/jobs/' + encodeURIComponent(jobId) + '/resume',
+            cancel: '/admin/email-data-pool/jobs/' + encodeURIComponent(jobId) + '/cancel',
+            fail: '/admin/email-data-pool/jobs/' + encodeURIComponent(jobId) + '/mark-failed'
+        };
+        const method = action === 'refresh' ? 'GET' : 'POST';
+        return api(endpointMap[action], { method: method })
+            .then(function (res) {
+                if (action === 'refresh') {
+                    const d = res.data || res;
+                    toast('Job #' + jobId + ' · ' + escapeHtml(d.status || '-') + ' · %' + numberFmt(d.percent || 0), 'info');
+                } else {
+                    toast('Job #' + jobId + ' için işlem uygulandı: ' + action, 'success');
+                }
+                return loadMaintenanceSummary();
+            })
+            .catch(function (err) {
+                toast('Job aksiyonu başarısız: ' + err.message, 'error');
+            });
+    }
+
     function escapeHtml(v) {
         return String(v == null ? '' : v)
             .replace(/&/g, '&amp;')
@@ -654,6 +925,81 @@
 
         document.getElementById('smBackupDbTableWrap').addEventListener('click', handleBackupTableActions);
         document.getElementById('smBackupFilesTableWrap').addEventListener('click', handleBackupTableActions);
+
+        document.getElementById('smMaintenanceSummaryRefreshBtn').addEventListener('click', function () {
+            const btn = this;
+            setBusy(btn, true, 'Yenileniyor...');
+            loadMaintenanceSummary().finally(function () {
+                setBusy(btn, false);
+            });
+        });
+        document.getElementById('smMaintenanceCards').addEventListener('click', function (e) {
+            const previewBtn = e.target.closest('.sm-maint-preview-btn');
+            const startBtn = e.target.closest('.sm-maint-start-btn');
+            const detailBtn = e.target.closest('.sm-maint-detail-btn');
+            const refreshJobBtn = e.target.closest('.sm-maint-refresh-job-btn');
+            const pauseJobBtn = e.target.closest('.sm-maint-pause-job-btn');
+            const resumeJobBtn = e.target.closest('.sm-maint-resume-job-btn');
+            const cancelJobBtn = e.target.closest('.sm-maint-cancel-job-btn');
+            const failJobBtn = e.target.closest('.sm-maint-fail-job-btn');
+
+            if (previewBtn) {
+                const operation = previewBtn.dataset.operation || '';
+                if (!operation) return;
+                setBusy(previewBtn, true, 'Önizleniyor...');
+                maintenancePreview(operation).finally(function () { setBusy(previewBtn, false); });
+                return;
+            }
+            if (startBtn) {
+                const operation = startBtn.dataset.operation || '';
+                if (!operation) return;
+                showConfirm(
+                    'Bakım Job Başlat',
+                    'Seçilen bakım operasyonu worker kuyruğuna alınacak. İşlem web request içinde çalışmayacak.',
+                    'btn-primary',
+                    function () {
+                        setBusy(startBtn, true, 'Kuyruğa alınıyor...');
+                        maintenanceStart(operation).finally(function () { setBusy(startBtn, false); });
+                    }
+                );
+                return;
+            }
+            if (detailBtn) {
+                const operation = detailBtn.dataset.operation || '';
+                const preview = state.maintenancePreviewByOperation[operation];
+                if (!preview) {
+                    toast('Önce önizleme alın.', 'warning');
+                    return;
+                }
+                const lines = [
+                    'Operasyon: ' + (preview.operation || operation),
+                    'Mod: ' + (preview.mode || '-'),
+                    'Tarih filtresi: ' + (preview.dateBefore || '-'),
+                    'Tahmini order: ' + numberFmt(preview.estimatedOrders || 0),
+                    'Tahmini recipient: ' + numberFmt(preview.estimatedRecipients || 0),
+                    'Tahmini kayıt: ' + numberFmt(preview.estimatedRows || 0),
+                    'Tahmini boyut: ' + (preview.estimatedDbSize || '-'),
+                    'Batch: ' + numberFmt(preview.batchSize || 0),
+                    'Süre: ' + (preview.estimatedDuration || '-'),
+                    'Önizleme zamanı: ' + relativeTimeText(preview.generatedAt || null)
+                ];
+                showConfirm('Bakım Önizleme Detayı', '<pre class="mb-0">' + escapeHtml(lines.join('\n')) + '</pre>', 'btn-secondary', function () {});
+                return;
+            }
+            if (refreshJobBtn) return maintenanceJobAction(refreshJobBtn.dataset.jobId, 'refresh');
+            if (pauseJobBtn) return maintenanceJobAction(pauseJobBtn.dataset.jobId, 'pause');
+            if (resumeJobBtn) return maintenanceJobAction(resumeJobBtn.dataset.jobId, 'resume');
+            if (cancelJobBtn) {
+                return showConfirm('Job İptal', 'Job iptal edilsin mi?', 'btn-danger', function () {
+                    maintenanceJobAction(cancelJobBtn.dataset.jobId, 'cancel');
+                });
+            }
+            if (failJobBtn) {
+                return showConfirm('Job Failed İşaretle', 'Job failed olarak işaretlensin mi?', 'btn-warning', function () {
+                    maintenanceJobAction(failJobBtn.dataset.jobId, 'fail');
+                });
+            }
+        });
     }
 
     function handleBackupTableActions(e) {
@@ -677,8 +1023,10 @@
 
     bindEvents();
     loadMetrics();
+    loadMaintenanceSummary().then(startMaintenancePolling);
     loadLogs();
     loadFiles();
+    window.addEventListener('beforeunload', stopMaintenancePolling);
     if (typeof feather !== 'undefined') feather.replace();
 })();
 

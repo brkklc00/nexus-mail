@@ -17,6 +17,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 class DataPoolJobsWorkCommand extends Command
 {
     private const CANCELLED_EXCEPTION_PREFIX = 'JOB_CANCELLED:';
+    private const PAUSED_EXCEPTION_PREFIX = 'JOB_PAUSED:';
 
     protected static $defaultName = 'data-pool:jobs:work';
 
@@ -48,6 +49,7 @@ class DataPoolJobsWorkCommand extends Command
         $maxRuntime = max(30, (int) ($input->getOption('max-runtime') ?? ($_ENV['DATA_POOL_JOB_MAX_RUNTIME'] ?? 300)));
         $staleMinutes = max(5, (int) ($_ENV['DATA_POOL_JOB_STALE_MINUTES'] ?? 30));
         $heartbeatSeconds = max(5, (int) ($_ENV['DATA_POOL_HEARTBEAT_SECONDS'] ?? 10));
+        $maintenanceMaxRuntime = max(60, (int) ($_ENV['MAINTENANCE_MAX_RUNTIME_SECONDS'] ?? 600));
         $workerId = trim((string) ($_ENV['DATA_POOL_WORKER_ID'] ?? ('data-pool-worker-' . gethostname() . '-' . getmypid())));
         if ($workerId === '') {
             $workerId = 'data-pool-worker-' . getmypid();
@@ -116,8 +118,27 @@ class DataPoolJobsWorkCommand extends Command
                     'alibaba_invalid_fetch_and_clean' => $this->processAlibabaInvalidFetchAndClean($em, $jobService, $jobId, $job),
                     'global_deduplicate_preview' => $this->processGlobalDeduplicatePreview($em, $jobService, $jobId, $batchSize),
                     'global_deduplicate_apply' => $this->processGlobalDeduplicateApply($em, $jobService, $jobId, $job, $batchSize),
+                    'maintenance_preview' => $this->processMaintenancePreview($em, $jobService, $jobId, $job),
+                    'cleanup_email_orders' => $this->processCleanupEmailOrders($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'cleanup_email_order_details' => $this->processCleanupEmailOrderDetails($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'cleanup_email_recipients' => $this->processCleanupEmailRecipients($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'cleanup_email_send_results' => $this->processCleanupEmailSendResults($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'archive_email_recipients' => $this->processArchiveEmailRecipients($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'archive_email_send_results' => $this->processArchiveEmailSendResults($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'cleanup_worker_batch_results' => $this->processCleanupWorkerBatchResults($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'cleanup_data_pool_jobs' => $this->processCleanupDataPoolJobs($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'cleanup_system_logs' => $this->processCleanupSystemLogs($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'cleanup_export_files' => $this->processCleanupExportFiles($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'cleanup_temp_files' => $this->processCleanupTempFiles($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
+                    'database_optimize_tables' => $this->processDatabaseOptimizeTables($em, $jobService, $jobId, $job, $maintenanceMaxRuntime),
                     default => throw new \RuntimeException('Desteklenmeyen job tipi: ' . $type),
                 };
+
+                if ((bool) ($result['defer'] ?? false)) {
+                    $this->requeueContinuation($em->getConnection(), $jobId, (string) ($result['defer_message'] ?? 'Batch süresi doldu, job devam edecek.'), $result);
+                    $io->note(sprintf('#%d batch tamamlandı, devam için kuyruğa alındı.', $jobId));
+                    continue;
+                }
 
                 if ($poolId > 0) {
                     $statsService->refreshFromPoolCache($poolId);
@@ -182,7 +203,8 @@ class DataPoolJobsWorkCommand extends Command
             'max_attempts' => 'ALTER TABLE data_pool_jobs ADD COLUMN max_attempts INT NOT NULL DEFAULT 3 AFTER attempts',
             'resumable' => 'ALTER TABLE data_pool_jobs ADD COLUMN resumable TINYINT(1) NOT NULL DEFAULT 1 AFTER max_attempts',
             'cancel_requested' => 'ALTER TABLE data_pool_jobs ADD COLUMN cancel_requested TINYINT(1) NOT NULL DEFAULT 0 AFTER resumable',
-            'last_processed_id' => 'ALTER TABLE data_pool_jobs ADD COLUMN last_processed_id BIGINT DEFAULT NULL AFTER cancel_requested',
+            'pause_requested' => 'ALTER TABLE data_pool_jobs ADD COLUMN pause_requested TINYINT(1) NOT NULL DEFAULT 0 AFTER cancel_requested',
+            'last_processed_id' => 'ALTER TABLE data_pool_jobs ADD COLUMN last_processed_id BIGINT DEFAULT NULL AFTER pause_requested',
             'cursor_payload' => 'ALTER TABLE data_pool_jobs ADD COLUMN cursor_payload JSON DEFAULT NULL AFTER last_processed_id',
             'next_run_at' => 'ALTER TABLE data_pool_jobs ADD COLUMN next_run_at DATETIME DEFAULT NULL AFTER cursor_payload',
             'current_step' => 'ALTER TABLE data_pool_jobs ADD COLUMN current_step VARCHAR(120) DEFAULT NULL AFTER next_run_at',
@@ -232,6 +254,7 @@ class DataPoolJobsWorkCommand extends Command
                             locked_by = NULL,
                             locked_at = NULL,
                             heartbeat_at = NULL,
+                            pause_requested = 0,
                             next_run_at = NOW(),
                             updated_at = NOW()
                       WHERE id = ?",
@@ -249,6 +272,7 @@ class DataPoolJobsWorkCommand extends Command
                         exception_class = COALESCE(exception_class, 'RuntimeException'),
                         failed_step = COALESCE(failed_step, 'recover_stale_running_jobs'),
                         worker_id = COALESCE(worker_id, ?),
+                        pause_requested = 0,
                         locked_by = NULL,
                         locked_at = NULL,
                         finished_at = NOW(),
@@ -312,6 +336,7 @@ class DataPoolJobsWorkCommand extends Command
                         heartbeat_at = NOW(),
                         started_at = COALESCE(started_at, NOW()),
                         next_run_at = NULL,
+                        pause_requested = 0,
                         attempts = attempts + 1,
                         status_message = 'Worker tarafından claim edildi.',
                         updated_at = NOW()
@@ -1788,6 +1813,569 @@ class DataPoolJobsWorkCommand extends Command
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function processMaintenancePreview(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job): array
+    {
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $jobService->updateProgress($jobId, 1, 1, 1, 0, [
+            'current_step' => 'maintenance_preview',
+            'message' => 'Bakım önizlemesi tamamlandı.',
+            'cursor_payload' => ['preview' => true],
+        ]);
+
+        return [
+            'processed_count' => 1,
+            'success_count' => 1,
+            'failed_count' => 0,
+            'preview_payload' => $payload,
+        ];
+    }
+
+    private function processCleanupEmailOrders(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceOrderCleanup($em, $jobService, $jobId, $job, $maxRuntime, true);
+    }
+
+    private function processCleanupEmailOrderDetails(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceOrderCleanup($em, $jobService, $jobId, $job, $maxRuntime, false);
+    }
+
+    private function processCleanupEmailRecipients(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceRecipientCleanup($em, $jobService, $jobId, $job, $maxRuntime, false);
+    }
+
+    private function processCleanupEmailSendResults(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceRecipientCleanup($em, $jobService, $jobId, $job, $maxRuntime, false);
+    }
+
+    private function processArchiveEmailRecipients(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceRecipientCleanup($em, $jobService, $jobId, $job, $maxRuntime, true);
+    }
+
+    private function processArchiveEmailSendResults(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceRecipientCleanup($em, $jobService, $jobId, $job, $maxRuntime, true);
+    }
+
+    private function processCleanupWorkerBatchResults(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceSimpleTableCleanup($em, $jobService, $jobId, $job, $maxRuntime, 'campaign_batch_metrics', 'created_at');
+    }
+
+    private function processCleanupDataPoolJobs(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceSimpleTableCleanup(
+            $em,
+            $jobService,
+            $jobId,
+            $job,
+            $maxRuntime,
+            'data_pool_jobs',
+            'created_at',
+            "status IN ('completed','failed','cancelled') AND type <> 'cleanup_data_pool_jobs'"
+        );
+    }
+
+    private function processCleanupSystemLogs(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        $conn = $em->getConnection();
+        $payload = $this->parseMaintenancePayload($job);
+        $cursor = $payload['cursor'];
+        $phase = (string) ($cursor['phase'] ?? 'approval_logs');
+        $dateBefore = $payload['date_before'];
+        $batchSize = $payload['batch_size'];
+        $processed = (int) ($job['processed_count'] ?? 0);
+        $success = (int) ($job['success_count'] ?? 0);
+        $failed = (int) ($job['failed_count'] ?? 0);
+        $total = max(1, (int) ($job['total_count'] ?? 1));
+        $startedAt = time();
+        $lastApprovalId = (int) ($cursor['last_approval_id'] ?? 0);
+        $lastTemplateLogId = (int) ($cursor['last_template_log_id'] ?? 0);
+
+        while (true) {
+            $this->assertNotCancelled($jobService, $jobId);
+            if ($phase === 'approval_logs') {
+                $ids = array_map('intval', $conn->fetchFirstColumn(
+                    "SELECT id FROM email_order_approval_logs WHERE id > ? AND created_at < ? ORDER BY id ASC LIMIT $batchSize",
+                    [$lastApprovalId, $dateBefore . ' 23:59:59']
+                ));
+                if ($ids === []) {
+                    $phase = 'template_logs';
+                    continue;
+                }
+                $lastApprovalId = max($ids);
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $deleted = $this->executeNamedSql($conn, 'maintenance_cleanup_approval_logs', "DELETE FROM email_order_approval_logs WHERE id IN ($in)", $ids);
+                $processed += count($ids);
+                $success += $deleted;
+            } else {
+                $ids = array_map('intval', $conn->fetchFirstColumn(
+                    "SELECT id FROM email_template_test_logs WHERE id > ? AND created_at < ? ORDER BY id ASC LIMIT $batchSize",
+                    [$lastTemplateLogId, $dateBefore . ' 23:59:59']
+                ));
+                if ($ids === []) {
+                    break;
+                }
+                $lastTemplateLogId = max($ids);
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $deleted = $this->executeNamedSql($conn, 'maintenance_cleanup_template_logs', "DELETE FROM email_template_test_logs WHERE id IN ($in)", $ids);
+                $processed += count($ids);
+                $success += $deleted;
+            }
+
+            $jobService->updateProgress($jobId, $processed, $total, $success, $failed, [
+                'current_step' => 'cleanup_system_logs',
+                'message' => sprintf('%d log kaydı işlendi', $processed),
+                'last_processed_id' => max($lastApprovalId, $lastTemplateLogId),
+                'cursor_payload' => [
+                    'phase' => $phase,
+                    'last_approval_id' => $lastApprovalId,
+                    'last_template_log_id' => $lastTemplateLogId,
+                ],
+            ]);
+
+            if ($this->maintenanceRuntimeExceeded($startedAt, $maxRuntime)) {
+                return [
+                    'processed_count' => $processed,
+                    'success_count' => $success,
+                    'failed_count' => $failed,
+                    'defer' => true,
+                    'defer_message' => 'Sistem log temizliği batch süresi doldu, devam edecek.',
+                ];
+            }
+        }
+
+        return ['processed_count' => $processed, 'success_count' => $success, 'failed_count' => $failed];
+    }
+
+    private function processCleanupExportFiles(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceFileCleanup($jobService, $jobId, $job, $maxRuntime, 'storage/exports');
+    }
+
+    private function processCleanupTempFiles(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        return $this->runMaintenanceFileCleanup($jobService, $jobId, $job, $maxRuntime, 'storage/tmp');
+    }
+
+    private function processDatabaseOptimizeTables(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime): array
+    {
+        $payload = $this->parseMaintenancePayload($job);
+        $conn = $em->getConnection();
+        $cursor = $payload['cursor'];
+        $tables = $payload['tables'] === [] ? ['email_orders', 'email_order_emails', 'data_pool_jobs'] : $payload['tables'];
+        $index = max(0, (int) ($cursor['table_index'] ?? 0));
+        $processed = (int) ($job['processed_count'] ?? 0);
+        $success = (int) ($job['success_count'] ?? 0);
+        $failed = (int) ($job['failed_count'] ?? 0);
+        $total = max(1, count($tables));
+        $startedAt = time();
+
+        while ($index < count($tables)) {
+            $this->assertNotCancelled($jobService, $jobId);
+            $table = (string) $tables[$index];
+            if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+                $failed++;
+                $processed++;
+                $index++;
+                continue;
+            }
+            $this->executeNamedSql($conn, 'maintenance_optimize_table', "OPTIMIZE TABLE `$table`");
+            $processed++;
+            $success++;
+            $index++;
+            $jobService->updateProgress($jobId, $processed, $total, $success, $failed, [
+                'current_step' => 'database_optimize_tables',
+                'message' => sprintf('%s optimize edildi', $table),
+                'last_processed_id' => $index,
+                'cursor_payload' => ['table_index' => $index, 'tables' => $tables],
+            ]);
+
+            if ($this->maintenanceRuntimeExceeded($startedAt, $maxRuntime) && $index < count($tables)) {
+                return [
+                    'processed_count' => $processed,
+                    'success_count' => $success,
+                    'failed_count' => $failed,
+                    'optimized_tables' => $success,
+                    'defer' => true,
+                    'defer_message' => 'Tablo optimizasyonu batch süresi doldu, devam edecek.',
+                ];
+            }
+        }
+
+        return ['processed_count' => $processed, 'success_count' => $success, 'failed_count' => $failed, 'optimized_tables' => $success];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runMaintenanceOrderCleanup(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime, bool $allowHardDelete): array
+    {
+        $result = $this->runMaintenanceRecipientCleanup($em, $jobService, $jobId, $job, $maxRuntime, false, true);
+        if ((bool) ($result['defer'] ?? false)) {
+            return $result;
+        }
+
+        $payload = $this->parseMaintenancePayload($job);
+        $mode = $payload['mode'];
+        $conn = $em->getConnection();
+        $cursor = $payload['cursor'];
+        $lastOrderId = (int) ($cursor['last_order_id'] ?? 0);
+        $statuses = $payload['statuses'];
+        $dateBefore = $payload['date_before'];
+        $batchSize = $payload['batch_size'];
+        $processed = (int) ($result['processed_count'] ?? 0);
+        $success = (int) ($result['success_count'] ?? 0);
+        $failed = (int) ($result['failed_count'] ?? 0);
+        $total = max(1, (int) ($job['total_count'] ?? 1));
+        $startedAt = time();
+        $statusIn = implode(',', array_fill(0, count($statuses), '?'));
+
+        while (true) {
+            $this->assertNotCancelled($jobService, $jobId);
+            $rows = $conn->fetchAllAssociative(
+                "SELECT id FROM email_orders
+                  WHERE id > ?
+                    AND status IN ($statusIn)
+                    AND created_at < ?
+                  ORDER BY id ASC
+                  LIMIT $batchSize",
+                array_merge([$lastOrderId], $statuses, [$dateBefore . ' 23:59:59'])
+            );
+            if ($rows === []) {
+                break;
+            }
+            $orderIds = array_values(array_filter(array_map(static fn (array $row): int => (int) ($row['id'] ?? 0), $rows), static fn (int $v): bool => $v > 0));
+            if ($orderIds === []) {
+                break;
+            }
+            $lastOrderId = max($orderIds);
+            $in = implode(',', array_fill(0, count($orderIds), '?'));
+            if ($allowHardDelete && $mode === 'hard_delete') {
+                $deleted = $this->executeNamedSql($conn, 'maintenance_delete_orders', "DELETE FROM email_orders WHERE id IN ($in)", $orderIds);
+                $success += $deleted;
+            } else {
+                $params = array_merge([$mode, $jobId], $orderIds);
+                $this->executeNamedSql(
+                    $conn,
+                    'maintenance_mark_orders_purged',
+                    "UPDATE email_orders
+                        SET details_purged_at = COALESCE(details_purged_at, NOW()),
+                            purge_summary = JSON_OBJECT('mode', ?, 'job_id', ?, 'updated_at', NOW())
+                      WHERE id IN ($in)",
+                    $params
+                );
+                $success += count($orderIds);
+            }
+            $processed += count($orderIds);
+            $jobService->updateProgress($jobId, $processed, $total, $success, $failed, [
+                'current_step' => 'cleanup_email_orders',
+                'message' => sprintf('%d order işlendi', $processed),
+                'last_processed_id' => $lastOrderId,
+                'cursor_payload' => ['last_order_id' => $lastOrderId, 'last_recipient_id' => (int) ($payload['cursor']['last_recipient_id'] ?? 0)],
+            ]);
+
+            if ($this->maintenanceRuntimeExceeded($startedAt, $maxRuntime)) {
+                return [
+                    'processed_count' => $processed,
+                    'success_count' => $success,
+                    'failed_count' => $failed,
+                    'defer' => true,
+                    'defer_message' => 'Email orders bakımı batch süresi doldu, devam edecek.',
+                ];
+            }
+        }
+
+        return ['processed_count' => $processed, 'success_count' => $success, 'failed_count' => $failed];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runMaintenanceRecipientCleanup(EntityManagerInterface $em, EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime, bool $forceArchive = false, bool $includeOrderTouch = false): array
+    {
+        $conn = $em->getConnection();
+        $this->ensureMaintenanceTables($conn);
+        $payload = $this->parseMaintenancePayload($job);
+        $cursor = $payload['cursor'];
+        $lastRecipientId = (int) ($cursor['last_recipient_id'] ?? ($job['last_processed_id'] ?? 0));
+        $statuses = $payload['statuses'];
+        $dateBefore = $payload['date_before'];
+        $batchSize = $payload['batch_size'];
+        $mode = $forceArchive ? 'archive' : $payload['mode'];
+        $processed = (int) ($job['processed_count'] ?? 0);
+        $success = (int) ($job['success_count'] ?? 0);
+        $failed = (int) ($job['failed_count'] ?? 0);
+        $prevResult = json_decode((string) ($job['result'] ?? ''), true);
+        $archived = (int) ((is_array($prevResult) ? ($prevResult['archived_count'] ?? 0) : 0));
+        $total = max(1, (int) ($job['total_count'] ?? 1));
+        $startedAt = time();
+        $statusIn = implode(',', array_fill(0, count($statuses), '?'));
+
+        while (true) {
+            $this->assertNotCancelled($jobService, $jobId);
+            $rows = $conn->fetchAllAssociative(
+                "SELECT e.id, e.order_id
+                   FROM email_order_emails e
+             INNER JOIN email_orders o ON o.id = e.order_id
+                  WHERE e.id > ?
+                    AND o.status IN ($statusIn)
+                    AND o.created_at < ?
+                  ORDER BY e.id ASC
+                  LIMIT $batchSize",
+                array_merge([$lastRecipientId], $statuses, [$dateBefore . ' 23:59:59'])
+            );
+            if ($rows === []) {
+                break;
+            }
+            $ids = [];
+            $orderIds = [];
+            foreach ($rows as $row) {
+                $rid = (int) ($row['id'] ?? 0);
+                if ($rid > 0) {
+                    $ids[] = $rid;
+                    $lastRecipientId = max($lastRecipientId, $rid);
+                }
+                $oid = (int) ($row['order_id'] ?? 0);
+                if ($oid > 0) {
+                    $orderIds[$oid] = $oid;
+                }
+            }
+            if ($ids === []) {
+                break;
+            }
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            if ($mode === 'archive') {
+                $archived += $this->executeNamedSql($conn, 'maintenance_archive_order_emails', "INSERT IGNORE INTO email_order_emails_archive SELECT * FROM email_order_emails WHERE id IN ($in)", $ids);
+            }
+            $deleted = $this->executeNamedSql($conn, 'maintenance_delete_order_emails', "DELETE FROM email_order_emails WHERE id IN ($in)", $ids);
+            $processed += count($ids);
+            $success += $deleted;
+
+            if ($includeOrderTouch && $orderIds !== []) {
+                $oidList = array_values($orderIds);
+                $oin = implode(',', array_fill(0, count($oidList), '?'));
+                $this->executeNamedSql(
+                    $conn,
+                    'maintenance_touch_orders',
+                    "UPDATE email_orders
+                        SET details_purged_at = COALESCE(details_purged_at, NOW()),
+                            purge_summary = JSON_OBJECT('mode', ?, 'job_id', ?, 'updated_at', NOW())
+                      WHERE id IN ($oin)",
+                    array_merge([$mode, $jobId], $oidList)
+                );
+            }
+
+            $jobService->updateProgress($jobId, $processed, $total, $success, $failed, [
+                'current_step' => 'cleanup_email_order_emails',
+                'message' => sprintf('%d recipient/result satırı işlendi', $processed),
+                'last_processed_id' => $lastRecipientId,
+                'cursor_payload' => [
+                    'last_recipient_id' => $lastRecipientId,
+                    'last_order_id' => (int) ($cursor['last_order_id'] ?? 0),
+                ],
+            ]);
+
+            if ($this->maintenanceRuntimeExceeded($startedAt, $maxRuntime)) {
+                return [
+                    'processed_count' => $processed,
+                    'success_count' => $success,
+                    'failed_count' => $failed,
+                    'archived_count' => $archived,
+                    'cleaned_count' => $success,
+                    'defer' => true,
+                    'defer_message' => 'Recipient/result bakımı batch süresi doldu, devam edecek.',
+                ];
+            }
+        }
+
+        return [
+            'processed_count' => $processed,
+            'success_count' => $success,
+            'failed_count' => $failed,
+            'archived_count' => $archived,
+            'cleaned_count' => $success,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runMaintenanceSimpleTableCleanup(
+        EntityManagerInterface $em,
+        EmailDataPoolJobService $jobService,
+        int $jobId,
+        array $job,
+        int $maxRuntime,
+        string $table,
+        string $dateColumn,
+        string $extraWhere = '1=1'
+    ): array {
+        $conn = $em->getConnection();
+        $payload = $this->parseMaintenancePayload($job);
+        $cursor = $payload['cursor'];
+        $lastId = (int) ($cursor['last_id'] ?? ($job['last_processed_id'] ?? 0));
+        $dateBefore = $payload['date_before'];
+        $batchSize = $payload['batch_size'];
+        $processed = (int) ($job['processed_count'] ?? 0);
+        $success = (int) ($job['success_count'] ?? 0);
+        $failed = (int) ($job['failed_count'] ?? 0);
+        $total = max(1, (int) ($job['total_count'] ?? 1));
+        $startedAt = time();
+
+        while (true) {
+            $this->assertNotCancelled($jobService, $jobId);
+            $ids = array_map('intval', $conn->fetchFirstColumn(
+                "SELECT id FROM {$table}
+                  WHERE id > ?
+                    AND {$dateColumn} < ?
+                    AND {$extraWhere}
+                  ORDER BY id ASC
+                  LIMIT {$batchSize}",
+                [$lastId, $dateBefore . ' 23:59:59']
+            ));
+            if ($ids === []) {
+                break;
+            }
+            $lastId = max($ids);
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            $deleted = $this->executeNamedSql($conn, 'maintenance_simple_cleanup', "DELETE FROM {$table} WHERE id IN ($in)", $ids);
+            $processed += count($ids);
+            $success += $deleted;
+
+            $jobService->updateProgress($jobId, $processed, $total, $success, $failed, [
+                'current_step' => 'cleanup_' . $table,
+                'message' => sprintf('%s tablosunda %d kayıt işlendi', $table, $processed),
+                'last_processed_id' => $lastId,
+                'cursor_payload' => ['last_id' => $lastId],
+            ]);
+            if ($this->maintenanceRuntimeExceeded($startedAt, $maxRuntime)) {
+                return [
+                    'processed_count' => $processed,
+                    'success_count' => $success,
+                    'failed_count' => $failed,
+                    'defer' => true,
+                    'defer_message' => sprintf('%s temizliği batch süresi doldu, devam edecek.', $table),
+                ];
+            }
+        }
+
+        return ['processed_count' => $processed, 'success_count' => $success, 'failed_count' => $failed];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runMaintenanceFileCleanup(EmailDataPoolJobService $jobService, int $jobId, array $job, int $maxRuntime, string $relativePath): array
+    {
+        $payload = $this->parseMaintenancePayload($job);
+        $cursor = $payload['cursor'];
+        $index = max(0, (int) ($cursor['file_index'] ?? 0));
+        $dateBeforeTs = strtotime($payload['date_before'] . ' 23:59:59') ?: time();
+        $root = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . trim($relativePath, '/');
+        $files = [];
+        if (is_dir($root)) {
+            $items = scandir($root) ?: [];
+            foreach ($items as $item) {
+                if ($item === '.' || $item === '..') {
+                    continue;
+                }
+                $path = $root . DIRECTORY_SEPARATOR . $item;
+                if (!is_file($path)) {
+                    continue;
+                }
+                $mtime = filemtime($path) ?: 0;
+                if ($mtime > 0 && $mtime <= $dateBeforeTs) {
+                    $files[] = $path;
+                }
+            }
+        }
+        sort($files);
+        $processed = (int) ($job['processed_count'] ?? 0);
+        $success = (int) ($job['success_count'] ?? 0);
+        $failed = (int) ($job['failed_count'] ?? 0);
+        $total = max(1, count($files));
+        $startedAt = time();
+
+        while ($index < count($files)) {
+            $this->assertNotCancelled($jobService, $jobId);
+            $path = (string) $files[$index];
+            $ok = @unlink($path);
+            $processed++;
+            if ($ok) {
+                $success++;
+            } else {
+                $failed++;
+            }
+            $index++;
+            $jobService->updateProgress($jobId, $processed, $total, $success, $failed, [
+                'current_step' => 'cleanup_files',
+                'message' => sprintf('%d/%d dosya işlendi', $processed, $total),
+                'last_processed_id' => $index,
+                'cursor_payload' => ['file_index' => $index],
+            ]);
+            if ($this->maintenanceRuntimeExceeded($startedAt, $maxRuntime) && $index < count($files)) {
+                return [
+                    'processed_count' => $processed,
+                    'success_count' => $success,
+                    'failed_count' => $failed,
+                    'defer' => true,
+                    'defer_message' => 'Dosya temizliği batch süresi doldu, devam edecek.',
+                ];
+            }
+        }
+
+        return ['processed_count' => $processed, 'success_count' => $success, 'failed_count' => $failed];
+    }
+
+    /**
+     * @return array{mode:string,date_before:string,batch_size:int,statuses:array<int,string>,cursor:array<string,mixed>,tables:array<int,string>}
+     */
+    private function parseMaintenancePayload(array $job): array
+    {
+        $payload = json_decode((string) ($job['payload'] ?? ''), true);
+        $payload = is_array($payload) ? $payload : [];
+        $cursor = json_decode((string) ($job['cursor_payload'] ?? ''), true);
+        $cursor = is_array($cursor) ? $cursor : (is_array($payload['cursor'] ?? null) ? $payload['cursor'] : []);
+        $statuses = $payload['statuses'] ?? ['completed', 'failed', 'cancelled', 'rejected'];
+        if (!is_array($statuses) || $statuses === []) {
+            $statuses = ['completed', 'failed', 'cancelled', 'rejected'];
+        }
+        $tables = $payload['tables'] ?? $payload['table_names'] ?? [];
+        if (is_string($tables)) {
+            $tables = array_values(array_filter(array_map('trim', explode(',', $tables))));
+        }
+        if (!is_array($tables)) {
+            $tables = [];
+        }
+
+        return [
+            'mode' => (string) ($payload['mode'] ?? 'purge_details_keep_summary'),
+            'date_before' => (string) ($payload['date_before'] ?? (new \DateTimeImmutable('-90 days'))->format('Y-m-d')),
+            'batch_size' => max(1000, (int) ($payload['batch_size'] ?? ($_ENV['MAINTENANCE_BATCH_SIZE'] ?? 50000))),
+            'statuses' => array_values(array_map(static fn ($s): string => (string) $s, $statuses)),
+            'cursor' => $cursor,
+            'tables' => array_values(array_map(static fn ($t): string => (string) $t, $tables)),
+        ];
+    }
+
+    private function maintenanceRuntimeExceeded(int $startedAt, int $maxRuntime): bool
+    {
+        return (time() - $startedAt) >= max(60, $maxRuntime);
+    }
+
+    private function ensureMaintenanceTables(\Doctrine\DBAL\Connection $conn): void
+    {
+        $conn->executeStatement("CREATE TABLE IF NOT EXISTS email_order_emails_archive LIKE email_order_emails");
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array<string, int|string>
      */
@@ -2313,6 +2901,33 @@ class DataPoolJobsWorkCommand extends Command
         );
     }
 
+    /**
+     * @param array<string, mixed> $result
+     */
+    private function requeueContinuation(\Doctrine\DBAL\Connection $conn, int $jobId, string $message, array $result): void
+    {
+        $result['defer'] = false;
+        unset($result['defer_message']);
+        $conn->executeStatement(
+            "UPDATE data_pool_jobs
+                SET status = 'queued',
+                    pause_requested = 0,
+                    cancel_requested = 0,
+                    locked_by = NULL,
+                    locked_at = NULL,
+                    next_run_at = NOW(),
+                    status_message = ?,
+                    result = ?,
+                    updated_at = NOW()
+              WHERE id = ?",
+            [
+                $message,
+                json_encode($result, JSON_UNESCAPED_UNICODE),
+                $jobId,
+            ]
+        );
+    }
+
     private function touchWorkerHeartbeat(\Doctrine\DBAL\Connection $conn, string $workerId, ?int $currentJobId, string $status): void
     {
         $hostname = gethostname() ?: 'unknown';
@@ -2351,6 +2966,11 @@ class DataPoolJobsWorkCommand extends Command
         if (str_starts_with($message, self::CANCELLED_EXCEPTION_PREFIX)) {
             $jobService->markCancelled($jobId, trim(substr($message, strlen(self::CANCELLED_EXCEPTION_PREFIX))));
             $io->warning(sprintf('#%d iptal edildi: %s', $jobId, trim(substr($message, strlen(self::CANCELLED_EXCEPTION_PREFIX)))));
+            return;
+        }
+        if (str_starts_with($message, self::PAUSED_EXCEPTION_PREFIX)) {
+            $jobService->markPaused($jobId, trim(substr($message, strlen(self::PAUSED_EXCEPTION_PREFIX))));
+            $io->warning(sprintf('#%d duraklatıldı: %s', $jobId, trim(substr($message, strlen(self::PAUSED_EXCEPTION_PREFIX)))));
             return;
         }
 
@@ -2458,6 +3078,9 @@ class DataPoolJobsWorkCommand extends Command
 
     private function assertNotCancelled(EmailDataPoolJobService $jobService, int $jobId): void
     {
+        if ($jobService->isPauseRequested($jobId)) {
+            throw new \RuntimeException(self::PAUSED_EXCEPTION_PREFIX . 'Kullanıcı duraklatma talebi gönderdi.');
+        }
         if ($jobService->isCancelRequested($jobId)) {
             throw new \RuntimeException(self::CANCELLED_EXCEPTION_PREFIX . 'Kullanıcı iptal talebi gönderdi.');
         }

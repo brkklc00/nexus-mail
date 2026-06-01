@@ -92,6 +92,25 @@
 .nx-sm-file-name { color: #0f172a; font-weight: 600; }
 .nx-sm-action-btn { color: #fff !important; border-color: rgba(255,255,255,.2) !important; }
 .nx-sm-action-btn i, .nx-sm-action-btn svg { color: #dbeafe; opacity: 1; }
+.nx-sm-maint-summary { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: .65rem; margin-bottom: .95rem; }
+.nx-sm-maint-kv { border: 1px solid #dbe7f6; border-radius: 12px; background: #f8fbff; padding: .55rem .65rem; }
+.nx-sm-maint-kv .label { display: block; font-size: .7rem; color: #64748b; margin-bottom: .25rem; }
+.nx-sm-maint-kv .value { font-size: .85rem; font-weight: 700; color: #0f172a; }
+.nx-sm-maint-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .8rem; }
+.nx-sm-maint-item { border: 1px solid #dbe7f6; border-radius: 14px; background: #fff; padding: .75rem; }
+.nx-sm-maint-item h6 { margin: 0 0 .35rem; font-size: .87rem; font-weight: 700; color: #0f172a; }
+.nx-sm-maint-item .sub { margin: 0 0 .45rem; color: #64748b; font-size: .73rem; }
+.nx-sm-maint-item .meta { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .35rem; font-size: .72rem; color: #334155; margin-bottom: .5rem; }
+.nx-sm-maint-item .meta strong { color: #0f172a; font-weight: 700; }
+.nx-sm-risk { display: inline-flex; align-items: center; border-radius: 999px; padding: .14rem .5rem; font-size: .66rem; font-weight: 700; }
+.nx-sm-risk.low { background: #dcfce7; color: #166534; }
+.nx-sm-risk.medium { background: #fef3c7; color: #92400e; }
+.nx-sm-risk.high { background: #fee2e2; color: #b91c1c; }
+.nx-sm-maint-progress { font-size: .72rem; color: #334155; border: 1px solid #e5eaf3; border-radius: 10px; background: #f8fafc; padding: .45rem .55rem; }
+.nx-sm-maint-progress strong { color: #0f172a; }
+.nx-sm-maint-warning { border: 1px dashed #fecaca; background: #fff7f7; color: #991b1b; border-radius: 10px; padding: .4rem .55rem; font-size: .7rem; }
+@media (max-width: 1200px){ .nx-sm-maint-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 991.98px){ .nx-sm-maint-grid { grid-template-columns: 1fr; } }
 @media (max-width: 991.98px){ .nx-sm-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 575.98px){ .nx-sm-metric-grid { grid-template-columns: 1fr; } }
 </style>
@@ -146,6 +165,64 @@
         <div class="nx-sm-card-header"><h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="cpu"></i></span><span>Sistem Bilgileri</span></h5></div>
         <div class="card-body">
             <div class="nx-sm-metric-grid" id="smSystemGrid"></div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="nx-sm-card-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+                <h5 class="nx-sm-card-title"><span class="nx-sm-ic"><i data-feather="database"></i></span><span>Büyük Veri Bakımı</span></h5>
+                <div class="small text-light mt-1">Email siparişleri, alıcı detayları, gönderim sonuçları, worker logları ve geçici dosyaları batch olarak temizler veya arşivler.</div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-sm btn-outline-light" id="smMaintenanceSummaryRefreshBtn">Bakım Özetini Yenile</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-2 mb-3">
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label small mb-1">Mod</label>
+                    <select class="form-select form-select-sm" id="smMaintenanceMode">
+                        <option value="purge_details_keep_summary">Detayları Temizle, Özeti Koru</option>
+                        <option value="archive">Arşive Taşı</option>
+                        <option value="hard_delete">Kalıcı Sil (Riskli)</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-2">
+                    <label class="form-label small mb-1">Tarih filtresi</label>
+                    <input type="date" class="form-control form-control-sm" id="smMaintenanceDateBefore">
+                </div>
+                <div class="col-12 col-md-6 col-lg-2">
+                    <label class="form-label small mb-1">Batch</label>
+                    <input type="number" min="1000" step="1000" class="form-control form-control-sm" id="smMaintenanceBatchSize" value="50000">
+                </div>
+                <div class="col-12 col-md-6 col-lg-2">
+                    <label class="form-label small mb-1">Durumlar</label>
+                    <input type="text" class="form-control form-control-sm" id="smMaintenanceStatuses" value="completed,failed,cancelled,rejected" placeholder="completed,failed,...">
+                </div>
+                <div class="col-12 col-md-6 col-lg-3 d-flex align-items-end">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="smMaintenanceHardDeleteConfirm">
+                        <label class="form-check-label small" for="smMaintenanceHardDeleteConfirm">Hard delete riskini onaylıyorum</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nx-sm-maint-warning mb-3" id="smMaintenanceOptimizeWarning">
+                `OPTIMIZE TABLE` işlemi tablo kilidi yaratabilir. Yoğun saatlerde çalıştırmayın.
+            </div>
+
+            <div class="nx-sm-maint-summary" id="smMaintenanceSummary">
+                <div class="nx-sm-maint-kv"><span class="label">DB Boyutu</span><span class="value" id="smMaintDbSize">-</span></div>
+                <div class="nx-sm-maint-kv"><span class="label">Temizlenebilir Tahmini Kayıt</span><span class="value" id="smMaintEstimatedRows">-</span></div>
+                <div class="nx-sm-maint-kv"><span class="label">Temizlenebilir Tahmini Alan</span><span class="value" id="smMaintEstimatedSize">-</span></div>
+                <div class="nx-sm-maint-kv"><span class="label">Aktif Bakım Job</span><span class="value" id="smMaintActiveJob">-</span></div>
+                <div class="nx-sm-maint-kv"><span class="label">Son Bakım</span><span class="value" id="smMaintLastMaintenance">-</span></div>
+            </div>
+
+            <div class="nx-sm-maint-grid" id="smMaintenanceCards">
+                <div class="nx-sm-empty">Bakım kartları yükleniyor...</div>
+            </div>
         </div>
     </div>
 

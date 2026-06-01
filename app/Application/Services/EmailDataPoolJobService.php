@@ -24,8 +24,8 @@ class EmailDataPoolJobService
         $resumable = ((int) ($options['resumable'] ?? 1)) === 1 ? 1 : 0;
         $conn->executeStatement(
             'INSERT INTO data_pool_jobs
-                (pool_id, type, status, payload, total_count, processed_count, success_count, failed_count, progress_percent, result, error_message, started_at, finished_at, created_at, updated_at, attempts, max_attempts, resumable, cancel_requested)
-             VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, NULL, NULL, NULL, NULL, ?, ?, 0, ?, ?, 0)',
+                (pool_id, type, status, payload, total_count, processed_count, success_count, failed_count, progress_percent, result, error_message, started_at, finished_at, created_at, updated_at, attempts, max_attempts, resumable, cancel_requested, pause_requested)
+             VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, NULL, NULL, NULL, NULL, ?, ?, 0, ?, ?, 0, 0)',
             [
                 $poolId > 0 ? $poolId : null,
                 $type,
@@ -116,6 +116,7 @@ class EmailDataPoolJobService
                     failed_step = NULL,
                     last_sql_name = NULL,
                     cancel_requested = 0,
+                    pause_requested = 0,
                     locked_by = NULL,
                     locked_at = NULL,
                     heartbeat_at = ?,
@@ -152,6 +153,7 @@ class EmailDataPoolJobService
                     last_sql_name = ?,
                     worker_id = COALESCE(?, worker_id),
                     status_message = ?,
+                    pause_requested = 0,
                     locked_by = NULL,
                     locked_at = NULL,
                     heartbeat_at = ?,
@@ -183,6 +185,7 @@ class EmailDataPoolJobService
                     error_message = ?,
                     status_message = ?,
                     cancel_requested = 0,
+                    pause_requested = 0,
                     locked_by = NULL,
                     locked_at = NULL,
                     finished_at = ?,
@@ -266,9 +269,40 @@ class EmailDataPoolJobService
         );
     }
 
+    public function requestPause(int $jobId): void
+    {
+        $this->em->getConnection()->executeStatement(
+            'UPDATE data_pool_jobs SET pause_requested = 1, updated_at = ? WHERE id = ? AND status IN (\'queued\', \'running\')',
+            [(new \DateTimeImmutable())->format('Y-m-d H:i:s'), $jobId]
+        );
+    }
+
     public function isCancelRequested(int $jobId): bool
     {
         return (int) $this->em->getConnection()->fetchOne('SELECT cancel_requested FROM data_pool_jobs WHERE id = ?', [$jobId]) === 1;
+    }
+
+    public function isPauseRequested(int $jobId): bool
+    {
+        return (int) $this->em->getConnection()->fetchOne('SELECT pause_requested FROM data_pool_jobs WHERE id = ?', [$jobId]) === 1;
+    }
+
+    public function markPaused(int $jobId, string $message = 'İşlem duraklatıldı.'): void
+    {
+        $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $this->em->getConnection()->executeStatement(
+            "UPDATE data_pool_jobs
+                SET status = 'paused',
+                    status_message = ?,
+                    pause_requested = 0,
+                    cancel_requested = 0,
+                    locked_by = NULL,
+                    locked_at = NULL,
+                    heartbeat_at = ?,
+                    updated_at = ?
+              WHERE id = ?",
+            [$message, $now, $now, $jobId]
+        );
     }
 
     public function requeueForRetry(int $jobId, int $delaySeconds, string $message): void
@@ -279,6 +313,7 @@ class EmailDataPoolJobService
                 SET status = 'queued',
                     status_message = ?,
                     error_message = NULL,
+                    pause_requested = 0,
                     locked_by = NULL,
                     locked_at = NULL,
                     heartbeat_at = NULL,
@@ -324,6 +359,7 @@ class EmailDataPoolJobService
             'max_attempts' => (int) ($row['max_attempts'] ?? 3),
             'resumable' => (int) ($row['resumable'] ?? 1),
             'cancel_requested' => (int) ($row['cancel_requested'] ?? 0),
+            'pause_requested' => (int) ($row['pause_requested'] ?? 0),
             'last_processed_id' => isset($row['last_processed_id']) ? (int) $row['last_processed_id'] : null,
             'worker_id' => $row['worker_id'] ?? null,
             'started_at' => $row['started_at'] ?? null,

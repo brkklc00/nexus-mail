@@ -651,7 +651,15 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->get('/jobs', [\App\Controllers\EmailDataPoolController::class, 'jobs'])->setName('admin.email-data-pool.jobs')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->get('/maintenance/summary', [\App\Controllers\EmailDataPoolController::class, 'maintenanceSummary'])->setName('admin.email-data-pool.maintenance.summary')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/maintenance/preview', [\App\Controllers\EmailDataPoolController::class, 'maintenancePreview'])->setName('admin.email-data-pool.maintenance.preview')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
+            $group->post('/maintenance/start', [\App\Controllers\EmailDataPoolController::class, 'maintenanceStart'])->setName('admin.email-data-pool.maintenance.start')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/jobs/{jobId}/cancel', [\App\Controllers\EmailDataPoolController::class, 'jobCancel'])->setName('admin.email-data-pool.jobs.cancel')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
+            $group->post('/jobs/{jobId}/pause', [\App\Controllers\EmailDataPoolController::class, 'jobPause'])->setName('admin.email-data-pool.jobs.pause')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));
             $group->post('/jobs/{jobId}/retry', [\App\Controllers\EmailDataPoolController::class, 'jobRetry'])->setName('admin.email-data-pool.jobs.retry')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'update'));

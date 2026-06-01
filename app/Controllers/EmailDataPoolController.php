@@ -32,12 +32,57 @@ class EmailDataPoolController
         'alibaba_invalid_match_preview',
         'alibaba_invalid_clean_apply',
         'alibaba_invalid_fetch_and_clean',
+        'maintenance_preview',
+        'cleanup_email_orders',
+        'cleanup_email_order_details',
+        'cleanup_email_recipients',
+        'cleanup_email_send_results',
+        'archive_email_recipients',
+        'archive_email_send_results',
+        'cleanup_worker_batch_results',
+        'cleanup_data_pool_jobs',
+        'cleanup_system_logs',
+        'cleanup_export_files',
+        'cleanup_temp_files',
+        'database_optimize_tables',
     ];
     private const ALIBABA_JOB_TYPES = [
         'alibaba_invalid_fetch',
         'alibaba_invalid_match_preview',
         'alibaba_invalid_clean_apply',
         'alibaba_invalid_fetch_and_clean',
+    ];
+    private const SYSTEM_MONITOR_CSRF_SESSION_KEY = 'system_monitor_csrf';
+    private const MAINTENANCE_PREVIEW_SESSION_KEY = 'email_pool_maintenance_previews';
+    private const MAINTENANCE_JOB_TYPES = [
+        'maintenance_preview',
+        'cleanup_email_orders',
+        'cleanup_email_order_details',
+        'cleanup_email_recipients',
+        'cleanup_email_send_results',
+        'archive_email_recipients',
+        'archive_email_send_results',
+        'cleanup_worker_batch_results',
+        'cleanup_data_pool_jobs',
+        'cleanup_system_logs',
+        'cleanup_export_files',
+        'cleanup_temp_files',
+        'database_optimize_tables',
+    ];
+    /** @var array<string, string> */
+    private const MAINTENANCE_OPERATION_LABELS = [
+        'cleanup_email_orders' => 'Email Siparişleri',
+        'cleanup_email_order_details' => 'Alıcı / Recipient Detayları',
+        'cleanup_email_recipients' => 'Alıcı / Recipient Detayları',
+        'cleanup_email_send_results' => 'Gönderim Sonuçları',
+        'archive_email_recipients' => 'Recipient Arşivleme',
+        'archive_email_send_results' => 'Sonuç Arşivleme',
+        'cleanup_worker_batch_results' => 'Worker Job Geçmişi',
+        'cleanup_data_pool_jobs' => 'Data Pool Job Geçmişi',
+        'cleanup_system_logs' => 'Loglar',
+        'cleanup_export_files' => 'Export Dosyaları',
+        'cleanup_temp_files' => 'Temp Dosyaları',
+        'database_optimize_tables' => 'Veritabanı Optimizasyonu',
     ];
     private ?bool $hasNormalizationColumns = null;
     private ?bool $analysisTablesReady = null;
@@ -2129,7 +2174,7 @@ class EmailDataPoolController
     private function enqueueAlibabaInvalidJob(Request $request, Response $response, string $type): Response
     {
         try {
-            $this->assertCleanerCsrf($request);
+            $this->assertApiCsrf($request);
             $this->ensureDataPoolJobTables();
             $this->ensureAlibabaInvalidTables();
             $this->assertNoConflictingJobs([], array_merge(self::BALANCE_JOB_TYPES, self::ALIBABA_JOB_TYPES));
@@ -2179,6 +2224,176 @@ class EmailDataPoolController
         } catch (\Throwable $e) {
             error_log('EmailDataPoolController::enqueueAlibabaInvalidJob error: ' . $e->getMessage());
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Alibaba invalid job kuyruğa alınamadı.'], 500);
+        }
+    }
+
+    public function maintenanceSummary(Request $request, Response $response): Response
+    {
+        try {
+            $this->ensureDataPoolJobTables();
+            $conn = $this->em->getConnection();
+
+            $cards = [];
+            foreach ($this->maintenanceOperationDescriptors() as $operation => $descriptor) {
+                $cards[] = $this->buildMaintenanceCardSummary($operation, $descriptor);
+            }
+
+            $databaseSize = (string) ($conn->fetchOne(
+                "SELECT CONCAT(ROUND((SUM(data_length + index_length) / 1024 / 1024), 2), ' MB')
+                   FROM information_schema.TABLES
+                  WHERE table_schema = DATABASE()"
+            ) ?: '0 MB');
+            $estimatedRows = 0;
+            $estimatedBytes = 0;
+            foreach ($cards as $card) {
+                $estimatedRows += (int) ($card['cleanable_count'] ?? 0);
+                $estimatedBytes += (int) ($card['estimated_size_bytes'] ?? 0);
+            }
+            $active = $conn->fetchAssociative(
+                "SELECT id, type, status
+                   FROM data_pool_jobs
+                  WHERE status IN ('queued','running','paused')
+                    AND type IN (" . implode(',', array_fill(0, count(self::MAINTENANCE_JOB_TYPES), '?')) . ")
+               ORDER BY id DESC LIMIT 1",
+                self::MAINTENANCE_JOB_TYPES
+            ) ?: [];
+            $lastMaintenanceAt = $conn->fetchOne(
+                "SELECT MAX(finished_at)
+                   FROM data_pool_jobs
+                  WHERE status = 'completed'
+                    AND type IN (" . implode(',', array_fill(0, count(self::MAINTENANCE_JOB_TYPES), '?')) . ")",
+                self::MAINTENANCE_JOB_TYPES
+            ) ?: null;
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => [
+                    'summary' => [
+                        'database_size' => $databaseSize,
+                        'estimated_cleanable_rows' => $estimatedRows,
+                        'estimated_cleanable_size' => $this->formatBytes($estimatedBytes),
+                        'active_job_label' => isset($active['id']) ? ('#' . (int) $active['id'] . ' · ' . (string) ($active['type'] ?? '') . ' · ' . (string) ($active['status'] ?? '')) : '-',
+                        'last_maintenance_at' => $lastMaintenanceAt,
+                    ],
+                    'cards' => $cards,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::maintenanceSummary error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Bakım özeti alınamadı.'], 500);
+        }
+    }
+
+    public function maintenancePreview(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertApiCsrf($request);
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $operation = trim((string) ($data['operation'] ?? ''));
+            $descriptor = $this->maintenanceOperationDescriptors()[$operation] ?? null;
+            if ($descriptor === null) {
+                throw new \RuntimeException('Geçersiz bakım operasyonu.');
+            }
+
+            $filters = $this->normalizeMaintenanceFilters($data, $operation);
+            $estimate = $this->calculateMaintenanceEstimate($operation, $descriptor, $filters);
+            $previewToken = $this->storeMaintenancePreviewToken($operation, $filters, $estimate);
+            $warnings = [
+                'İşlem web request içinde çalıştırılmaz.',
+                'Cursor-batch ile worker tarafından işlenir.',
+            ];
+            if ($filters['mode'] === 'purge_details_keep_summary') {
+                $warnings[] = 'Sipariş özetleri korunur, detay kayıtları temizlenir.';
+            }
+            if ($filters['mode'] === 'hard_delete') {
+                $warnings[] = 'Kalıcı silme modu aktif. Onay zorunludur.';
+            }
+            if ($operation === 'database_optimize_tables') {
+                $warnings[] = 'OPTIMIZE TABLE işlemi kilit oluşturabilir, yoğun saatlerde çalıştırmayın.';
+            }
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'data' => [
+                    'operation' => $operation,
+                    'mode' => $filters['mode'],
+                    'dateBefore' => $filters['date_before'],
+                    'estimatedOrders' => (int) ($estimate['estimated_orders'] ?? 0),
+                    'estimatedRecipients' => (int) ($estimate['estimated_recipients'] ?? 0),
+                    'estimatedRows' => (int) ($estimate['estimated_rows'] ?? 0),
+                    'estimatedDbSize' => $this->formatBytes((int) ($estimate['estimated_size_bytes'] ?? 0)),
+                    'strategy' => 'cursor_batch_worker',
+                    'batchSize' => (int) $filters['batch_size'],
+                    'estimatedDuration' => '5-10 dakika / sistem yüküne göre değişir',
+                    'previewToken' => $previewToken,
+                    'generatedAt' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                    'warnings' => $warnings,
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::maintenancePreview error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Bakım önizlemesi alınamadı.'], 500);
+        }
+    }
+
+    public function maintenanceStart(Request $request, Response $response): Response
+    {
+        try {
+            $this->assertApiCsrf($request);
+            $this->ensureDataPoolJobTables();
+            $data = is_array($request->getParsedBody()) ? $request->getParsedBody() : [];
+            $operation = trim((string) ($data['operation'] ?? ''));
+            $descriptor = $this->maintenanceOperationDescriptors()[$operation] ?? null;
+            if ($descriptor === null) {
+                throw new \RuntimeException('Geçersiz bakım operasyonu.');
+            }
+            $filters = $this->normalizeMaintenanceFilters($data, $operation);
+            $previewToken = trim((string) ($data['preview_token'] ?? ''));
+            $this->assertValidMaintenancePreviewToken($previewToken, $operation, $filters);
+
+            if ($filters['mode'] === 'hard_delete' && !$filters['hard_delete_confirmed']) {
+                throw new \RuntimeException('Hard delete için onay kutusu zorunlu.');
+            }
+
+            $this->assertNoConflictingJobs([], array_merge(self::BALANCE_JOB_TYPES, self::MAINTENANCE_JOB_TYPES, self::ALIBABA_JOB_TYPES));
+            $estimate = $this->calculateMaintenanceEstimate($operation, $descriptor, $filters);
+            $jobId = $this->createDataPoolJob(0, $operation, [
+                'operation' => $operation,
+                'mode' => $filters['mode'],
+                'date_before' => $filters['date_before'],
+                'statuses' => $filters['statuses'],
+                'batch_size' => $filters['batch_size'],
+                'hard_delete_confirmed' => $filters['hard_delete_confirmed'] ? 1 : 0,
+                'initiated_by_admin_id' => (int) ($_SESSION['user']['id'] ?? $_SESSION['user_id'] ?? 0),
+                'requested_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                'preview_token' => $previewToken,
+                'cursor' => [
+                    'lastProcessedId' => 0,
+                    'dateBefore' => $filters['date_before'],
+                    'mode' => $filters['mode'],
+                    'statuses' => $filters['statuses'],
+                    'batchSize' => $filters['batch_size'],
+                    'operation' => $operation,
+                ],
+            ], (int) ($estimate['estimated_rows'] ?? 0));
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'message' => 'Bakım job kuyruğa alındı.',
+                'data' => [
+                    'jobId' => $jobId,
+                    'type' => $operation,
+                    'status' => 'queued',
+                    'estimatedRows' => (int) ($estimate['estimated_rows'] ?? 0),
+                ],
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::maintenanceStart error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Bakım işi başlatılamadı.'], 500);
         }
     }
 
@@ -2265,7 +2480,7 @@ class EmailDataPoolController
     public function jobCancel(Request $request, Response $response, array $args): Response
     {
         try {
-            $this->assertCleanerCsrf($request);
+            $this->assertApiCsrf($request);
             $jobId = (int) ($args['jobId'] ?? 0);
             if ($jobId < 1) {
                 throw new \RuntimeException('Job bulunamadı.');
@@ -2294,10 +2509,58 @@ class EmailDataPoolController
         }
     }
 
+    public function jobPause(Request $request, Response $response, array $args): Response
+    {
+        try {
+            $this->assertApiCsrf($request);
+            $jobId = (int) ($args['jobId'] ?? 0);
+            if ($jobId < 1) {
+                throw new \RuntimeException('Job bulunamadı.');
+            }
+            $this->ensureDataPoolJobTables();
+            $job = $this->getDataPoolJob($jobId);
+            if ($job === null) {
+                throw new \RuntimeException('Job bulunamadı.');
+            }
+            $status = (string) ($job['status'] ?? '');
+            if (!in_array($status, ['queued', 'running'], true)) {
+                throw new \RuntimeException('Sadece queued/running job duraklatılabilir.');
+            }
+
+            if ($status === 'queued') {
+                $this->em->getConnection()->executeStatement(
+                    "UPDATE data_pool_jobs
+                        SET status = 'paused',
+                            pause_requested = 0,
+                            status_message = 'Operatör tarafından duraklatıldı.',
+                            updated_at = NOW()
+                      WHERE id = ?",
+                    [$jobId]
+                );
+            } else {
+                $this->em->getConnection()->executeStatement(
+                    "UPDATE data_pool_jobs
+                        SET pause_requested = 1,
+                            status_message = 'Duraklatma talebi gönderildi.',
+                            updated_at = NOW()
+                      WHERE id = ?",
+                    [$jobId]
+                );
+            }
+
+            return $this->jsonResponse($response, ['success' => true, 'message' => 'Duraklatma talebi alındı.']);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], $this->runtimeStatusCode($e));
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::jobPause error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Job pause başarısız.'], 500);
+        }
+    }
+
     public function jobRetry(Request $request, Response $response, array $args): Response
     {
         try {
-            $this->assertCleanerCsrf($request);
+            $this->assertApiCsrf($request);
             $jobId = (int) ($args['jobId'] ?? 0);
             if ($jobId < 1) {
                 throw new \RuntimeException('Job bulunamadı.');
@@ -2318,6 +2581,7 @@ class EmailDataPoolController
                 "UPDATE data_pool_jobs
                     SET status = 'queued',
                         cancel_requested = 0,
+                        pause_requested = 0,
                         error_message = NULL,
                         error_code = NULL,
                         exception_class = NULL,
@@ -2347,7 +2611,7 @@ class EmailDataPoolController
     public function jobResume(Request $request, Response $response, array $args): Response
     {
         try {
-            $this->assertCleanerCsrf($request);
+            $this->assertApiCsrf($request);
             $jobId = (int) ($args['jobId'] ?? 0);
             if ($jobId < 1) {
                 throw new \RuntimeException('Job bulunamadı.');
@@ -2360,8 +2624,8 @@ class EmailDataPoolController
             if (((int) ($job['resumable'] ?? 1)) !== 1) {
                 throw new \RuntimeException('Bu job resume desteklemiyor.');
             }
-            if (!in_array((string) ($job['status'] ?? ''), ['running', 'failed'], true)) {
-                throw new \RuntimeException('Sadece running/failed job resume edilebilir.');
+            if (!in_array((string) ($job['status'] ?? ''), ['running', 'failed', 'paused', 'cancelled'], true)) {
+                throw new \RuntimeException('Sadece running/failed/paused/cancelled job resume edilebilir.');
             }
             if ((int) ($job['attempts'] ?? 0) >= (int) ($job['max_attempts'] ?? 3)) {
                 throw new \RuntimeException('Job max deneme limitine ulaştı.');
@@ -2381,6 +2645,7 @@ class EmailDataPoolController
                         heartbeat_at = NULL,
                         next_run_at = NOW(),
                         status_message = 'Job resume için kuyruğa alındı.',
+                        pause_requested = 0,
                         finished_at = NULL,
                         updated_at = NOW()
                   WHERE id = ?",
@@ -2400,7 +2665,7 @@ class EmailDataPoolController
     public function jobMarkFailed(Request $request, Response $response, array $args): Response
     {
         try {
-            $this->assertCleanerCsrf($request);
+            $this->assertApiCsrf($request);
             $jobId = (int) ($args['jobId'] ?? 0);
             if ($jobId < 1) {
                 throw new \RuntimeException('Job bulunamadı.');
@@ -2414,17 +2679,18 @@ class EmailDataPoolController
                         exception_class = COALESCE(exception_class, 'RuntimeException'),
                         failed_step = COALESCE(failed_step, 'manual_mark_failed'),
                         status_message = 'Operatör tarafından failed işaretlendi.',
+                        pause_requested = 0,
                         locked_by = NULL,
                         locked_at = NULL,
                         heartbeat_at = NOW(),
                         finished_at = NOW(),
                         updated_at = NOW()
                   WHERE id = ?
-                    AND status IN ('queued', 'running')",
+                    AND status IN ('queued', 'running', 'paused')",
                 [$jobId]
             );
             if ($affected < 1) {
-                throw new \RuntimeException('Sadece queued/running job failed işaretlenebilir.');
+                throw new \RuntimeException('Sadece queued/running/paused job failed işaretlenebilir.');
             }
 
             return $this->jsonResponse($response, ['success' => true, 'message' => 'Job failed olarak işaretlendi.']);
@@ -3175,6 +3441,7 @@ class EmailDataPoolController
             'max_attempts' => (int) ($row['max_attempts'] ?? 3),
             'resumable' => (int) ($row['resumable'] ?? 1),
             'cancel_requested' => (int) ($row['cancel_requested'] ?? 0),
+            'pause_requested' => (int) ($row['pause_requested'] ?? 0),
             'last_processed_id' => isset($row['last_processed_id']) ? (int) $row['last_processed_id'] : null,
             'worker_id' => (string) ($row['worker_id'] ?? ''),
             'started_at' => $row['started_at'] ?? null,
@@ -3314,6 +3581,7 @@ class EmailDataPoolController
             'max_attempts' => (int) ($job['max_attempts'] ?? 3),
             'resumable' => ((int) ($job['resumable'] ?? 1)) === 1,
             'cancel_requested' => ((int) ($job['cancel_requested'] ?? 0)) === 1,
+            'pause_requested' => ((int) ($job['pause_requested'] ?? 0)) === 1,
             'last_processed_id' => isset($job['last_processed_id']) ? (int) $job['last_processed_id'] : null,
             'current_step' => (string) ($job['current_step'] ?? ''),
             'is_stale' => $isStale,
@@ -3324,6 +3592,7 @@ class EmailDataPoolController
             'saved_count' => (int) ($result['saved_count'] ?? 0),
             'matched_count' => (int) ($result['matched_count'] ?? 0),
             'cleaned_count' => (int) ($result['cleaned_count'] ?? 0),
+            'archived_count' => (int) ($result['archived_count'] ?? 0),
             'retry_count' => (int) ($result['retry_count'] ?? 0),
             'current_page' => (int) ($result['current_page'] ?? 0),
             'next_start' => (string) ($result['next_start'] ?? ''),
@@ -3350,6 +3619,7 @@ class EmailDataPoolController
             'savedCount' => (int) ($result['saved_count'] ?? 0),
             'matchedCount' => (int) ($result['matched_count'] ?? 0),
             'cleanedCount' => (int) ($result['cleaned_count'] ?? 0),
+            'archivedCount' => (int) ($result['archived_count'] ?? 0),
             'retryCount' => (int) ($result['retry_count'] ?? 0),
             'currentPage' => (int) ($result['current_page'] ?? 0),
             'nextStart' => (string) ($result['next_start'] ?? ''),
@@ -3381,6 +3651,7 @@ class EmailDataPoolController
                 progress_percent INT NOT NULL DEFAULT 0,
                 result JSON DEFAULT NULL,
                 error_message TEXT DEFAULT NULL,
+                pause_requested TINYINT(1) NOT NULL DEFAULT 0,
                 started_at DATETIME DEFAULT NULL,
                 finished_at DATETIME DEFAULT NULL,
                 created_at DATETIME NOT NULL,
@@ -3413,7 +3684,8 @@ class EmailDataPoolController
             'max_attempts' => 'ALTER TABLE data_pool_jobs ADD COLUMN max_attempts INT NOT NULL DEFAULT 3 AFTER attempts',
             'resumable' => 'ALTER TABLE data_pool_jobs ADD COLUMN resumable TINYINT(1) NOT NULL DEFAULT 1 AFTER max_attempts',
             'cancel_requested' => 'ALTER TABLE data_pool_jobs ADD COLUMN cancel_requested TINYINT(1) NOT NULL DEFAULT 0 AFTER resumable',
-            'last_processed_id' => 'ALTER TABLE data_pool_jobs ADD COLUMN last_processed_id BIGINT DEFAULT NULL AFTER cancel_requested',
+            'pause_requested' => 'ALTER TABLE data_pool_jobs ADD COLUMN pause_requested TINYINT(1) NOT NULL DEFAULT 0 AFTER cancel_requested',
+            'last_processed_id' => 'ALTER TABLE data_pool_jobs ADD COLUMN last_processed_id BIGINT DEFAULT NULL AFTER pause_requested',
             'cursor_payload' => 'ALTER TABLE data_pool_jobs ADD COLUMN cursor_payload JSON DEFAULT NULL AFTER last_processed_id',
             'next_run_at' => 'ALTER TABLE data_pool_jobs ADD COLUMN next_run_at DATETIME DEFAULT NULL AFTER cursor_payload',
             'current_step' => 'ALTER TABLE data_pool_jobs ADD COLUMN current_step VARCHAR(120) DEFAULT NULL AFTER next_run_at',
@@ -4536,7 +4808,7 @@ class EmailDataPoolController
         return $token;
     }
 
-    private function assertCleanerCsrf(Request $request): void
+    private function assertApiCsrf(Request $request): void
     {
         $body = $request->getParsedBody();
         $bodyToken = null;
@@ -4544,10 +4816,248 @@ class EmailDataPoolController
             $bodyToken = $body['_csrf'] ?? null;
         }
         $candidate = trim((string) ($bodyToken ?? $request->getHeaderLine('X-CSRF-Token')));
-        $expected = trim((string) ($_SESSION[self::CLEANER_CSRF_SESSION_KEY] ?? ''));
-        if ($expected === '' || $candidate === '' || !hash_equals($expected, $candidate)) {
+        $cleanerToken = trim((string) ($_SESSION[self::CLEANER_CSRF_SESSION_KEY] ?? ''));
+        $systemMonitorToken = trim((string) ($_SESSION[self::SYSTEM_MONITOR_CSRF_SESSION_KEY] ?? ''));
+        $validCleaner = $cleanerToken !== '' && $candidate !== '' && hash_equals($cleanerToken, $candidate);
+        $validSystem = $systemMonitorToken !== '' && $candidate !== '' && hash_equals($systemMonitorToken, $candidate);
+        if (!$validCleaner && !$validSystem) {
             throw new \RuntimeException('CSRF doğrulaması başarısız.');
         }
+    }
+
+    private function assertCleanerCsrf(Request $request): void
+    {
+        $this->assertApiCsrf($request);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function maintenanceOperationDescriptors(): array
+    {
+        return [
+            'cleanup_email_orders' => ['table' => 'email_orders', 'risk' => 'medium'],
+            'cleanup_email_order_details' => ['table' => 'email_order_emails', 'risk' => 'low'],
+            'cleanup_email_recipients' => ['table' => 'email_order_emails', 'risk' => 'low'],
+            'cleanup_email_send_results' => ['table' => 'email_order_emails', 'risk' => 'low'],
+            'archive_email_recipients' => ['table' => 'email_order_emails', 'risk' => 'medium'],
+            'archive_email_send_results' => ['table' => 'email_order_emails', 'risk' => 'medium'],
+            'cleanup_worker_batch_results' => ['table' => 'campaign_batch_metrics', 'risk' => 'medium'],
+            'cleanup_data_pool_jobs' => ['table' => 'data_pool_jobs', 'risk' => 'low'],
+            'cleanup_system_logs' => ['table' => 'email_order_approval_logs', 'risk' => 'medium'],
+            'cleanup_export_files' => ['table' => 'storage/exports', 'risk' => 'low'],
+            'cleanup_temp_files' => ['table' => 'storage/tmp', 'risk' => 'low'],
+            'database_optimize_tables' => ['table' => 'email_orders,email_order_emails,data_pool_jobs', 'risk' => 'high'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $descriptor
+     * @return array<string, mixed>
+     */
+    private function buildMaintenanceCardSummary(string $operation, array $descriptor): array
+    {
+        $estimate = $this->calculateMaintenanceEstimate($operation, $descriptor, [
+            'mode' => 'purge_details_keep_summary',
+            'date_before' => (new \DateTimeImmutable('-90 days'))->format('Y-m-d'),
+            'batch_size' => max(1000, (int) ($_ENV['MAINTENANCE_BATCH_SIZE'] ?? 50000)),
+            'statuses' => ['completed', 'failed', 'cancelled', 'rejected'],
+            'hard_delete_confirmed' => false,
+        ]);
+        $running = $this->em->getConnection()->fetchAssociative(
+            "SELECT id FROM data_pool_jobs WHERE type = ? AND status IN ('queued','running','paused') ORDER BY id DESC LIMIT 1",
+            [$operation]
+        );
+        $runningPayload = null;
+        if ($running) {
+            $job = $this->getDataPoolJob((int) ($running['id'] ?? 0));
+            $runningPayload = $job ? $this->formatDataPoolJobPayload($job) : null;
+        }
+        $lastMaintenanceAt = $this->em->getConnection()->fetchOne(
+            "SELECT MAX(finished_at) FROM data_pool_jobs WHERE type = ? AND status = 'completed'",
+            [$operation]
+        ) ?: null;
+
+        return [
+            'operation' => $operation,
+            'label' => self::MAINTENANCE_OPERATION_LABELS[$operation] ?? $operation,
+            'description' => (string) ($descriptor['table'] ?? ''),
+            'risk' => (string) ($descriptor['risk'] ?? 'low'),
+            'estimated_count' => (int) ($estimate['estimated_rows'] ?? 0),
+            'cleanable_count' => (int) ($estimate['estimated_rows'] ?? 0),
+            'estimated_size' => $this->formatBytes((int) ($estimate['estimated_size_bytes'] ?? 0)),
+            'estimated_size_bytes' => (int) ($estimate['estimated_size_bytes'] ?? 0),
+            'last_maintenance_at' => $lastMaintenanceAt,
+            'running_job' => $runningPayload,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function normalizeMaintenanceFilters(array $input, string $operation): array
+    {
+        $mode = trim((string) ($input['mode'] ?? 'purge_details_keep_summary'));
+        if (!in_array($mode, ['purge_details_keep_summary', 'archive', 'hard_delete'], true)) {
+            throw new \RuntimeException('Geçersiz bakım modu.');
+        }
+        if (str_starts_with($operation, 'archive_')) {
+            $mode = 'archive';
+        }
+        $dateBefore = trim((string) ($input['date_before'] ?? ''));
+        if ($dateBefore === '') {
+            $dateBefore = (new \DateTimeImmutable('-90 days'))->format('Y-m-d');
+        }
+        $batchSize = max(1000, min(200000, (int) ($input['batch_size'] ?? ($_ENV['MAINTENANCE_BATCH_SIZE'] ?? 50000))));
+        $statusesRaw = trim((string) ($input['statuses'] ?? 'completed,failed,cancelled,rejected'));
+        $statuses = array_values(array_filter(array_map('trim', explode(',', $statusesRaw)), static fn (string $s): bool => $s !== ''));
+        if ($statuses === []) {
+            $statuses = ['completed', 'failed', 'cancelled', 'rejected'];
+        }
+        $hardDeleteConfirmed = filter_var((string) ($input['hard_delete_confirmed'] ?? '0'), FILTER_VALIDATE_BOOLEAN);
+
+        return [
+            'mode' => $mode,
+            'date_before' => $dateBefore,
+            'batch_size' => $batchSize,
+            'statuses' => $statuses,
+            'hard_delete_confirmed' => $hardDeleteConfirmed,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $descriptor
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    private function calculateMaintenanceEstimate(string $operation, array $descriptor, array $filters): array
+    {
+        $conn = $this->em->getConnection();
+        $statusIn = implode(',', array_fill(0, count($filters['statuses']), '?'));
+        $params = array_merge($filters['statuses'], [$filters['date_before'] . ' 23:59:59']);
+
+        $estimatedOrders = 0;
+        $estimatedRecipients = 0;
+        $estimatedRows = 0;
+        $estimatedSize = 0;
+
+        if (in_array($operation, ['cleanup_email_orders', 'cleanup_email_order_details', 'cleanup_email_recipients', 'cleanup_email_send_results', 'archive_email_recipients', 'archive_email_send_results'], true)) {
+            $estimatedOrders = (int) $conn->fetchOne(
+                "SELECT COUNT(*)
+                   FROM email_orders
+                  WHERE status IN ($statusIn)
+                    AND created_at < ?",
+                $params
+            );
+            $estimatedRecipients = (int) $conn->fetchOne(
+                "SELECT COUNT(*)
+                   FROM email_order_emails e
+             INNER JOIN email_orders o ON o.id = e.order_id
+                  WHERE o.status IN ($statusIn)
+                    AND o.created_at < ?",
+                $params
+            );
+            $estimatedRows = $estimatedOrders + $estimatedRecipients;
+        } elseif ($operation === 'cleanup_worker_batch_results') {
+            $estimatedRows = (int) $conn->fetchOne(
+                'SELECT COUNT(*) FROM campaign_batch_metrics WHERE created_at < ?',
+                [$filters['date_before'] . ' 23:59:59']
+            );
+        } elseif ($operation === 'cleanup_data_pool_jobs') {
+            $estimatedRows = (int) $conn->fetchOne(
+                "SELECT COUNT(*) FROM data_pool_jobs WHERE status IN ('completed','failed','cancelled') AND created_at < ?",
+                [$filters['date_before'] . ' 23:59:59']
+            );
+        } elseif ($operation === 'cleanup_system_logs') {
+            $a = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_order_approval_logs WHERE created_at < ?', [$filters['date_before'] . ' 23:59:59']);
+            $b = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_template_test_logs WHERE created_at < ?', [$filters['date_before'] . ' 23:59:59']);
+            $estimatedRows = $a + $b;
+        } elseif ($operation === 'database_optimize_tables') {
+            $estimatedRows = 3;
+        }
+
+        $tables = array_filter(array_map('trim', explode(',', (string) ($descriptor['table'] ?? ''))));
+        foreach ($tables as $tableName) {
+            if (str_contains($tableName, '/')) {
+                continue;
+            }
+            $estimatedSize += (int) $conn->fetchOne(
+                "SELECT COALESCE(data_length + index_length, 0)
+                   FROM information_schema.TABLES
+                  WHERE table_schema = DATABASE()
+                    AND table_name = ?",
+                [$tableName]
+            );
+        }
+
+        return [
+            'estimated_orders' => $estimatedOrders,
+            'estimated_recipients' => $estimatedRecipients,
+            'estimated_rows' => $estimatedRows,
+            'estimated_size_bytes' => $estimatedSize,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @param array<string, mixed> $estimate
+     */
+    private function storeMaintenancePreviewToken(string $operation, array $filters, array $estimate): string
+    {
+        $token = bin2hex(random_bytes(24));
+        $store = $_SESSION[self::MAINTENANCE_PREVIEW_SESSION_KEY] ?? [];
+        if (!is_array($store)) {
+            $store = [];
+        }
+        $store[$token] = [
+            'operation' => $operation,
+            'filters' => $filters,
+            'estimate' => $estimate,
+            'created_at' => time(),
+        ];
+        $_SESSION[self::MAINTENANCE_PREVIEW_SESSION_KEY] = $store;
+
+        return $token;
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function assertValidMaintenancePreviewToken(string $token, string $operation, array $filters): void
+    {
+        if ($token === '') {
+            throw new \RuntimeException('Önizleme zorunludur.');
+        }
+        $store = $_SESSION[self::MAINTENANCE_PREVIEW_SESSION_KEY] ?? [];
+        if (!is_array($store) || !isset($store[$token]) || !is_array($store[$token])) {
+            throw new \RuntimeException('Önizleme oturumu bulunamadı, tekrar önizleme alın.');
+        }
+        $payload = $store[$token];
+        $createdAt = (int) ($payload['created_at'] ?? 0);
+        if ($createdAt < 1 || (time() - $createdAt) > 3600) {
+            throw new \RuntimeException('Önizleme süresi doldu, tekrar önizleme alın.');
+        }
+        if ((string) ($payload['operation'] ?? '') !== $operation) {
+            throw new \RuntimeException('Önizleme operasyonu eşleşmiyor.');
+        }
+        $originalFilters = $payload['filters'] ?? [];
+        if (!is_array($originalFilters) || (string) ($originalFilters['mode'] ?? '') !== (string) ($filters['mode'] ?? '')) {
+            throw new \RuntimeException('Önizleme parametreleri değişmiş, tekrar önizleme alın.');
+        }
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $value = (float) max(0, $bytes);
+        $idx = 0;
+        while ($value >= 1024 && $idx < count($units) - 1) {
+            $value /= 1024;
+            $idx++;
+        }
+
+        return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.') . ' ' . $units[$idx];
     }
 
     private function resolveExistingPoolListById(int $listId): EmailDataPoolList
