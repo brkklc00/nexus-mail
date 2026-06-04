@@ -171,7 +171,7 @@ if (php_sapi_name() !== 'cli') {
         nexus_dbg("✅ FINAL DOMAIN: '$currentDomain'");
     } else {
         // Tespit edilemedi: gerçek bir konfig sorunu, her zaman logla.
-        error_log("❌ NO DOMAIN DETECTED!");
+        nexus_dbg("❌ NO DOMAIN DETECTED!");
     }
     
     // 1. Önce veritabanından dene (PDO ile direkt) - localhost dahil (domain-settings'ten eklenen logolar için)
