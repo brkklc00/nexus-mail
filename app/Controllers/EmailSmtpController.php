@@ -644,8 +644,10 @@ class EmailSmtpController
     }
 
     /**
-     * Toplu SMTP içe aktarma (satır başına email:password, ortak host/port/şifreleme).
-     * JSON body: bulk_lines, host?, port?, encryption?, priority?, is_active?, test_after_each?
+     * Toplu SMTP içe aktarma.
+     * - email:password satırları (ortak host/port form alanlarından)
+     * - CSV (Dışa aktar ile aynı format; her satırda host/port/şifre)
+     * JSON body: bulk_lines, import_format? (auto|lines|csv), host?, port?, ...
      */
     public function bulkImport(Request $request, Response $response): Response
     {
@@ -656,39 +658,93 @@ class EmailSmtpController
         }
 
         $raw = trim((string) ($data['bulk_lines'] ?? ''));
-        $host = trim((string) ($data['host'] ?? 'smtpdm-ap-southeast-1.aliyuncs.com'));
-        $port = (int) ($data['port'] ?? 465);
-        $encryption = strtolower(trim((string) ($data['encryption'] ?? 'ssl')));
-        if (!in_array($encryption, ['ssl', 'tls', ''], true)) {
-            $encryption = 'ssl';
+        $raw = preg_replace('/^\xEF\xBB\xBF/', '', $raw) ?? $raw;
+        if ($raw === '') {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'İçe aktarılacak veri boş.',
+            ], JSON_UNESCAPED_UNICODE));
+
+            return $response->withHeader('Content-Type', 'application/json; charset=utf-8')->withStatus(400);
         }
-        $priority = max(1, min(100, (int) ($data['priority'] ?? 5)));
-        $isActive = filter_var($data['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN);
+
+        $importFormat = trim((string) ($data['import_format'] ?? 'auto'));
+        if ($importFormat === 'auto') {
+            $importFormat = $this->detectBulkImportFormat($raw);
+        }
+
         $testEach = filter_var($data['test_after_each'] ?? false, FILTER_VALIDATE_BOOLEAN);
-
-        if ($host === '') {
-            $response->getBody()->write(json_encode([
-                'success' => false,
-                'message' => 'SMTP host boş olamaz.',
-            ], JSON_UNESCAPED_UNICODE));
-
-            return $response->withHeader('Content-Type', 'application/json; charset=utf-8')->withStatus(400);
-        }
-
-        if ($port < 1 || $port > 65535) {
-            $response->getBody()->write(json_encode([
-                'success' => false,
-                'message' => 'Geçersiz port.',
-            ], JSON_UNESCAPED_UNICODE));
-
-            return $response->withHeader('Content-Type', 'application/json; charset=utf-8')->withStatus(400);
-        }
-
         if ($testEach && function_exists('set_time_limit')) {
             @set_time_limit(900);
         }
 
         $config = $this->sendingConfigService->getConfig();
+
+        if ($importFormat === 'csv') {
+            $result = $this->bulkImportFromCsv($raw, $config, $testEach);
+        } else {
+            $host = trim((string) ($data['host'] ?? 'smtpdm-ap-southeast-1.aliyuncs.com'));
+            $port = (int) ($data['port'] ?? 465);
+            $encryption = strtolower(trim((string) ($data['encryption'] ?? 'ssl')));
+            if (!in_array($encryption, ['ssl', 'tls', ''], true)) {
+                $encryption = 'ssl';
+            }
+            $priority = max(1, min(100, (int) ($data['priority'] ?? 5)));
+            $isActive = filter_var($data['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN);
+
+            if ($host === '') {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'SMTP host boş olamaz.',
+                ], JSON_UNESCAPED_UNICODE));
+
+                return $response->withHeader('Content-Type', 'application/json; charset=utf-8')->withStatus(400);
+            }
+
+            if ($port < 1 || $port > 65535) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Geçersiz port.',
+                ], JSON_UNESCAPED_UNICODE));
+
+                return $response->withHeader('Content-Type', 'application/json; charset=utf-8')->withStatus(400);
+            }
+
+            $result = $this->bulkImportFromLines($raw, $host, $port, $encryption, $priority, $isActive, $config, $testEach);
+        }
+
+        $response->getBody()->write(json_encode([
+            'success' => true,
+            'message' => sprintf(
+                '%d hesap eklendi, %d atlandı (zaten var), %d hata. (%s)',
+                count($result['created']),
+                count($result['skipped']),
+                count($result['failed']),
+                $importFormat === 'csv' ? 'CSV' : 'satır'
+            ),
+            'import_format' => $importFormat,
+            'created' => $result['created'],
+            'skipped' => $result['skipped'],
+            'failed' => $result['failed'],
+            'tests' => $result['tests'],
+        ], JSON_UNESCAPED_UNICODE));
+
+        return $response->withHeader('Content-Type', 'application/json; charset=utf-8');
+    }
+
+    /**
+     * @return array{created: list<string>, skipped: list<string>, failed: list<array<string, string>>, tests: list<array<string, mixed>>}
+     */
+    private function bulkImportFromLines(
+        string $raw,
+        string $host,
+        int $port,
+        string $encryption,
+        int $priority,
+        bool $isActive,
+        array $config,
+        bool $testEach
+    ): array {
         $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
         $created = [];
         $skipped = [];
@@ -715,8 +771,7 @@ class EmailSmtpController
                 continue;
             }
             $email = strtolower(trim(substr($line, 0, $pos)));
-            $password = substr($line, $pos + 1);
-            $password = trim($password);
+            $password = trim(substr($line, $pos + 1));
 
             if ($email === '' || $password === '') {
                 $failed[] = ['line' => $line, 'error' => 'Email veya şifre boş'];
@@ -729,56 +784,308 @@ class EmailSmtpController
                 continue;
             }
 
-            $dup = $this->em->getRepository(EmailSmtpAccount::class)->findOneBy(['username' => $email]);
-            if ($dup !== null) {
-                $skipped[] = $email;
+            $rowResult = $this->importSmtpAccount([
+                'username' => $email,
+                'password' => $password,
+                'host' => $host,
+                'port' => $port,
+                'encryption' => $encryption !== '' ? $encryption : 'ssl',
+                'name' => $email,
+                'from_email' => $email,
+                'from_name' => strstr($email, '@', true) ?: '',
+                'is_active' => $isActive,
+                'priority' => $priority,
+                'daily_limit' => $config['daily_limit'],
+                'hourly_limit' => $config['hourly_limit'],
+                'minute_limit' => $config['minute_limit'],
+            ], $config, $testEach);
 
-                continue;
-            }
-
-            try {
-                $smtp = new EmailSmtpAccount();
-                $smtp->setName($email);
-                $smtp->setHost($host);
-                $smtp->setPort($port);
-                $smtp->setUsername($email);
-                $smtp->setPassword($this->smtpService->encryptPassword($password));
-                $smtp->setEncryption($encryption !== '' ? $encryption : 'ssl');
-                $smtp->setFromEmail($email);
-                $local = strstr($email, '@', true);
-                $smtp->setFromName($local !== false ? $local : '');
-                $smtp->setDailyLimit($config['daily_limit']);
-                $smtp->setHourlyLimit($config['hourly_limit']);
-                $smtp->setMinuteLimit($config['minute_limit']);
-                $smtp->setPriority($priority);
-                $smtp->setIsActive($isActive);
-
-                $this->em->persist($smtp);
-                $this->em->flush();
-
+            if ($rowResult['status'] === 'created') {
                 $created[] = $email;
-
-                if ($testEach) {
-                    $tests[] = array_merge(
-                        ['email' => $email],
-                        $this->smtpService->testSmtpConnection($smtp, null)
-                    );
+                if ($rowResult['test'] !== null) {
+                    $tests[] = $rowResult['test'];
                 }
-            } catch (\Throwable $e) {
-                $failed[] = ['line' => $line, 'error' => $e->getMessage()];
+            } elseif ($rowResult['status'] === 'skipped') {
+                $skipped[] = $email;
+            } else {
+                $failed[] = ['line' => $line, 'error' => $rowResult['error'] ?? 'Bilinmeyen hata'];
             }
         }
 
-        $response->getBody()->write(json_encode([
-            'success' => true,
-            'message' => sprintf('%d hesap eklendi, %d atlandı (zaten var), %d hata.', count($created), count($skipped), count($failed)),
-            'created' => $created,
-            'skipped' => $skipped,
-            'failed' => $failed,
-            'tests' => $tests,
-        ], JSON_UNESCAPED_UNICODE));
+        return ['created' => $created, 'skipped' => $skipped, 'failed' => $failed, 'tests' => $tests];
+    }
 
-        return $response->withHeader('Content-Type', 'application/json; charset=utf-8');
+    /**
+     * @return array{created: list<string>, skipped: list<string>, failed: list<array<string, string>>, tests: list<array<string, mixed>>}
+     */
+    private function bulkImportFromCsv(string $raw, array $config, bool $testEach): array
+    {
+        $raw = preg_replace('/^\xEF\xBB\xBF/', '', $raw) ?? $raw;
+        $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
+        $created = [];
+        $skipped = [];
+        $failed = [];
+        $tests = [];
+        $processed = 0;
+        $maxLines = 10000;
+        $headerMap = null;
+        $delimiter = ';';
+
+        foreach ($lines as $lineNum => $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+
+            $cols = str_getcsv($line, $delimiter);
+            if ($cols === false || $cols === []) {
+                continue;
+            }
+
+            if ($headerMap === null) {
+                $normalized = array_map(fn (string $h) => $this->normalizeImportHeader($h), $cols);
+                if (in_array('username', $normalized, true) && in_array('password', $normalized, true)) {
+                    $headerMap = [];
+                    foreach ($normalized as $idx => $key) {
+                        if ($key !== '') {
+                            $headerMap[$key] = $idx;
+                        }
+                    }
+                    continue;
+                }
+                if (count($cols) >= 4 && str_contains($line, ';')) {
+                    $headerMap = [
+                        'username' => 0,
+                        'password' => 1,
+                        'host' => 2,
+                        'port' => 3,
+                        'encryption' => 4,
+                        'name' => 5,
+                        'from_email' => 6,
+                        'from_name' => 7,
+                        'is_active' => 8,
+                        'priority' => 9,
+                        'daily_limit' => 10,
+                        'hourly_limit' => 11,
+                        'minute_limit' => 12,
+                    ];
+                } else {
+                    $failed[] = ['line' => (string) ($lineNum + 1), 'error' => 'CSV başlık satırı tanınmadı (Kullanıcı;Şifre;Host;… gerekli)'];
+                    break;
+                }
+            }
+
+            if ($processed >= $maxLines) {
+                $failed[] = ['line' => (string) ($lineNum + 1), 'error' => "Üst sınır: {$maxLines} hesap"];
+                break;
+            }
+            ++$processed;
+
+            $row = $this->csvRowToImportData($cols, $headerMap, $config);
+            if ($row === null) {
+                $failed[] = ['line' => (string) ($lineNum + 1), 'error' => 'Satır okunamadı'];
+                continue;
+            }
+
+            if ($row['error'] !== null) {
+                $failed[] = ['line' => (string) ($lineNum + 1), 'error' => $row['error']];
+                continue;
+            }
+
+            $username = strtolower($row['data']['username']);
+            $rowResult = $this->importSmtpAccount($row['data'], $config, $testEach);
+
+            if ($rowResult['status'] === 'created') {
+                $created[] = $username;
+                if ($rowResult['test'] !== null) {
+                    $tests[] = $rowResult['test'];
+                }
+            } elseif ($rowResult['status'] === 'skipped') {
+                $skipped[] = $username;
+            } else {
+                $failed[] = ['line' => (string) ($lineNum + 1), 'error' => $rowResult['error'] ?? 'Bilinmeyen hata'];
+            }
+        }
+
+        if ($headerMap === null) {
+            $failed[] = ['line' => '1', 'error' => 'CSV başlık satırı bulunamadı'];
+        }
+
+        return ['created' => $created, 'skipped' => $skipped, 'failed' => $failed, 'tests' => $tests];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array{status: string, error?: string, test?: array<string, mixed>|null}
+     */
+    private function importSmtpAccount(array $data, array $config, bool $testEach): array
+    {
+        $username = strtolower(trim((string) ($data['username'] ?? '')));
+        $password = (string) ($data['password'] ?? '');
+        $host = trim((string) ($data['host'] ?? ''));
+        $port = (int) ($data['port'] ?? 0);
+
+        if ($username === '' || $password === '' || $host === '') {
+            return ['status' => 'failed', 'error' => 'Kullanıcı, şifre ve host zorunlu'];
+        }
+        if (!filter_var($username, FILTER_VALIDATE_EMAIL)) {
+            return ['status' => 'failed', 'error' => 'Geçersiz e-posta'];
+        }
+        if ($port < 1 || $port > 65535) {
+            return ['status' => 'failed', 'error' => 'Geçersiz port'];
+        }
+
+        $dup = $this->em->getRepository(EmailSmtpAccount::class)->findOneBy(['username' => $username]);
+        if ($dup !== null) {
+            return ['status' => 'skipped'];
+        }
+
+        $encryption = strtolower(trim((string) ($data['encryption'] ?? 'ssl')));
+        if (!in_array($encryption, ['ssl', 'tls', ''], true)) {
+            $encryption = 'ssl';
+        }
+
+        try {
+            $smtp = new EmailSmtpAccount();
+            $smtp->setName(trim((string) ($data['name'] ?? $username)) ?: $username);
+            $smtp->setHost($host);
+            $smtp->setPort($port);
+            $smtp->setUsername($username);
+            $smtp->setPassword($this->smtpService->encryptPassword($password));
+            $smtp->setEncryption($encryption !== '' ? $encryption : 'ssl');
+            $fromEmail = trim((string) ($data['from_email'] ?? $username)) ?: $username;
+            $smtp->setFromEmail($fromEmail);
+            $smtp->setFromName(trim((string) ($data['from_name'] ?? '')));
+            $smtp->setDailyLimit(max(1, (int) ($data['daily_limit'] ?? $config['daily_limit'])));
+            $smtp->setHourlyLimit(max(1, (int) ($data['hourly_limit'] ?? $config['hourly_limit'])));
+            $smtp->setMinuteLimit(max(1, (int) ($data['minute_limit'] ?? $config['minute_limit'])));
+            $smtp->setPriority(max(1, min(100, (int) ($data['priority'] ?? 5))));
+            $smtp->setIsActive((bool) ($data['is_active'] ?? true));
+
+            $this->em->persist($smtp);
+            $this->em->flush();
+
+            $test = null;
+            if ($testEach) {
+                $test = array_merge(
+                    ['email' => $username],
+                    $this->smtpService->testSmtpConnection($smtp, null)
+                );
+            }
+
+            return ['status' => 'created', 'test' => $test];
+        } catch (\Throwable $e) {
+            return ['status' => 'failed', 'error' => $e->getMessage()];
+        }
+    }
+
+    private function detectBulkImportFormat(string $raw): string
+    {
+        foreach (preg_split("/\r\n|\n|\r/", $raw) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+            if (str_contains($line, ';')) {
+                $cols = str_getcsv($line, ';');
+                if ($cols !== false && $cols !== []) {
+                    $normalized = array_map(fn (string $h) => $this->normalizeImportHeader($h), $cols);
+                    if (in_array('username', $normalized, true) && in_array('password', $normalized, true)) {
+                        return 'csv';
+                    }
+                }
+            }
+            break;
+        }
+
+        return 'lines';
+    }
+
+    private function normalizeImportHeader(string $header): string
+    {
+        $header = mb_strtolower(trim($header), 'UTF-8');
+        $header = strtr($header, [
+            'ş' => 's', 'ı' => 'i', 'ğ' => 'g', 'ü' => 'u', 'ö' => 'o', 'ç' => 'c',
+            'â' => 'a', 'î' => 'i', 'û' => 'u',
+        ]);
+        $header = preg_replace('/[^a-z0-9]+/', '_', $header) ?? $header;
+        $header = trim($header, '_');
+
+        return match ($header) {
+            'kullanici', 'username', 'user', 'eposta', 'email' => 'username',
+            'sifre', 'password', 'parola' => 'password',
+            'host', 'sunucu' => 'host',
+            'port' => 'port',
+            'sifreleme', 'encryption', 'encrypt' => 'encryption',
+            'ad', 'name', 'smtp_adi' => 'name',
+            'gonderen_e_posta', 'gonderen_email', 'from_email', 'from' => 'from_email',
+            'gonderen_ad', 'from_name' => 'from_name',
+            'aktif', 'active', 'is_active', 'durum' => 'is_active',
+            'oncelik', 'priority' => 'priority',
+            'gunluk_limit', 'daily_limit' => 'daily_limit',
+            'saatlik_limit', 'hourly_limit' => 'hourly_limit',
+            'dakikalik_limit', 'minute_limit' => 'minute_limit',
+            default => $header,
+        };
+    }
+
+    /**
+     * @param list<string> $cols
+     * @param array<string, int> $headerMap
+     * @return array{data: array<string, mixed>, error: ?string}|null
+     */
+    private function csvRowToImportData(array $cols, array $headerMap, array $config): ?array
+    {
+        $get = function (string $key) use ($cols, $headerMap): string {
+            if (!isset($headerMap[$key])) {
+                return '';
+            }
+            $idx = $headerMap[$key];
+
+            return trim((string) ($cols[$idx] ?? ''));
+        };
+
+        $username = strtolower($get('username'));
+        $password = $get('password');
+        $host = $get('host');
+        $port = (int) $get('port');
+
+        if ($username === '' && $password === '' && $host === '') {
+            return null;
+        }
+
+        if ($username === '' || $password === '' || $host === '') {
+            return ['data' => [], 'error' => 'Kullanıcı, şifre ve host zorunlu'];
+        }
+
+        return [
+            'data' => [
+                'username' => $username,
+                'password' => $password,
+                'host' => $host,
+                'port' => $port > 0 ? $port : 465,
+                'encryption' => $get('encryption') ?: 'ssl',
+                'name' => $get('name') ?: $username,
+                'from_email' => $get('from_email') ?: $username,
+                'from_name' => $get('from_name'),
+                'is_active' => $this->parseImportBool($get('is_active'), true),
+                'priority' => (int) ($get('priority') !== '' ? $get('priority') : 5),
+                'daily_limit' => (int) ($get('daily_limit') !== '' ? $get('daily_limit') : $config['daily_limit']),
+                'hourly_limit' => (int) ($get('hourly_limit') !== '' ? $get('hourly_limit') : $config['hourly_limit']),
+                'minute_limit' => (int) ($get('minute_limit') !== '' ? $get('minute_limit') : $config['minute_limit']),
+            ],
+            'error' => null,
+        ];
+    }
+
+    private function parseImportBool(string $value, bool $default): bool
+    {
+        $v = mb_strtolower(trim($value), 'UTF-8');
+        if ($v === '') {
+            return $default;
+        }
+
+        return in_array($v, ['1', 'true', 'yes', 'evet', 'aktif', 'on', 'e'], true);
     }
 
     private function extractDomain(string $email): ?string
@@ -945,7 +1252,7 @@ class EmailSmtpController
     }
 
     /**
-     * SMTP listesini CSV olarak dışa aktar (mevcut filtreler; şifre dahil edilmez).
+     * SMTP listesini CSV olarak dışa aktar (şifre dahil; Toplu içe aktar ile uyumlu format).
      */
     public function exportCsv(Request $request, Response $response): Response
     {
@@ -967,38 +1274,33 @@ class EmailSmtpController
 
         fwrite($fp, "\xEF\xBB\xBF");
         fputcsv($fp, [
-            'ID', 'Ad', 'Host', 'Port', 'Şifreleme', 'Kullanıcı', 'Gönderen E-posta', 'Gönderen Ad',
-            'Aktif', 'Öncelik', 'Günlük Limit', 'Günlük Gönderim', 'Saatlik Limit', 'Saatlik Gönderim',
-            'Dakikalık Limit', 'Dakikalık Gönderim', 'Toplam Gönderim', 'Toplam Hata', 'Başarı Oranı (%)',
-            'Son Hata', 'Son Kullanım', 'Oluşturma', 'Güncelleme',
+            'Kullanıcı', 'Şifre', 'Host', 'Port', 'Şifreleme', 'Ad', 'Gönderen E-posta', 'Gönderen Ad',
+            'Aktif', 'Öncelik', 'Günlük Limit', 'Saatlik Limit', 'Dakikalık Limit',
         ], ';');
 
         foreach ($smtps as $smtp) {
             /** @var EmailSmtpAccount $smtp */
+            $plainPassword = '';
+            try {
+                $plainPassword = $this->smtpService->decryptPassword($smtp->getPassword());
+            } catch (\Throwable) {
+                $plainPassword = '';
+            }
+
             fputcsv($fp, [
-                $smtp->getId(),
-                $smtp->getName(),
+                $smtp->getUsername(),
+                $plainPassword,
                 $smtp->getHost(),
                 $smtp->getPort(),
                 $smtp->getEncryption() ?? '',
-                $smtp->getUsername(),
+                $smtp->getName(),
                 $smtp->getFromEmail(),
                 $smtp->getFromName() ?? '',
                 $smtp->isActive() ? 'Evet' : 'Hayır',
                 $smtp->getPriority(),
                 $smtp->getDailyLimit(),
-                $smtp->getDailySent(),
                 $smtp->getHourlyLimit(),
-                $smtp->getHourlySent(),
                 $smtp->getMinuteLimit(),
-                $smtp->getMinuteSent(),
-                $smtp->getTotalSent(),
-                $smtp->getTotalFailed(),
-                number_format($smtp->getSuccessRate(), 2, '.', ''),
-                $smtp->getLastError() ?? '',
-                $smtp->getLastUsedAt()?->format('Y-m-d H:i:s') ?? '',
-                $smtp->getCreatedAt()->format('Y-m-d H:i:s'),
-                $smtp->getUpdatedAt()->format('Y-m-d H:i:s'),
             ], ';');
         }
 

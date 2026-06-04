@@ -230,7 +230,7 @@
                             <small class="text-muted" id="nxEsmtpListCountLabel">{{ total|default(smtps|length) }} kayıt{% if search %} (sunucu filtresi: “{{ search|e }}”){% endif %}</small>
                         </div>
                         <div class="d-flex flex-wrap align-items-center gap-2">
-                            <button type="button" class="btn btn-outline-primary btn-sm nx-esmtp-tool" onclick="nxEsmtpExportCsv()" title="Mevcut filtreye göre CSV indir">
+                            <button type="button" class="btn btn-outline-primary btn-sm nx-esmtp-tool" onclick="nxEsmtpExportCsv()" title="Şifre dahil CSV (toplu içe aktar ile uyumlu)">
                                 <i data-feather="download" class="icon-xs me-1"></i>
                                 <span class="d-none d-sm-inline">Dışa aktar</span>
                             </button>
@@ -933,14 +933,19 @@
             </div>
             <div class="modal-body">
                 <p class="text-muted small mb-3">
-                    Her satır <code>posta@alan.com:şifre</code> formatında olsun. Boş satırlar ve <code>#</code> ile başlayan satırlar yok sayılır.
-                    Tüm hesaplar aynı <strong>SMTP sunucusu</strong> (ör. Alibaba DirectMail) ile kaydedilir; gönderen adres = kullanıcı adı.
+                    <strong>CSV:</strong> <em>Dışa aktar</em> ile indirdiğiniz dosyayı yapıştırın veya seçin (başlık satırı: Kullanıcı;Şifre;Host;…).
+                    <strong>Metin:</strong> Her satır <code>posta@alan.com:şifre</code> — tüm hesaplar sağdaki ortak SMTP sunucusuna eklenir.
+                    Boş satırlar ve <code>#</code> yorumları yok sayılır. Aynı kullanıcı adı zaten varsa satır atlanır.
                 </p>
                 <div class="row g-3">
                     <div class="col-lg-7">
-                        <label for="bulk_smtp_lines" class="form-label">Hesap listesi</label>
-                        <textarea class="form-control font-monospace" id="bulk_smtp_lines" rows="16" spellcheck="false"
-                            placeholder="postmaster@ornek.com:Sifre123&#10;marketing@ornek.com:Baska456"></textarea>
+                        <label for="bulk_smtp_lines" class="form-label">Hesap listesi veya CSV</label>
+                        <div class="mb-2">
+                            <input type="file" class="form-control form-control-sm" id="bulk_smtp_csv_file" accept=".csv,text/csv,text/plain">
+                            <small class="text-muted">Dışa aktarılan <code>smtp-hesaplari_*.csv</code> dosyasını doğrudan seçebilirsiniz.</small>
+                        </div>
+                        <textarea class="form-control font-monospace" id="bulk_smtp_lines" rows="14" spellcheck="false"
+                            placeholder="CSV yapıştırın veya: postmaster@ornek.com:Sifre123"></textarea>
                     </div>
                     <div class="col-lg-5">
                         <div class="mb-3">
@@ -1344,6 +1349,7 @@ function submitBulkImport() {
     const bulkLines = document.getElementById('bulk_smtp_lines').value || '';
     const payload = {
         bulk_lines: bulkLines,
+        import_format: 'auto',
         host: document.getElementById('bulk_smtp_host').value.trim(),
         port: parseInt(document.getElementById('bulk_smtp_port').value, 10) || 465,
         encryption: document.getElementById('bulk_smtp_encryption').value,
@@ -2086,6 +2092,22 @@ function nxEsmtpInit() {
 document.addEventListener('DOMContentLoaded', function() {
     feather.replace();
     nxEsmtpInit();
+
+    var bulkCsvFile = document.getElementById('bulk_smtp_csv_file');
+    if (bulkCsvFile) {
+        bulkCsvFile.addEventListener('change', function () {
+            var file = this.files && this.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+                var ta = document.getElementById('bulk_smtp_lines');
+                if (ta && ev.target && typeof ev.target.result === 'string') {
+                    ta.value = ev.target.result;
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
+        });
+    }
 
     var bulkModalEl = document.getElementById('bulkImportSmtpModal');
     if (bulkModalEl) {
