@@ -12,6 +12,7 @@ use App\Domain\Entities\EmailDataPool;
 use App\Domain\Entities\EmailTemplate;
 use App\Domain\Entities\User;
 use App\Domain\Enum\EmailOrderStatus;
+use App\Support\AppErrorLogger;
 use App\Support\EnumHelper;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -157,7 +158,8 @@ class EmailOrderController
             $response->getBody()->write($html);
             return $response;
         } catch (\Throwable $e) {
-            error_log('EmailOrderController::index error: ' . $e->getMessage());
+            $errorId = AppErrorLogger::log($e, null, ['controller' => 'EmailOrderController::index']);
+            error_log('EmailOrderController::index error [' . $errorId . ']: ' . $e->getMessage());
             $html = $this->twig->render('email-orders/index.twig', [
                 'orders' => [],
                 'template_meta_by_order_id' => [],
@@ -172,7 +174,7 @@ class EmailOrderController
                 'email_credit' => 0,
                 'blacklist_count' => 0,
                 'success' => null,
-                'error' => 'Yeni Gönderim sayfası yüklenirken geçici bir hata oluştu.',
+                'error' => 'Yeni Gönderim sayfası yüklenirken hata oluştu. Kod: ' . $errorId,
                 'flash_icon' => 'alert-circle'
             ]);
             $response->getBody()->write($html);

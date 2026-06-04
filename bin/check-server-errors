@@ -1,0 +1,79 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Uygulama + Nginx/Apache + PHP-FPM loglarını tek komutta özetler.
+ *
+ * Kullanım:
+ *   php bin/check-server-errors
+ *   php bin/check-server-errors 200
+ *   php bin/check-server-errors --errors-only
+ */
+
+require __DIR__ . '/../vendor/autoload.php';
+
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+$dotenv->safeLoad();
+
+use App\Support\AppErrorLogger;
+use App\Support\ServerLogInspector;
+
+$lines = 100;
+$errorsOnly = false;
+
+foreach (array_slice($argv, 1) as $arg) {
+    if ($arg === '--errors-only' || $arg === '-e') {
+        $errorsOnly = true;
+        continue;
+    }
+    if (is_numeric($arg)) {
+        $lines = max(20, min(500, (int) $arg));
+    }
+}
+
+$sep = str_repeat('═', 72);
+
+echo $sep . PHP_EOL;
+echo ' NEXUS — Sunucu & PHP hata özeti  ' . date('Y-m-d H:i:s') . PHP_EOL;
+echo $sep . PHP_EOL . PHP_EOL;
+
+echo "▶ PHP (CLI — FPM farklı olabilir, php-fpm loguna da bakın)\n";
+echo ServerLogInspector::phpRuntimeSummary() . PHP_EOL . PHP_EOL;
+
+echo "▶ Nginx site limitleri\n";
+echo ServerLogInspector::nginxSiteHints() . PHP_EOL . PHP_EOL;
+
+$logs = ServerLogInspector::discoverLogFiles();
+if ($logs === []) {
+    echo "⚠ Okunabilir log dosyası bulunamadı (root ile çalıştırın: sudo php bin/check-server-errors)\n";
+} else {
+    foreach ($logs as $log) {
+        echo $sep . PHP_EOL;
+        echo "▶ {$log['label']}\n   {$log['path']}\n";
+        echo str_repeat('─', 72) . PHP_EOL;
+        $chunk = ServerLogInspector::tailFile($log['path'], $lines);
+        if ($errorsOnly) {
+            $filtered = ServerLogInspector::filterErrorLines($chunk);
+            echo $filtered === [] ? "(son {$lines} satırda filtrelenmiş hata yok)\n" : implode(PHP_EOL, $filtered) . PHP_EOL;
+        } else {
+            echo $chunk . PHP_EOL;
+        }
+        echo PHP_EOL;
+    }
+}
+
+echo $sep . PHP_EOL;
+echo "▶ Uygulama log (AppErrorLogger)\n";
+echo str_repeat('─', 72) . PHP_EOL;
+$appTail = AppErrorLogger::tail($lines, $_ENV['LOG_PATH'] ?? null);
+if ($errorsOnly) {
+    $filtered = ServerLogInspector::filterErrorLines($appTail);
+    echo $filtered === [] ? "(filtrelenmiş hata yok)\n" : implode(PHP_EOL, $filtered) . PHP_EOL;
+} else {
+    echo $appTail . PHP_EOL;
+}
+
+echo PHP_EOL . "İpucu: sadece hatalar → php bin/check-server-errors --errors-only\n";
+echo "Canlı izleme → sudo tail -f /var/log/nginx/error.log /var/log/php8.3-fpm.log storage/logs/app-$(date +%Y-%m-%d).log\n";

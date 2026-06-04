@@ -1,0 +1,68 @@
+{% extends '_layouts/main.twig' %}
+
+{% block title %}Hata {{ status_code|default(500) }} - {{ site_title|default('Nexus Panel') }}{% endblock %}
+
+{% block page_title %}
+<div class="row">
+    <div class="col-12">
+        <div class="page-title-box">
+            <h4 class="page-title">
+                <i data-feather="alert-circle" class="icon-sm text-danger me-2"></i>
+                Sistem Hatası
+            </h4>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4 p-md-5">
+                <div class="text-center mb-4">
+                    <h1 class="display-4 fw-bold text-danger mb-2">{{ status_code|default(500) }}</h1>
+                    <p class="text-muted mb-0">İşlem tamamlanamadı. Geçici bir sorun olabilir.</p>
+                </div>
+
+                <div class="alert alert-light border mb-4">
+                    <div class="row g-2 small">
+                        <div class="col-sm-4 text-muted">Hata kodu</div>
+                        <div class="col-sm-8"><code class="user-select-all">{{ error_id }}</code></div>
+                        <div class="col-sm-4 text-muted">Sayfa</div>
+                        <div class="col-sm-8"><code>{{ path|default('/') }}</code></div>
+                        <div class="col-sm-4 text-muted">Log dosyası</div>
+                        <div class="col-sm-8"><code>{{ log_hint|default('storage/logs/') }}</code></div>
+                    </div>
+                </div>
+
+                {% if show_details %}
+                <div class="alert alert-danger text-start">
+                    <strong>{{ exception_class }}</strong><br>
+                    {{ exception_message }}<br>
+                    <small class="text-muted">{{ exception_file }}:{{ exception_line }}</small>
+                </div>
+                {% if exception_trace %}
+                <pre class="bg-dark text-light p-3 rounded small mb-0" style="max-height:360px;overflow:auto;">{{ exception_trace }}</pre>
+                {% endif %}
+                {% else %}
+                <p class="text-muted text-center mb-4">
+                    Destek için <strong>hata kodunu</strong> iletin.<br>
+                    Sunucuda: <code>php bin/check-server-errors --errors-only</code><br>
+                    veya <code>tail -80 {{ log_hint }}</code>
+                </p>
+                {% endif %}
+
+                <div class="d-flex flex-wrap gap-2 justify-content-center mt-4">
+                    <a href="javascript:history.back()" class="btn btn-outline-secondary btn-sm">Geri</a>
+                    <a href="/dashboard" class="btn btn-primary btn-sm">Panele dön</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>if (typeof feather !== 'undefined') { feather.replace(); }</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * @deprecated bin/check-server-errors kullanın (nginx + php-fpm + uygulama)
+ */
+require __DIR__ . '/check-server-errors';

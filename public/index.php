@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-// Hata gösterimi
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 // Memory ve execution time (milyonlarca kayıt için)
@@ -25,6 +22,10 @@ require __DIR__ . '/../vendor/autoload.php';
 // Load environment variables
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
+
+$appDebug = filter_var($_ENV['APP_DEBUG'] ?? getenv('APP_DEBUG') ?: false, FILTER_VALIDATE_BOOLEAN);
+ini_set('display_errors', $appDebug ? '1' : '0');
+ini_set('display_startup_errors', $appDebug ? '1' : '0');
 
 // Build DI container
 $containerBuilder = new ContainerBuilder();
@@ -66,14 +67,31 @@ $app->add(\App\Middlewares\DomainConfigMiddleware::class);
 // Add Routing Middleware
 $app->addRoutingMiddleware();
 
-// Add Error Middleware
-$displayErrorDetails = $settings['app']['debug'] ?? false;
+// Add Error Middleware — detaylı log + ERR-xxx kodlu sayfa
+$displayErrorDetails = (bool) ($settings['app']['debug'] ?? $appDebug);
 $logErrors = true;
 $logErrorDetails = true;
+$logPath = (string) ($settings['logging']['path'] ?? '');
+$twig = $container->get(\Twig\Environment::class);
 
 $errorMiddleware = $app->addErrorMiddleware($displayErrorDetails, $logErrors, $logErrorDetails);
-$errorHandler = $errorMiddleware->getDefaultErrorHandler();
-$errorHandler->forceContentType('text/html');
+$errorMiddleware->setDefaultErrorHandler(
+    function (
+        \Psr\Http\Message\ServerRequestInterface $request,
+        \Throwable $exception,
+        bool $display,
+        bool $log,
+        bool $logDetails
+    ) use ($twig, $logPath, $displayErrorDetails): \Psr\Http\Message\ResponseInterface {
+        return \App\Support\Http\PanelErrorHandler::handle(
+            $request,
+            $exception,
+            $displayErrorDetails || $display,
+            $twig,
+            $logPath
+        );
+    }
+);
 
 // Register routes
 (require __DIR__ . '/../config/routes.php')($app);
