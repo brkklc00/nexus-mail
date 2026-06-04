@@ -44,56 +44,7 @@ class EmailSmtpController
             $perPage = 100;
         }
 
-        $qb = $this->em->createQueryBuilder();
-        $qb->select('s')
-            ->from(EmailSmtpAccount::class, 's');
-
-        if ($search) {
-            $qb->andWhere('s.name LIKE :search OR s.host LIKE :search OR s.username LIKE :search OR s.fromEmail LIKE :search')
-                ->setParameter('search', '%' . $search . '%');
-        }
-
-        if ($status === 'active') {
-            $qb->andWhere('s.isActive = true');
-        } elseif ($status === 'passive') {
-            $qb->andWhere('s.isActive = false');
-        } elseif ($status === 'healthy') {
-            $qb->andWhere('s.isActive = true')
-                ->andWhere('s.totalSent >= 100')
-                ->andWhere('s.successRate >= 85')
-                ->andWhere('(s.lastError IS NULL OR s.lastError = \'\')');
-        } elseif ($status === 'risk') {
-            $qb->andWhere('s.isActive = true')
-                ->andWhere('(s.lastError IS NOT NULL AND s.lastError <> \'\') OR (s.totalSent >= 15 AND s.successRate < 85)');
-        } elseif ($status === 'warming') {
-            $qb->andWhere('s.isActive = true')
-                ->andWhere('s.totalSent < 100');
-        } elseif ($status === 'throttled') {
-            $qb->andWhere('s.dailySent >= (s.dailyLimit * 0.9)');
-        }
-
-        if ($provider === 'alibaba') {
-            $qb->andWhere('LOWER(s.host) LIKE :providerAlibaba')
-                ->setParameter('providerAlibaba', '%aliy%');
-        } elseif ($provider === 'mailgun') {
-            $qb->andWhere('LOWER(s.host) LIKE :providerMailgun')
-                ->setParameter('providerMailgun', '%mailgun%');
-        } elseif ($provider === 'other') {
-            $qb->andWhere('LOWER(s.host) NOT LIKE :providerAlibabaOther')
-                ->andWhere('LOWER(s.host) NOT LIKE :providerMailgunOther')
-                ->setParameter('providerAlibabaOther', '%aliy%')
-                ->setParameter('providerMailgunOther', '%mailgun%');
-        }
-
-        if ($sort === 'most_sent') {
-            $qb->orderBy('s.totalSent', 'DESC');
-        } elseif ($sort === 'error_rate') {
-            $qb->orderBy('s.totalFailed', 'DESC');
-        } elseif ($sort === 'last_used') {
-            $qb->orderBy('s.lastUsedAt', 'DESC');
-        } else {
-            $qb->orderBy('s.createdAt', 'DESC');
-        }
+        $qb = $this->createListQueryBuilder($search, $status, $provider, $sort);
 
         $countQb = clone $qb;
         $total = (int) $countQb->select('COUNT(s.id)')->getQuery()->getSingleScalarResult();
@@ -991,6 +942,130 @@ class EmailSmtpController
         }
 
         return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    /**
+     * SMTP listesini CSV olarak dışa aktar (mevcut filtreler; şifre dahil edilmez).
+     */
+    public function exportCsv(Request $request, Response $response): Response
+    {
+        $params = $request->getQueryParams();
+        $search = trim((string) ($params['search'] ?? ''));
+        $status = trim((string) ($params['status'] ?? 'all'));
+        $provider = trim((string) ($params['provider'] ?? 'all'));
+        $sort = trim((string) ($params['sort'] ?? 'newest'));
+
+        $smtps = $this->createListQueryBuilder($search, $status, $provider, $sort)
+            ->getQuery()
+            ->getResult();
+
+        $fp = fopen('php://temp', 'r+');
+        if ($fp === false) {
+            $response->getBody()->write('CSV oluşturulamadı.');
+            return $response->withStatus(500);
+        }
+
+        fwrite($fp, "\xEF\xBB\xBF");
+        fputcsv($fp, [
+            'ID', 'Ad', 'Host', 'Port', 'Şifreleme', 'Kullanıcı', 'Gönderen E-posta', 'Gönderen Ad',
+            'Aktif', 'Öncelik', 'Günlük Limit', 'Günlük Gönderim', 'Saatlik Limit', 'Saatlik Gönderim',
+            'Dakikalık Limit', 'Dakikalık Gönderim', 'Toplam Gönderim', 'Toplam Hata', 'Başarı Oranı (%)',
+            'Son Hata', 'Son Kullanım', 'Oluşturma', 'Güncelleme',
+        ], ';');
+
+        foreach ($smtps as $smtp) {
+            /** @var EmailSmtpAccount $smtp */
+            fputcsv($fp, [
+                $smtp->getId(),
+                $smtp->getName(),
+                $smtp->getHost(),
+                $smtp->getPort(),
+                $smtp->getEncryption() ?? '',
+                $smtp->getUsername(),
+                $smtp->getFromEmail(),
+                $smtp->getFromName() ?? '',
+                $smtp->isActive() ? 'Evet' : 'Hayır',
+                $smtp->getPriority(),
+                $smtp->getDailyLimit(),
+                $smtp->getDailySent(),
+                $smtp->getHourlyLimit(),
+                $smtp->getHourlySent(),
+                $smtp->getMinuteLimit(),
+                $smtp->getMinuteSent(),
+                $smtp->getTotalSent(),
+                $smtp->getTotalFailed(),
+                number_format($smtp->getSuccessRate(), 2, '.', ''),
+                $smtp->getLastError() ?? '',
+                $smtp->getLastUsedAt()?->format('Y-m-d H:i:s') ?? '',
+                $smtp->getCreatedAt()->format('Y-m-d H:i:s'),
+                $smtp->getUpdatedAt()->format('Y-m-d H:i:s'),
+            ], ';');
+        }
+
+        rewind($fp);
+        $csv = stream_get_contents($fp);
+        fclose($fp);
+
+        $response->getBody()->write($csv !== false ? $csv : '');
+        return $response
+            ->withHeader('Content-Type', 'text/csv; charset=utf-8')
+            ->withHeader('Content-Disposition', 'attachment; filename="smtp-hesaplari_' . date('Y-m-d_His') . '.csv"');
+    }
+
+    private function createListQueryBuilder(string $search, string $status, string $provider, string $sort): \Doctrine\ORM\QueryBuilder
+    {
+        $qb = $this->em->createQueryBuilder();
+        $qb->select('s')
+            ->from(EmailSmtpAccount::class, 's');
+
+        if ($search !== '') {
+            $qb->andWhere('s.name LIKE :search OR s.host LIKE :search OR s.username LIKE :search OR s.fromEmail LIKE :search')
+                ->setParameter('search', '%' . $search . '%');
+        }
+
+        if ($status === 'active') {
+            $qb->andWhere('s.isActive = true');
+        } elseif ($status === 'passive') {
+            $qb->andWhere('s.isActive = false');
+        } elseif ($status === 'healthy') {
+            $qb->andWhere('s.isActive = true')
+                ->andWhere('s.totalSent >= 100')
+                ->andWhere('s.successRate >= 85')
+                ->andWhere('(s.lastError IS NULL OR s.lastError = \'\')');
+        } elseif ($status === 'risk') {
+            $qb->andWhere('s.isActive = true')
+                ->andWhere('(s.lastError IS NOT NULL AND s.lastError <> \'\') OR (s.totalSent >= 15 AND s.successRate < 85)');
+        } elseif ($status === 'warming') {
+            $qb->andWhere('s.isActive = true')
+                ->andWhere('s.totalSent < 100');
+        } elseif ($status === 'throttled') {
+            $qb->andWhere('s.dailySent >= (s.dailyLimit * 0.9)');
+        }
+
+        if ($provider === 'alibaba') {
+            $qb->andWhere('LOWER(s.host) LIKE :providerAlibaba')
+                ->setParameter('providerAlibaba', '%aliy%');
+        } elseif ($provider === 'mailgun') {
+            $qb->andWhere('LOWER(s.host) LIKE :providerMailgun')
+                ->setParameter('providerMailgun', '%mailgun%');
+        } elseif ($provider === 'other') {
+            $qb->andWhere('LOWER(s.host) NOT LIKE :providerAlibabaOther')
+                ->andWhere('LOWER(s.host) NOT LIKE :providerMailgunOther')
+                ->setParameter('providerAlibabaOther', '%aliy%')
+                ->setParameter('providerMailgunOther', '%mailgun%');
+        }
+
+        if ($sort === 'most_sent') {
+            $qb->orderBy('s.totalSent', 'DESC');
+        } elseif ($sort === 'error_rate') {
+            $qb->orderBy('s.totalFailed', 'DESC');
+        } elseif ($sort === 'last_used') {
+            $qb->orderBy('s.lastUsedAt', 'DESC');
+        } else {
+            $qb->orderBy('s.createdAt', 'DESC');
+        }
+
+        return $qb;
     }
 
     private function getAlibabaReportService(): AlibabaDirectMailReportService

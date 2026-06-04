@@ -69,6 +69,17 @@
 .modal-header.bg-danger .modal-title {
     color: white !important;
 }
+.nx-esmtp-autofill-trap {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+.nx-esmtp-search-form {
+    position: relative;
+}
 </style>
 {% endblock %}
 
@@ -219,6 +230,14 @@
                             <small class="text-muted" id="nxEsmtpListCountLabel">{{ total|default(smtps|length) }} kayıt{% if search %} (sunucu filtresi: “{{ search|e }}”){% endif %}</small>
                         </div>
                         <div class="d-flex flex-wrap align-items-center gap-2">
+                            <button type="button" class="btn btn-outline-primary btn-sm nx-esmtp-tool" onclick="nxEsmtpExportCsv()" title="Mevcut filtreye göre CSV indir">
+                                <i data-feather="download" class="icon-xs me-1"></i>
+                                <span class="d-none d-sm-inline">Dışa aktar</span>
+                            </button>
+                            <button type="button" class="btn btn-primary btn-sm nx-esmtp-tool" onclick="showAddModal()" title="Yeni SMTP hesabı ekle">
+                                <i data-feather="plus-circle" class="icon-xs me-1"></i>
+                                <span class="d-none d-sm-inline">SMTP Ekle</span>
+                            </button>
                             {% if smtps|length > 0 %}
                             <button type="button" class="btn btn-outline-success btn-sm nx-esmtp-tool" id="smtpBulkActiveBtn" onclick="bulkSetStatus(true)" disabled>
                                 <i data-feather="check-circle" class="icon-xs me-1"></i>
@@ -256,11 +275,28 @@
                         <div class="card-body py-2 px-3">
                             <div class="row g-2 align-items-center">
                                 <div class="col-12 col-lg-4">
-                                    <div class="input-group input-group-sm nx-esmtp-input-h">
-                                        <span class="input-group-text bg-white"><i data-feather="search" class="icon-xs"></i></span>
-                                        <input type="text" class="form-control" id="smtpSearchClient" placeholder="İsim, host, kullanıcı, gönderen…" value="{{ search|e('html_attr') }}" autocomplete="off">
-                                        <button class="btn btn-outline-secondary" type="button" id="smtpServerSearchBtn" title="Sunucuda ara (isim, host, kullanıcı)">Sunucuda ara</button>
-                                    </div>
+                                    <form class="nx-esmtp-search-form" autocomplete="off" role="search" onsubmit="return false;">
+                                        <input type="text" tabindex="-1" aria-hidden="true" class="nx-esmtp-autofill-trap" autocomplete="username">
+                                        <input type="password" tabindex="-1" aria-hidden="true" class="nx-esmtp-autofill-trap" autocomplete="current-password">
+                                        <div class="input-group input-group-sm nx-esmtp-input-h">
+                                            <span class="input-group-text bg-white"><i data-feather="search" class="icon-xs"></i></span>
+                                            <input type="search"
+                                                class="form-control"
+                                                id="smtpSearchClient"
+                                                name="nx_esmtp_filter_q"
+                                                placeholder="İsim, host, kullanıcı, gönderen…"
+                                                value="{{ search|e('html_attr') }}"
+                                                autocomplete="off"
+                                                autocorrect="off"
+                                                autocapitalize="off"
+                                                spellcheck="false"
+                                                data-lpignore="true"
+                                                data-1p-ignore="true"
+                                                data-form-type="other"
+                                                aria-label="SMTP hesaplarında ara">
+                                            <button class="btn btn-outline-secondary" type="button" id="smtpServerSearchBtn" title="Sunucuda ara (isim, host, kullanıcı)">Sunucuda ara</button>
+                                        </div>
+                                    </form>
                                 </div>
                                 <div class="col-6 col-md-4 col-lg-2">
                                     <select class="form-select form-select-sm nx-esmtp-input-h" id="nxEsmtpStatusFilter" title="Durum">
@@ -1953,6 +1989,16 @@ function nxEsmtpApplyServerFilters(resetPage) {
     window.location.href = '/admin/email-smtp' + (params.toString() ? ('?' + params.toString()) : '');
 }
 
+function nxEsmtpExportCsv() {
+    var f = nxEsmtpCurrentFilters();
+    var params = new URLSearchParams();
+    if (f.search) params.set('search', f.search);
+    if (f.status && f.status !== 'all') params.set('status', f.status);
+    if (f.provider && f.provider !== 'all') params.set('provider', f.provider);
+    if (f.sort && f.sort !== 'newest') params.set('sort', f.sort);
+    window.location.href = '/admin/email-smtp/export' + (params.toString() ? ('?' + params.toString()) : '');
+}
+
 function nxEsmtpInit() {
     try {
         var v = localStorage.getItem('nx-esmtp-view');
@@ -1981,6 +2027,13 @@ function nxEsmtpInit() {
     var sc = document.getElementById('smtpSearchClient');
     var searchDebounce;
     if (sc) {
+        sc.setAttribute('readonly', 'readonly');
+        sc.addEventListener('focus', function () {
+            this.removeAttribute('readonly');
+        });
+        if (sc.value) {
+            sc.removeAttribute('readonly');
+        }
         sc.addEventListener('input', function () {
             clearTimeout(searchDebounce);
             searchDebounce = setTimeout(function () {

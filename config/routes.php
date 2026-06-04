@@ -404,6 +404,8 @@ return function (App $app) {
 
             $group->get('', [\App\Controllers\EmailSmtpController::class, 'index'])->setName('email-smtp.index')
                 ->add(new PermissionMiddleware($em, $twig, 'email_smtp', 'read'));
+            $group->get('/export', [\App\Controllers\EmailSmtpController::class, 'exportCsv'])->setName('email-smtp.export')
+                ->add(new PermissionMiddleware($em, $twig, 'email_smtp', 'read'));
             $group->post('', [\App\Controllers\EmailSmtpController::class, 'store'])->setName('email-smtp.store')
                 ->add(new PermissionMiddleware($em, $twig, 'email_smtp', 'create'));
             $group->get('/{id}/edit', [\App\Controllers\EmailSmtpController::class, 'edit'])->setName('email-smtp.edit')
