@@ -37,6 +37,14 @@ final class TelegramNotificationService
     public const EVENT_SYSTEM_ERROR = 'system_error';
     public const EVENT_API_ERROR = 'api_error';
 
+    /** Sipariş başına en fazla bir kez (campaign_started claim tarafında yönetilir) */
+    private const ONCE_PER_ORDER_EVENTS = [
+        'campaign_completed',
+        'campaign_failed',
+        'campaign_queued',
+        'campaign_cancelled',
+    ];
+
     private const STATUS_TO_EVENT = [
         'pending_approval' => self::EVENT_PENDING_APPROVAL,
         'pending' => self::EVENT_QUEUED,
@@ -333,6 +341,9 @@ final class TelegramNotificationService
             if ((int) ($e['only_on_error'] ?? 0) === 1 && trim((string) ($context['error_message'] ?? '')) === '') return false;
             $orderId = $order?->getId() ?: (isset($context['order_id']) ? (int) $context['order_id'] : null);
             $status = (string) ($context['status'] ?? $order?->getStatus()?->value ?? '');
+            if ($orderId && $orderId > 0 && in_array($eventKey, self::ONCE_PER_ORDER_EVENTS, true) && $this->hasOrderEventBeenSent($eventKey, $orderId)) {
+                return false;
+            }
             if ($this->isThrottled((int) ($e['throttle_minutes'] ?? 0), $eventKey, $orderId, $status)) return false;
             $tplKey = (string) ($e['template_key'] ?? $eventKey);
             $tpl = $this->em->getConnection()->fetchAssociative('SELECT * FROM ' . self::TEMPLATES_TABLE . ' WHERE template_key = ? LIMIT 1', [$tplKey]);
@@ -478,6 +489,14 @@ final class TelegramNotificationService
             'telegram_message_id' => (string) ($result['telegram_message_id'] ?? ''),
             'created_at' => $this->now(),
         ]);
+    }
+
+    private function hasOrderEventBeenSent(string $eventKey, int $orderId): bool
+    {
+        return (int) $this->em->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM ' . self::LOGS_TABLE . ' WHERE event_key = ? AND order_id = ? AND status_code = 1',
+            [$eventKey, $orderId]
+        ) > 0;
     }
 
     private function isThrottled(int $minutes, string $eventKey, ?int $orderId, string $status): bool

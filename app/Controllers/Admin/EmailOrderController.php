@@ -922,7 +922,6 @@ class EmailOrderController
                 'user_name' => (string) ($externalUserData['name'] ?? ''),
                 'user_email' => (string) ($externalUserData['email'] ?? ''),
             ];
-            $this->notifyTelegramSafely(TelegramNotificationService::EVENT_APPROVED, $order, $commonContext);
             $this->notifyTelegramSafely(TelegramNotificationService::EVENT_QUEUED, $order, $commonContext);
             return $this->jsonResponse($response, [
                 'success' => true,

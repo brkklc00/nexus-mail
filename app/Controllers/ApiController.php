@@ -284,6 +284,10 @@ class ApiController
 
         $conn = $this->em->getConnection();
         $claimed = false;
+        $previousStatus = (string) ($conn->fetchOne(
+            'SELECT status FROM email_orders WHERE id = ?',
+            [$orderId]
+        ) ?? '');
 
         try {
             $affected = $conn->executeStatement(
@@ -329,21 +333,12 @@ class ApiController
                 $lockInfo['locked_by'] ?? 'null',
                 $lockInfo['locked_at'] ?? 'null'
             );
-        } else {
+        } elseif ($previousStatus === 'pending') {
+            // Yalnızca pending → processing geçişinde "başladı" bildirimi (re-claim tekrar atmaz)
             $order = $this->em->find(EmailOrder::class, $orderId);
             if ($order instanceof EmailOrder) {
                 $this->notifyTelegramSafely(
                     TelegramNotificationService::EVENT_PROCESSING,
-                    $order,
-                    [
-                        'status' => 'processing',
-                        'worker_name' => $workerId,
-                        'worker_id' => $workerId,
-                        'started_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
-                    ]
-                );
-                $this->notifyTelegramSafely(
-                    TelegramNotificationService::EVENT_WORKER_STARTED,
                     $order,
                     [
                         'status' => 'processing',
