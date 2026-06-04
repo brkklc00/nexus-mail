@@ -19,6 +19,15 @@ final class Version20250127_AddSystemMonitorPermissions extends AbstractMigratio
         $connection = $this->connection;
         $dbName = $connection->getDatabase();
 
+        // RBAC tabloları henüz yoksa atla (Version20260518_EnsureRbacTablesForLogin oluşturur)
+        $permissionsExists = (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+            [$dbName, 'permissions']
+        ) > 0;
+        if (!$permissionsExists) {
+            return;
+        }
+
         // Kolon adlarını dinamik olarak belirle (camelCase vs snake_case)
         $columns = $connection->fetchAllAssociative(
             "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 

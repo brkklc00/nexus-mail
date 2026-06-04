@@ -2,12 +2,15 @@
 <?php
 
 /**
- * Email havuz listeleri + email_orders.pool_list_id + email_sending_config tavan kolonları.
- * Doctrine migration dosyası sunucuda yoksa veya migrate "latest" yanlış görünüyorsa çalıştırın:
+ * Admin sayfaları için eksik tablolar/kolonlar (idempotent):
+ * - email_data_pool_lists (+ total_count vb.)
+ * - email_sending_config (Hız & Limitler)
+ * - email_smtp_accounts (SMTP)
+ * - email_smtp_daily_reports (SMTP Alibaba raporu)
  *
- *   cd /var/www/main && php bin/apply-email-pool-schema.php
- *
- * Idempotent: birden fazla kez güvenle çalıştırılabilir.
+ * Migration yarım kaldıysa veya Slim Application Error görüyorsanız:
+ *   cd /var/www/nexus && php bin/apply-email-pool-schema.php
+ *   bash bin/run-doctrine-migrations.sh
  */
 
 declare(strict_types=1);
@@ -90,22 +93,139 @@ $columnNullable = static function (PDO $pdo, string $schema, string $table, stri
     return $v === 'YES';
 };
 
-echo "=== Email pool / gönderim şema yaması ({$dbName}) ===\n\n";
+echo "=== Email admin şema yaması ({$dbName}) ===\n\n";
 
 try {
+    if (!$tableExists($pdo, $dbName, 'email_smtp_accounts')) {
+        echo "→ email_smtp_accounts oluşturuluyor...\n";
+        $pdo->exec('CREATE TABLE email_smtp_accounts (
+            id INT AUTO_INCREMENT NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            host VARCHAR(255) NOT NULL,
+            port INT NOT NULL,
+            username VARCHAR(255) NOT NULL,
+            password LONGTEXT NOT NULL,
+            encryption VARCHAR(10) DEFAULT NULL,
+            from_email VARCHAR(255) NOT NULL,
+            from_name VARCHAR(255) DEFAULT NULL,
+            daily_limit INT NOT NULL DEFAULT 1000,
+            daily_sent INT NOT NULL DEFAULT 0,
+            last_reset_date DATE DEFAULT NULL,
+            hourly_limit INT NOT NULL DEFAULT 100,
+            hourly_sent INT NOT NULL DEFAULT 0,
+            last_reset_hour DATETIME DEFAULT NULL,
+            minute_limit INT NOT NULL DEFAULT 10,
+            minute_sent INT NOT NULL DEFAULT 0,
+            last_reset_minute DATETIME DEFAULT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            priority INT NOT NULL DEFAULT 1,
+            total_sent INT NOT NULL DEFAULT 0,
+            total_failed INT NOT NULL DEFAULT 0,
+            success_rate DECIMAL(5,2) NOT NULL DEFAULT 100.00,
+            last_used_at DATETIME DEFAULT NULL,
+            last_error LONGTEXT DEFAULT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY(id),
+            INDEX idx_smtp_active (is_active),
+            INDEX idx_smtp_priority (priority),
+            INDEX idx_smtp_reset_date (last_reset_date)
+        ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ENGINE = InnoDB');
+    } else {
+        foreach ([
+            'hourly_limit' => 'INT NOT NULL DEFAULT 100',
+            'hourly_sent' => 'INT NOT NULL DEFAULT 0',
+            'last_reset_hour' => 'DATETIME DEFAULT NULL',
+            'minute_limit' => 'INT NOT NULL DEFAULT 10',
+            'minute_sent' => 'INT NOT NULL DEFAULT 0',
+            'last_reset_minute' => 'DATETIME DEFAULT NULL',
+        ] as $col => $def) {
+            if (!$columnExists($pdo, $dbName, 'email_smtp_accounts', $col)) {
+                echo "→ email_smtp_accounts.{$col} ekleniyor...\n";
+                $pdo->exec("ALTER TABLE email_smtp_accounts ADD {$col} {$def}");
+            }
+        }
+    }
+
+    if (!$tableExists($pdo, $dbName, 'email_smtp_daily_reports')) {
+        echo "→ email_smtp_daily_reports oluşturuluyor...\n";
+        $pdo->exec('CREATE TABLE email_smtp_daily_reports (
+            id INT AUTO_INCREMENT NOT NULL,
+            source VARCHAR(40) NOT NULL,
+            report_date DATE NOT NULL,
+            smtp_name VARCHAR(191) NOT NULL,
+            domain VARCHAR(191) NOT NULL,
+            total INT NOT NULL DEFAULT 0,
+            successful INT NOT NULL DEFAULT 0,
+            failed INT NOT NULL DEFAULT 0,
+            invalid_address INT NOT NULL DEFAULT 0,
+            success_rate NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
+            invalid_rate NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
+            raw_payload LONGTEXT DEFAULT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            UNIQUE INDEX uniq_smtp_daily_report (source, report_date, domain, smtp_name),
+            INDEX idx_smtp_daily_report_date (report_date),
+            INDEX idx_smtp_daily_report_source (source),
+            PRIMARY KEY(id)
+        ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ENGINE = InnoDB');
+    }
+
+    if (!$tableExists($pdo, $dbName, 'email_sending_config')) {
+        echo "→ email_sending_config oluşturuluyor...\n";
+        $pdo->exec('CREATE TABLE email_sending_config (
+            id INT PRIMARY KEY DEFAULT 1,
+            daily_limit INT NOT NULL DEFAULT 20000,
+            rate_per_second DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+            rate_source VARCHAR(32) NOT NULL DEFAULT \'manual\',
+            alibaba_rate_cap DOUBLE PRECISION DEFAULT NULL,
+            max_rate_per_second DOUBLE PRECISION DEFAULT NULL,
+            worker_batch_gap_ms INT NOT NULL DEFAULT 100,
+            worker_chunk_gap_ms INT NOT NULL DEFAULT 50,
+            worker_send_concurrency INT NOT NULL DEFAULT 1,
+            worker_smtp_pool_connections INT NOT NULL DEFAULT 0,
+            worker_fetch_batch_size INT NOT NULL DEFAULT 10000,
+            worker_send_batch_size INT NOT NULL DEFAULT 500,
+            worker_max_smtp_lanes INT NOT NULL DEFAULT 10,
+            worker_throttle_step_up DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+            worker_throttle_cooldown_ms INT NOT NULL DEFAULT 15000,
+            worker_smtp_pool_max_messages INT NOT NULL DEFAULT 100,
+            alibaba_warmup_max_rate_per_second DOUBLE PRECISION DEFAULT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('INSERT IGNORE INTO email_sending_config (id, daily_limit, rate_per_second) VALUES (1, 20000, 1.00)');
+    }
+
     if (!$tableExists($pdo, $dbName, 'email_data_pool_lists')) {
         echo "→ email_data_pool_lists oluşturuluyor...\n";
         $pdo->exec('CREATE TABLE email_data_pool_lists (
             id INT AUTO_INCREMENT NOT NULL,
             name VARCHAR(255) NOT NULL,
             sort_order INT NOT NULL DEFAULT 0,
+            total_count INT NOT NULL DEFAULT 0,
+            active_count INT NOT NULL DEFAULT 0,
+            passive_count INT NOT NULL DEFAULT 0,
+            updated_count_at DATETIME DEFAULT NULL,
             created_at DATETIME NOT NULL,
             PRIMARY KEY(id)
         ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ENGINE = InnoDB');
+    } else {
+        foreach ([
+            'total_count' => 'INT NOT NULL DEFAULT 0',
+            'active_count' => 'INT NOT NULL DEFAULT 0',
+            'passive_count' => 'INT NOT NULL DEFAULT 0',
+            'updated_count_at' => 'DATETIME DEFAULT NULL',
+        ] as $col => $def) {
+            if (!$columnExists($pdo, $dbName, 'email_data_pool_lists', $col)) {
+                echo "→ email_data_pool_lists.{$col} ekleniyor...\n";
+                $pdo->exec("ALTER TABLE email_data_pool_lists ADD {$col} {$def}");
+            }
+        }
     }
 
-    $pdo->exec("INSERT INTO email_data_pool_lists (id, name, sort_order, created_at)
-        SELECT 1, 'Liste 1', 0, NOW() FROM DUAL
+    $pdo->exec("INSERT INTO email_data_pool_lists (id, name, sort_order, total_count, active_count, passive_count, created_at)
+        SELECT 1, 'Liste 1', 0, 0, 0, 0, NOW() FROM DUAL
         WHERE NOT EXISTS (SELECT 1 FROM email_data_pool_lists WHERE id = 1 LIMIT 1)");
 
     if ($tableExists($pdo, $dbName, 'email_sending_config')) {
