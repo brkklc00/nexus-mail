@@ -17,6 +17,16 @@ final class Version20260121_AddWasenderWebhookSecret extends AbstractMigration
     public function up(Schema $schema): void
     {
         $dbName = $this->connection->getDatabase();
+
+        $tableExists = (int) $this->connection->fetchOne(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+            [$dbName, 'whatsapp_accounts']
+        ) > 0;
+        if (!$tableExists) {
+            return;
+        }
+
         $n = (int) $this->connection->fetchOne(
             'SELECT COUNT(*) FROM information_schema.COLUMNS
              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',

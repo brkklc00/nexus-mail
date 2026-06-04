@@ -224,8 +224,35 @@ try {
         }
     }
 
-    $pdo->exec("INSERT INTO email_data_pool_lists (id, name, sort_order, total_count, active_count, passive_count, created_at)
-        SELECT 1, 'Liste 1', 0, 0, 0, 0, NOW() FROM DUAL
+    // Eski kurulumlarda total_count NOT NULL ama DEFAULT yoksa INSERT düşer — önce düzelt
+    foreach ([
+        'total_count' => 'INT NOT NULL DEFAULT 0',
+        'active_count' => 'INT NOT NULL DEFAULT 0',
+        'passive_count' => 'INT NOT NULL DEFAULT 0',
+    ] as $col => $def) {
+        if ($columnExists($pdo, $dbName, 'email_data_pool_lists', $col)) {
+            $pdo->exec("ALTER TABLE email_data_pool_lists MODIFY {$col} {$def}");
+        }
+    }
+
+    $insertCols = ['id', 'name', 'sort_order', 'created_at'];
+    $insertVals = ['1', "'Liste 1'", '0', 'NOW()'];
+    if ($columnExists($pdo, $dbName, 'email_data_pool_lists', 'total_count')) {
+        $insertCols[] = 'total_count';
+        $insertVals[] = '0';
+    }
+    if ($columnExists($pdo, $dbName, 'email_data_pool_lists', 'active_count')) {
+        $insertCols[] = 'active_count';
+        $insertVals[] = '0';
+    }
+    if ($columnExists($pdo, $dbName, 'email_data_pool_lists', 'passive_count')) {
+        $insertCols[] = 'passive_count';
+        $insertVals[] = '0';
+    }
+    $colList = implode(', ', $insertCols);
+    $valList = implode(', ', $insertVals);
+    $pdo->exec("INSERT INTO email_data_pool_lists ({$colList})
+        SELECT {$valList} FROM DUAL
         WHERE NOT EXISTS (SELECT 1 FROM email_data_pool_lists WHERE id = 1 LIMIT 1)");
 
     if ($tableExists($pdo, $dbName, 'email_sending_config')) {
