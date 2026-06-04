@@ -26,13 +26,13 @@ class EmailTransaction
     #[ORM\Column(type: 'string', length: 50, enumType: EmailTransactionType::class)]
     private EmailTransactionType $type;
 
-    #[ORM\Column(type: 'decimal', precision: 10, scale: 2)]
+    #[ORM\Column(type: 'decimal', precision: 14, scale: 2)]
     private float $amount;
 
-    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, name: 'balance_before')]
+    #[ORM\Column(type: 'decimal', precision: 14, scale: 2, name: 'balance_before')]
     private float $balanceBefore;
 
-    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, name: 'balance_after')]
+    #[ORM\Column(type: 'decimal', precision: 14, scale: 2, name: 'balance_after')]
     private float $balanceAfter;
 
     #[ORM\Column(type: 'text', nullable: true)]

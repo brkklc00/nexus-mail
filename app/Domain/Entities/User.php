@@ -81,7 +81,7 @@ class User
         'hizlismsgonder',
     ];
 
-    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, options: ['default' => '0.00'], name: 'email_credit')]
+    #[ORM\Column(type: 'decimal', precision: 14, scale: 2, options: ['default' => '0.00'], name: 'email_credit')]
     private float $emailCredit = 0.00;
 
     #[ORM\Column(type: 'integer', options: ['default' => 100], name: 'email_delivery_percentage')]
