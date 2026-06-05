@@ -1,0 +1,111 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Sunucu özellikleri + PHP/Nginx/MySQL limit özeti.
+ * Kullanım: sudo php bin/server-audit
+ */
+
+require __DIR__ . '/../vendor/autoload.php';
+
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+$dotenv->safeLoad();
+
+use App\Support\ServerLogInspector;
+
+function sh(string $cmd): string
+{
+    $out = shell_exec($cmd . ' 2>/dev/null');
+    return is_string($out) ? trim($out) : '';
+}
+
+function section(string $title): void
+{
+    echo PHP_EOL . str_repeat('═', 72) . PHP_EOL;
+    echo ' ' . $title . PHP_EOL;
+    echo str_repeat('═', 72) . PHP_EOL;
+}
+
+function line(string $label, string $value): void
+{
+    echo sprintf("  %-28s %s\n", $label . ':', $value);
+}
+
+section('SİSTEM');
+line('Hostname', sh('hostname'));
+line('OS', sh('lsb_release -ds') ?: sh('uname -sr'));
+line('Kernel', sh('uname -r'));
+line('CPU çekirdek', sh('nproc') ?: '?');
+line('CPU model', sh("grep -m1 'model name' /proc/cpuinfo | cut -d: -f2") ?: '?');
+line('RAM toplam', sh("free -h | awk '/^Mem:/ {print $2}'") ?: '?');
+line('RAM kullanılan', sh("free -h | awk '/^Mem:/ {print $3}'") ?: '?');
+line('RAM boş', sh("free -h | awk '/^Mem:/ {print $4}'") ?: '?');
+line('Swap', sh("free -h | awk '/^Swap:/ {print $2 \" kull:\" $3}'") ?: '?');
+line('Disk /', sh("df -h / | awk 'NR==2 {print $2 \" toplam, \" $4 \" boş (\" $5 \" dolu)\"}'") ?: '?');
+line('Load average', sh('uptime | sed "s/.*load average: //"') ?: '?');
+
+section('WEB STACK');
+line('Nginx', sh('nginx -v 2>&1 | head -1') ?: 'yok');
+line('PHP CLI', PHP_VERSION);
+line('PHP-FPM', sh('systemctl is-active php8.3-fpm 2>/dev/null') ?: sh('systemctl list-units --type=service | grep -m1 php.*fpm') ?: '?');
+line('MySQL/MariaDB', sh('mysql --version 2>/dev/null | head -1') ?: 'yok');
+line('PM2', sh('pm2 -v 2>/dev/null') ?: 'yok');
+
+section('PHP-FPM (web istekleri — CLI farklı olabilir)');
+echo ServerLogInspector::phpRuntimeSummary() . PHP_EOL;
+$fpmIni = '/etc/php/8.3/fpm/php.ini';
+if (is_readable($fpmIni)) {
+    line('FPM php.ini', $fpmIni);
+    foreach (['upload_max_filesize', 'post_max_size', 'memory_limit', 'max_execution_time', 'max_input_time'] as $k) {
+        $v = sh("grep -E '^;?\\s*{$k}\\s*=' {$fpmIni} | tail -1 | cut -d= -f2- | tr -d ' '");
+        line('  ' . $k, $v ?: '?');
+    }
+}
+$pool = '/etc/php/8.3/fpm/pool.d/www.conf';
+if (is_readable($pool)) {
+    line('FPM pool', $pool);
+    foreach (['pm', 'pm.max_children', 'pm.start_servers', 'request_terminate_timeout'] as $k) {
+        $v = sh("grep -E '^;?\\s*{$k}\\s*=' {$pool} | tail -1 | cut -d= -f2- | tr -d ' '");
+        line('  ' . $k, $v ?: '?');
+    }
+}
+
+section('NGINX SİTE LİMİTLERİ');
+echo ServerLogInspector::nginxSiteHints() . PHP_EOL;
+
+section('504 İÇİN ÖNERİ (RAM\'e göre tahmini)');
+$memMb = (int) sh("free -m | awk '/^Mem:/ {print $2}'");
+if ($memMb <= 0) {
+    $memMb = 4096;
+}
+$children = max(10, min(80, (int) floor($memMb / 128)));
+$body = $memMb >= 16384 ? '2048M' : ($memMb >= 8192 ? '1024M' : '512M');
+$timeout = $memMb >= 8192 ? '1800s' : '900s';
+echo "  Tahmini RAM: {$memMb} MB\n";
+echo "  client_max_body_size     → {$body}\n";
+echo "  post_max_size            → {$body}\n";
+echo "  memory_limit             → " . min(4096, max(1024, (int)($memMb / 4))) . "M\n";
+echo "  fastcgi_read_timeout     → {$timeout}\n";
+echo "  request_terminate_timeout→ " . rtrim($timeout, 's') . "\n";
+echo "  pm.max_children          → ~{$children}\n";
+echo PHP_EOL;
+echo "  Uygulamak için: sudo php bin/server-tune-limits\n";
+echo PHP_EOL;
+
+section('AKTİF PM2');
+$pm2 = sh('pm2 jlist 2>/dev/null');
+if ($pm2 !== '') {
+    $jobs = json_decode($pm2, true);
+    if (is_array($jobs)) {
+        foreach ($jobs as $j) {
+            if (!is_array($j)) continue;
+            line((string) ($j['name'] ?? '?'), 'status=' . ($j['pm2_env']['status'] ?? '?') . ' mem=' . round((float)($j['monit']['memory'] ?? 0) / 1048576) . 'MB');
+        }
+    }
+} else {
+    echo "  (pm2 yok veya boş)\n";
+}
+
+echo PHP_EOL;

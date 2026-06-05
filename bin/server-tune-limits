@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# RAM ve CPU'ya göre Nginx + PHP-FPM limitlerini yükseltir (504 / büyük havuz upload).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+MEM_MB=$(free -m 2>/dev/null | awk '/^Mem:/ {print $2}' || echo 4096)
+CPU=$(nproc 2>/dev/null || echo 2)
+
+if [ "$MEM_MB" -ge 16384 ]; then
+  BODY="2048M"; MEM="4096M"; TIMEOUT="1800"; CHILDREN=60
+elif [ "$MEM_MB" -ge 8192 ]; then
+  BODY="1024M"; MEM="2048M"; TIMEOUT="900"; CHILDREN=40
+elif [ "$MEM_MB" -ge 4096 ]; then
+  BODY="1024M"; MEM="1024M"; TIMEOUT="900"; CHILDREN=25
+else
+  BODY="512M"; MEM="512M"; TIMEOUT="600"; CHILDREN=15
+fi
+
+# CPU'ya göre üst sınır
+MAX_BY_CPU=$((CPU * 12))
+if [ "$CHILDREN" -gt "$MAX_BY_CPU" ]; then CHILDREN=$MAX_BY_CPU; fi
+
+FPM_INI="/etc/php/8.3/fpm/php.ini"
+FPM_POOL="/etc/php/8.3/fpm/pool.d/www.conf"
+
+echo "Sunucu: RAM=${MEM_MB}MB CPU=${CPU} → body=${BODY} timeout=${TIMEOUT}s children=${CHILDREN}"
+
+for kv in \
+  "upload_max_filesize = ${BODY}" \
+  "post_max_size = ${BODY}" \
+  "memory_limit = ${MEM}" \
+  "max_execution_time = ${TIMEOUT}" \
+  "max_input_time = ${TIMEOUT}" \
+  "max_input_vars = 20000"; do
+  key="${kv%%=*}"
+  key="${key// /}"
+  if [ -f "$FPM_INI" ]; then
+    sed -i "s/^;\\?${key}.*/${kv}/" "$FPM_INI" || true
+    grep -q "^${key}" "$FPM_INI" || echo "$kv" >> "$FPM_INI"
+  fi
+done
+
+if [ -f "$FPM_POOL" ]; then
+  for kv in \
+    "request_terminate_timeout = ${TIMEOUT}" \
+    "pm.max_children = ${CHILDREN}" \
+    "pm.start_servers = $((CHILDREN / 4 + 1))" \
+    "pm.min_spare_servers = $((CHILDREN / 8 + 1))" \
+    "pm.max_spare_servers = $((CHILDREN / 2))"; do
+    key="${kv%%=*}"
+    key="${key// /}"
+    sed -i "s/^;\\?${key}.*/${kv}/" "$FPM_POOL" || true
+    grep -q "^${key}" "$FPM_POOL" || echo "$kv" >> "$FPM_POOL"
+  done
+fi
+
+# nginx.conf yanlış satır temizliği
+sed -i '/^client_max_body_size 2048M;$/d' /etc/nginx/nginx.conf 2>/dev/null || true
+sed -i '/^client_max_body_size 1024M;$/d' /etc/nginx/nginx.conf 2>/dev/null || true
+
+NGINX_SITES=(/etc/nginx/sites-available/*)
+for SITE in "${NGINX_SITES[@]}"; do
+  [ -f "$SITE" ] || continue
+  grep -q 'root.*nexus-mail\|/var/www/nexus-mail' "$SITE" 2>/dev/null || continue
+  echo "Nginx site güncelleniyor: $SITE"
+  sed -i "s/client_max_body_size.*/client_max_body_size ${BODY};/" "$SITE"
+  if ! grep -q fastcgi_read_timeout "$SITE"; then
+    sed -i "/client_max_body_size/a\\    fastcgi_read_timeout ${TIMEOUT}s;\\n    fastcgi_send_timeout ${TIMEOUT}s;\\n    send_timeout ${TIMEOUT}s;" "$SITE"
+  else
+    sed -i "s/fastcgi_read_timeout.*/fastcgi_read_timeout ${TIMEOUT}s;/" "$SITE"
+    sed -i "s/fastcgi_send_timeout.*/fastcgi_send_timeout ${TIMEOUT}s;/" "$SITE"
+  fi
+  if grep -q 'location ~ \\.php' "$SITE" && ! grep -A25 'location ~ \\.php' "$SITE" | grep -q fastcgi_read_timeout; then
+    sed -i "/location ~ \\\\.php/,/^[[:space:]]*}/ s/fastcgi_pass/&/" "$SITE" 2>/dev/null || true
+  fi
+done
+
+systemctl reload php8.3-fpm
+nginx -t
+systemctl reload nginx
+
+echo "OK — limitler uygulandı. Doğrulama: php bin/server-audit"
