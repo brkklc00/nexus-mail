@@ -9,7 +9,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
 # Log dosyalarını bul ve temizle (mail-only)
-WORKERS=("email-worker")
+WORKERS=("email-worker" "data-pool-worker")
 TOTAL_CLEARED=0
 
 for worker in "${WORKERS[@]}"; do
