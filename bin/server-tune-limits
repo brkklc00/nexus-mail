@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # RAM ve CPU'ya göre Nginx + PHP-FPM limitlerini yükseltir (504 / büyük havuz upload).
-set -euo pipefail
+set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -8,7 +8,10 @@ cd "$ROOT"
 MEM_MB=$(free -m 2>/dev/null | awk '/^Mem:/ {print $2}' || echo 4096)
 CPU=$(nproc 2>/dev/null || echo 2)
 
-if [ "$MEM_MB" -ge 16384 ]; then
+if [ "$MEM_MB" -ge 65536 ]; then
+  BODY="2048M"; MEM="4096M"; TIMEOUT="1800"; CHILDREN=80
+  OPCACHE_MEM=512; REALPATH_CACHE="8192k"
+elif [ "$MEM_MB" -ge 16384 ]; then
   BODY="2048M"; MEM="4096M"; TIMEOUT="1800"; CHILDREN=60
   OPCACHE_MEM=512; REALPATH_CACHE="8192k"
 elif [ "$MEM_MB" -ge 8192 ]; then
@@ -22,94 +25,97 @@ else
   OPCACHE_MEM=128; REALPATH_CACHE="2048k"
 fi
 
-# CPU'ya göre üst sınır
 MAX_BY_CPU=$((CPU * 12))
 if [ "$CHILDREN" -gt "$MAX_BY_CPU" ]; then CHILDREN=$MAX_BY_CPU; fi
 
 FPM_INI="/etc/php/8.3/fpm/php.ini"
 FPM_POOL="/etc/php/8.3/fpm/pool.d/www.conf"
 
+set_ini_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local line="${key} = ${value}"
+  [ -f "$file" ] || return 0
+  if grep -qE "^[[:space:]]*;?[[:space:]]*${key}[[:space:]]*=" "$file"; then
+    sed -i -E "s/^[[:space:]]*;?[[:space:]]*${key}[[:space:]]*=.*/${line}/" "$file" || true
+  else
+    echo "$line" >> "$file"
+  fi
+}
+
+is_nexus_nginx_site() {
+  local site="$1"
+  [[ "$site" == *.bak* ]] && return 1
+  grep -qE 'nexus-mail|/var/www/nexus|hub-nexus|index\.php|fastcgi_pass.*php' "$site" 2>/dev/null
+}
+
 echo "Sunucu: RAM=${MEM_MB}MB CPU=${CPU} → body=${BODY} timeout=${TIMEOUT}s children=${CHILDREN}"
 
-for kv in \
-  "upload_max_filesize = ${BODY}" \
-  "post_max_size = ${BODY}" \
-  "memory_limit = ${MEM}" \
-  "max_execution_time = ${TIMEOUT}" \
-  "max_input_time = ${TIMEOUT}" \
-  "max_input_vars = 20000"; do
-  key="${kv%%=*}"
-  key="${key// /}"
-  if [ -f "$FPM_INI" ]; then
-    sed -i "s/^;\\?${key}.*/${kv}/" "$FPM_INI" || true
-    grep -q "^${key}" "$FPM_INI" || echo "$kv" >> "$FPM_INI"
-  fi
+for key in upload_max_filesize post_max_size memory_limit max_execution_time max_input_time max_input_vars; do
+  case "$key" in
+    upload_max_filesize) set_ini_value "$FPM_INI" "$key" "$BODY" ;;
+    post_max_size) set_ini_value "$FPM_INI" "$key" "$BODY" ;;
+    memory_limit) set_ini_value "$FPM_INI" "$key" "$MEM" ;;
+    max_execution_time|max_input_time) set_ini_value "$FPM_INI" "$key" "$TIMEOUT" ;;
+    max_input_vars) set_ini_value "$FPM_INI" "$key" "20000" ;;
+  esac
 done
 
 if [ -f "$FPM_POOL" ]; then
-  for kv in \
-    "request_terminate_timeout = ${TIMEOUT}" \
-    "pm.max_children = ${CHILDREN}" \
-    "pm.start_servers = $((CHILDREN / 4 + 1))" \
-    "pm.min_spare_servers = $((CHILDREN / 8 + 1))" \
-    "pm.max_spare_servers = $((CHILDREN / 2))"; do
-    key="${kv%%=*}"
-    key="${key// /}"
-    sed -i "s/^;\\?${key}.*/${kv}/" "$FPM_POOL" || true
-    grep -q "^${key}" "$FPM_POOL" || echo "$kv" >> "$FPM_POOL"
-  done
+  set_ini_value "$FPM_POOL" "request_terminate_timeout" "$TIMEOUT"
+  set_ini_value "$FPM_POOL" "pm.max_children" "$CHILDREN"
+  set_ini_value "$FPM_POOL" "pm.start_servers" "$((CHILDREN / 4 + 1))"
+  set_ini_value "$FPM_POOL" "pm.min_spare_servers" "$((CHILDREN / 8 + 1))"
+  set_ini_value "$FPM_POOL" "pm.max_spare_servers" "$((CHILDREN / 2))"
 fi
 
-# OPcache + realpath (FPM performans)
 if [ -f "$FPM_INI" ]; then
   echo "OPcache ayarlanıyor (memory=${OPCACHE_MEM}MB)..."
-  for kv in \
-    "opcache.enable = 1" \
-    "opcache.enable_cli = 0" \
-    "opcache.memory_consumption = ${OPCACHE_MEM}" \
-    "opcache.interned_strings_buffer = 32" \
-    "opcache.max_accelerated_files = 30000" \
-    "opcache.validate_timestamps = 1" \
-    "opcache.revalidate_freq = 2" \
-    "opcache.save_comments = 1" \
-    "opcache.jit = 1255" \
-    "opcache.jit_buffer_size = 128M" \
-    "realpath_cache_size = ${REALPATH_CACHE}" \
-    "realpath_cache_ttl = 600"; do
-    key="${kv%%=*}"
-    key="${key// /}"
-    sed -i "s/^;\\?${key}.*/${kv}/" "$FPM_INI" || true
-    grep -q "^${key}" "$FPM_INI" || echo "$kv" >> "$FPM_INI"
-  done
+  set_ini_value "$FPM_INI" "opcache.enable" "1"
+  set_ini_value "$FPM_INI" "opcache.enable_cli" "0"
+  set_ini_value "$FPM_INI" "opcache.memory_consumption" "$OPCACHE_MEM"
+  set_ini_value "$FPM_INI" "opcache.interned_strings_buffer" "32"
+  set_ini_value "$FPM_INI" "opcache.max_accelerated_files" "30000"
+  set_ini_value "$FPM_INI" "opcache.validate_timestamps" "1"
+  set_ini_value "$FPM_INI" "opcache.revalidate_freq" "2"
+  set_ini_value "$FPM_INI" "opcache.save_comments" "1"
+  set_ini_value "$FPM_INI" "opcache.jit" "1255"
+  set_ini_value "$FPM_INI" "opcache.jit_buffer_size" "128M"
+  set_ini_value "$FPM_INI" "realpath_cache_size" "$REALPATH_CACHE"
+  set_ini_value "$FPM_INI" "realpath_cache_ttl" "600"
 fi
 
-# nginx.conf yanlış satır temizliği
 sed -i '/^client_max_body_size 2048M;$/d' /etc/nginx/nginx.conf 2>/dev/null || true
 sed -i '/^client_max_body_size 1024M;$/d' /etc/nginx/nginx.conf 2>/dev/null || true
 
-NGINX_SITES=(/etc/nginx/sites-available/*)
-for SITE in "${NGINX_SITES[@]}"; do
-  [ -f "$SITE" ] || continue
-  grep -q 'root.*nexus-mail\|/var/www/nexus-mail\|root.*nexus[^-]\|/var/www/nexus[^-]\|hub-nexus' "$SITE" 2>/dev/null || continue
-  echo "Nginx site güncelleniyor: $SITE"
-  sed -i "s/client_max_body_size.*/client_max_body_size ${BODY};/" "$SITE"
-  if ! grep -q fastcgi_read_timeout "$SITE"; then
-    sed -i "/client_max_body_size/a\\    fastcgi_read_timeout ${TIMEOUT}s;\\n    fastcgi_send_timeout ${TIMEOUT}s;\\n    send_timeout ${TIMEOUT}s;" "$SITE"
-  else
-    sed -i "s/fastcgi_read_timeout.*/fastcgi_read_timeout ${TIMEOUT}s;/" "$SITE"
-    sed -i "s/fastcgi_send_timeout.*/fastcgi_send_timeout ${TIMEOUT}s;/" "$SITE"
-  fi
-  if ! grep -q 'fastcgi_buffers' "$SITE"; then
-    sed -i "/fastcgi_read_timeout/a\\    fastcgi_buffers 32 32k;\\n    fastcgi_buffer_size 64k;\\n    fastcgi_busy_buffers_size 128k;" "$SITE" 2>/dev/null || true
-  fi
-  if ! grep -q 'gzip on' "$SITE"; then
-    if grep -q 'server {' "$SITE"; then
+NGINX_DIRS=(/etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d)
+for DIR in "${NGINX_DIRS[@]}"; do
+  [ -d "$DIR" ] || continue
+  for SITE in "$DIR"/*; do
+    [ -f "$SITE" ] || continue
+    is_nexus_nginx_site "$SITE" || continue
+    echo "Nginx site güncelleniyor: $SITE"
+    if grep -q 'client_max_body_size' "$SITE"; then
+      sed -i "s/client_max_body_size.*/client_max_body_size ${BODY};/" "$SITE"
+    elif grep -q 'server_name' "$SITE"; then
+      sed -i "/server_name/a\\    client_max_body_size ${BODY};" "$SITE"
+    else
+      sed -i "/server {/a\\    client_max_body_size ${BODY};" "$SITE"
+    fi
+    if ! grep -q fastcgi_read_timeout "$SITE"; then
+      sed -i "/client_max_body_size/a\\    fastcgi_read_timeout ${TIMEOUT}s;\\n    fastcgi_send_timeout ${TIMEOUT}s;\\n    send_timeout ${TIMEOUT}s;" "$SITE"
+    else
+      sed -i "s/fastcgi_read_timeout.*/fastcgi_read_timeout ${TIMEOUT}s;/" "$SITE"
+      sed -i "s/fastcgi_send_timeout.*/fastcgi_send_timeout ${TIMEOUT}s;/" "$SITE"
+    fi
+    if ! grep -q 'fastcgi_buffers' "$SITE"; then
+      sed -i "/fastcgi_read_timeout/a\\    fastcgi_buffers 32 32k;\\n    fastcgi_buffer_size 64k;\\n    fastcgi_busy_buffers_size 128k;" "$SITE" 2>/dev/null || true
+    fi
+    if ! grep -q 'gzip on' "$SITE" && grep -q 'server {' "$SITE"; then
       sed -i "/server {/a\\    gzip on;\\n    gzip_vary on;\\n    gzip_proxied any;\\n    gzip_comp_level 5;\\n    gzip_min_length 256;\\n    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss image/svg+xml;" "$SITE"
     fi
-  fi
-  if grep -q 'location ~ \\.php' "$SITE" && ! grep -A25 'location ~ \\.php' "$SITE" | grep -q fastcgi_read_timeout; then
-    sed -i "/location ~ \\\\.php/,/^[[:space:]]*}/ s/fastcgi_pass/&/" "$SITE" 2>/dev/null || true
-  fi
+  done
 done
 
 systemctl reload php8.3-fpm

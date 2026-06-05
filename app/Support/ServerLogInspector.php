@@ -114,12 +114,16 @@ final class ServerLogInspector
             $lines[] = sprintf('  %-22s %s', $k . ':', (string) $v);
         }
 
+        if (filter_var($_ENV['APP_DEBUG'] ?? getenv('APP_DEBUG') ?: false, FILTER_VALIDATE_BOOLEAN)) {
+            $lines[] = '  ⚠ UYARI: APP_DEBUG=true — production\'da .env içinde false yapın';
+        }
+
         return implode(PHP_EOL, $lines);
     }
 
     public static function nginxSiteHints(): string
     {
-        $dirs = ['/etc/nginx/sites-enabled', '/etc/nginx/sites-available'];
+        $dirs = ['/etc/nginx/sites-enabled', '/etc/nginx/sites-available', '/etc/nginx/conf.d'];
         $lines = [];
         foreach ($dirs as $dir) {
             if (!is_dir($dir)) {
@@ -129,9 +133,14 @@ final class ServerLogInspector
                 if (!is_file($file)) {
                     continue;
                 }
+                if (str_contains(basename($file), '.bak')) {
+                    continue;
+                }
                 $content = (string) @file_get_contents($file);
-                if (preg_match('/client_max_body_size\s+([^;]+);/i', $content, $m)) {
-                    $lines[] = basename($file) . ' → client_max_body_size ' . trim($m[1]);
+                if (preg_match_all('/client_max_body_size\s+([^;]+);/i', $content, $bodyMatches)) {
+                    foreach ($bodyMatches[1] as $val) {
+                        $lines[] = basename($file) . ' → client_max_body_size ' . trim($val);
+                    }
                 }
                 if (preg_match('/fastcgi_read_timeout\s+([^;]+);/i', $content, $m)) {
                     $lines[] = basename($file) . ' → fastcgi_read_timeout ' . trim($m[1]);
