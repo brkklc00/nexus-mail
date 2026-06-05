@@ -46,8 +46,41 @@ set_ini_value() {
 
 is_nexus_nginx_site() {
   local site="$1"
+  local base
+  base=$(basename "$site")
   [[ "$site" == *.bak* ]] && return 1
-  grep -qE 'nexus-mail|/var/www/nexus|hub-nexus|index\.php|fastcgi_pass.*php' "$site" 2>/dev/null
+
+  if [[ "$site" == */conf.d/* ]]; then
+    grep -qE 'client_max_body_size|fastcgi_read_timeout|nexus|hub-nexus|mail-pool|nexus-mail' "$site" 2>/dev/null
+    return $?
+  fi
+
+  if [[ "$base" == "default" ]]; then
+    grep -qE 'nexus-mail|/var/www/nexus|hub-nexus' "$site" 2>/dev/null || return 1
+  fi
+
+  grep -qE 'nexus-mail|/var/www/nexus|hub-nexus' "$site" 2>/dev/null
+}
+
+update_nginx_site() {
+  local site="$1"
+  echo "Nginx site güncelleniyor: $site"
+  if grep -q 'client_max_body_size' "$site"; then
+    sed -i "s/client_max_body_size.*/client_max_body_size ${BODY};/" "$site"
+  elif grep -q 'server_name' "$site"; then
+    sed -i "/server_name/a\\    client_max_body_size ${BODY};" "$site"
+  else
+    sed -i "/server {/a\\    client_max_body_size ${BODY};" "$site"
+  fi
+  if ! grep -q fastcgi_read_timeout "$site"; then
+    sed -i "/client_max_body_size/a\\    fastcgi_read_timeout ${TIMEOUT}s;\\n    fastcgi_send_timeout ${TIMEOUT}s;\\n    send_timeout ${TIMEOUT}s;" "$site"
+  else
+    sed -i "s/fastcgi_read_timeout.*/fastcgi_read_timeout ${TIMEOUT}s;/" "$site"
+    sed -i "s/fastcgi_send_timeout.*/fastcgi_send_timeout ${TIMEOUT}s;/" "$site"
+  fi
+  if ! grep -q 'fastcgi_buffers' "$site"; then
+    sed -i "/fastcgi_read_timeout/a\\    fastcgi_buffers 32 32k;\\n    fastcgi_buffer_size 64k;\\n    fastcgi_busy_buffers_size 128k;" "$site" 2>/dev/null || true
+  fi
 }
 
 echo "Sunucu: RAM=${MEM_MB}MB CPU=${CPU} → body=${BODY} timeout=${TIMEOUT}s children=${CHILDREN}"
@@ -89,38 +122,30 @@ fi
 sed -i '/^client_max_body_size 2048M;$/d' /etc/nginx/nginx.conf 2>/dev/null || true
 sed -i '/^client_max_body_size 1024M;$/d' /etc/nginx/nginx.conf 2>/dev/null || true
 
+declare -A NGINX_SEEN=()
 NGINX_DIRS=(/etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d)
 for DIR in "${NGINX_DIRS[@]}"; do
   [ -d "$DIR" ] || continue
   for SITE in "$DIR"/*; do
     [ -f "$SITE" ] || continue
+    REAL_SITE=$(readlink -f "$SITE" 2>/dev/null || echo "$SITE")
+    [ -n "${NGINX_SEEN[$REAL_SITE]:-}" ] && continue
+    NGINX_SEEN[$REAL_SITE]=1
     is_nexus_nginx_site "$SITE" || continue
-    echo "Nginx site güncelleniyor: $SITE"
-    if grep -q 'client_max_body_size' "$SITE"; then
-      sed -i "s/client_max_body_size.*/client_max_body_size ${BODY};/" "$SITE"
-    elif grep -q 'server_name' "$SITE"; then
-      sed -i "/server_name/a\\    client_max_body_size ${BODY};" "$SITE"
-    else
-      sed -i "/server {/a\\    client_max_body_size ${BODY};" "$SITE"
-    fi
-    if ! grep -q fastcgi_read_timeout "$SITE"; then
-      sed -i "/client_max_body_size/a\\    fastcgi_read_timeout ${TIMEOUT}s;\\n    fastcgi_send_timeout ${TIMEOUT}s;\\n    send_timeout ${TIMEOUT}s;" "$SITE"
-    else
-      sed -i "s/fastcgi_read_timeout.*/fastcgi_read_timeout ${TIMEOUT}s;/" "$SITE"
-      sed -i "s/fastcgi_send_timeout.*/fastcgi_send_timeout ${TIMEOUT}s;/" "$SITE"
-    fi
-    if ! grep -q 'fastcgi_buffers' "$SITE"; then
-      sed -i "/fastcgi_read_timeout/a\\    fastcgi_buffers 32 32k;\\n    fastcgi_buffer_size 64k;\\n    fastcgi_busy_buffers_size 128k;" "$SITE" 2>/dev/null || true
-    fi
-    if ! grep -q 'gzip on' "$SITE" && grep -q 'server {' "$SITE"; then
-      sed -i "/server {/a\\    gzip on;\\n    gzip_vary on;\\n    gzip_proxied any;\\n    gzip_comp_level 5;\\n    gzip_min_length 256;\\n    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss image/svg+xml;" "$SITE"
-    fi
+    update_nginx_site "$SITE"
   done
 done
 
 systemctl reload php8.3-fpm
-nginx -t
-systemctl reload nginx
 
-echo "OK — limitler uygulandı. Doğrulama: sudo php bin/server-audit"
+if nginx -t; then
+  systemctl reload nginx
+  echo "OK — limitler uygulandı. Doğrulama: sudo php bin/server-audit"
+else
+  echo "HATA: nginx -t başarısız — PHP-FPM güncellendi, nginx reload EDİLMEDİ."
+  echo "Muhtemel neden: sites-enabled/default içinde duplicate 'gzip on;' (tune'un eski sürümü eklemiş olabilir)."
+  echo "Düzelt: grep -n 'gzip on' /etc/nginx/sites-enabled/default  → fazla satırı sil, sonra: sudo nginx -t && sudo systemctl reload nginx"
+  exit 1
+fi
+
 echo "Deploy sonrası OPcache temizlemek için: sudo systemctl reload php8.3-fpm"
