@@ -1,0 +1,183 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Mail havuzu listelerini ve tüm pool kayıtlarını sıfırlar.
+ *
+ * Kullanım:
+ *   php bin/reset-email-data-pool --force
+ *   php bin/reset-email-data-pool --force --keep-lists
+ *   php bin/reset-email-data-pool --force --clear-alibaba
+ *
+ * --force            Zorunlu (yanlışlıkla çalışmayı önler)
+ * --keep-lists       Listeleri silmez; sadece mail kayıtları + cache/job tablolarını temizler
+ * --clear-alibaba    alibaba_invalid_* tablolarını da temizler
+ * --default-list     Yeni varsayılan liste adı (varsayılan: Liste 1)
+ */
+
+require __DIR__ . '/../vendor/autoload.php';
+
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+$dotenv->safeLoad();
+
+$argv = $_SERVER['argv'] ?? [];
+$force = in_array('--force', $argv, true);
+$keepLists = in_array('--keep-lists', $argv, true);
+$clearAlibaba = in_array('--clear-alibaba', $argv, true);
+$defaultListName = 'Liste 1';
+
+foreach ($argv as $i => $arg) {
+    if ($arg === '--default-list' && isset($argv[$i + 1])) {
+        $defaultListName = trim((string) $argv[$i + 1]);
+    }
+}
+
+if (!$force) {
+    fwrite(STDERR, "UYARI: Bu işlem mail havuzu verilerini kalıcı olarak siler.\n");
+    fwrite(STDERR, "Devam etmek için: php bin/reset-email-data-pool --force\n");
+    fwrite(STDERR, "Sadece mailleri sil (listeler kalsın): --force --keep-lists\n");
+    exit(1);
+}
+
+if ($defaultListName === '') {
+    fwrite(STDERR, "Hata: --default-list boş olamaz.\n");
+    exit(1);
+}
+
+$host = (string) ($_ENV['DB_HOST'] ?? '127.0.0.1');
+if ($host === 'localhost') {
+    $host = '127.0.0.1';
+}
+$dbName = (string) ($_ENV['DB_NAME'] ?? '');
+$dbUser = (string) ($_ENV['DB_USER'] ?? 'root');
+$dbPass = (string) ($_ENV['DB_PASSWORD'] ?? '');
+
+if ($dbName === '') {
+    fwrite(STDERR, "Hata: .env içinde DB_NAME tanımlı değil.\n");
+    exit(1);
+}
+
+try {
+    $pdo = new PDO(
+        sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', $host, $dbName),
+        $dbUser,
+        $dbPass,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+    );
+} catch (PDOException $e) {
+    fwrite(STDERR, 'Veritabanı bağlantı hatası: ' . $e->getMessage() . PHP_EOL);
+    exit(1);
+}
+
+function tableExists(PDO $pdo, string $table): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+    );
+    $stmt->execute([$table]);
+
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function countTable(PDO $pdo, string $table): int
+{
+    if (!tableExists($pdo, $table)) {
+        return 0;
+    }
+
+    return (int) $pdo->query('SELECT COUNT(*) FROM `' . str_replace('`', '``', $table) . '`')->fetchColumn();
+}
+
+function truncateTable(PDO $pdo, string $table): void
+{
+    if (!tableExists($pdo, $table)) {
+        echo "  atlandı (yok): {$table}\n";
+        return;
+    }
+    $pdo->exec('TRUNCATE TABLE `' . str_replace('`', '``', $table) . '`');
+    echo "  temizlendi: {$table}\n";
+}
+
+echo PHP_EOL . 'Mail Havuzu Sıfırlama' . PHP_EOL;
+echo str_repeat('─', 40) . PHP_EOL;
+echo 'Mod: ' . ($keepLists ? 'sadece kayıtlar (--keep-lists)' : 'listeler + kayıtlar') . PHP_EOL;
+echo 'Önce:' . PHP_EOL;
+echo '  email_data_pool: ' . number_format(countTable($pdo, 'email_data_pool')) . PHP_EOL;
+echo '  email_data_pool_lists: ' . number_format(countTable($pdo, 'email_data_pool_lists')) . PHP_EOL;
+echo PHP_EOL;
+
+$pdo->beginTransaction();
+
+try {
+    $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+
+    truncateTable($pdo, 'email_data_pool');
+    truncateTable($pdo, 'email_data_pool_analysis_cache');
+    truncateTable($pdo, 'email_data_pool_analysis_jobs');
+    truncateTable($pdo, 'email_pool_stats');
+    truncateTable($pdo, 'data_pool_jobs');
+
+    if ($clearAlibaba) {
+        truncateTable($pdo, 'alibaba_invalid_addresses');
+        truncateTable($pdo, 'alibaba_invalid_fetch_logs');
+    }
+
+    if ($keepLists) {
+        if (tableExists($pdo, 'email_data_pool_lists')) {
+            $pdo->exec(
+                'UPDATE email_data_pool_lists SET total_count = 0, active_count = 0, passive_count = 0, updated_count_at = NOW()'
+            );
+            echo "  sıfırlandı: email_data_pool_lists (sayılar)\n";
+        }
+    } else {
+        truncateTable($pdo, 'email_data_pool_lists');
+        $stmt = $pdo->prepare(
+            'INSERT INTO email_data_pool_lists
+                (id, name, sort_order, created_at, total_count, active_count, passive_count, updated_count_at)
+             VALUES (1, ?, 0, NOW(), 0, 0, 0, NOW())'
+        );
+        $stmt->execute([$defaultListName]);
+        $pdo->exec('ALTER TABLE email_data_pool_lists AUTO_INCREMENT = 2');
+        echo "  oluşturuldu: varsayılan liste \"{$defaultListName}\"\n";
+    }
+
+    $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+    $pdo->commit();
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    try {
+        $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+    } catch (Throwable) {
+    }
+    fwrite(STDERR, 'Hata: ' . $e->getMessage() . PHP_EOL);
+    exit(1);
+}
+
+$cacheDir = __DIR__ . '/../var/cache';
+if (is_dir($cacheDir)) {
+    foreach (glob($cacheDir . '/*') ?: [] as $path) {
+        if (is_file($path)) {
+            @unlink($path);
+        } elseif (is_dir($path)) {
+            $it = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($it as $file) {
+                $file->isDir() ? @rmdir($file->getPathname()) : @unlink($file->getPathname());
+            }
+            @rmdir($path);
+        }
+    }
+    echo "  temizlendi: var/cache/\n";
+}
+
+echo PHP_EOL . 'Sonra:' . PHP_EOL;
+echo '  email_data_pool: ' . number_format(countTable($pdo, 'email_data_pool')) . PHP_EOL;
+echo '  email_data_pool_lists: ' . number_format(countTable($pdo, 'email_data_pool_lists')) . PHP_EOL;
+echo PHP_EOL . 'OK — mail havuzu sıfırlandı.' . PHP_EOL;
+echo 'Worker varsa: pm2 restart data-pool-worker email-worker' . PHP_EOL;
