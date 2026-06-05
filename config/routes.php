@@ -628,7 +628,11 @@ return function (App $app) {
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'read'));
             $group->post('', [\App\Controllers\EmailDataPoolController::class, 'store'])->setName('admin.email-data-pool.store')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'create'));
+            $group->post('/import-batch', [\App\Controllers\EmailDataPoolController::class, 'importBatch'])->setName('admin.email-data-pool.import-batch')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'create'));
             $group->post('/remove', [\App\Controllers\EmailDataPoolController::class, 'remove'])->setName('admin.email-data-pool.remove')
+                ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'delete'));
+            $group->post('/remove-batch', [\App\Controllers\EmailDataPoolController::class, 'removeBatch'])->setName('admin.email-data-pool.remove-batch')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'delete'));
             $group->post('/lists', [\App\Controllers\EmailDataPoolController::class, 'storeList'])->setName('admin.email-data-pool.lists.store')
                 ->add(new PermissionMiddleware($em, $twig, 'email_data_pool', 'create'));

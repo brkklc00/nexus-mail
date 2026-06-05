@@ -1390,7 +1390,7 @@
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form action="/admin/email-data-pool" method="POST" id="addForm" onsubmit="return showAddLoading()">
+            <form action="/admin/email-data-pool" method="POST" id="addForm" onsubmit="return submitPoolImport(event)">
                 <input type="hidden" name="pool_list_id" value="{{ current_list_id|default(0) }}">
                 <div class="modal-body">
                     <ul class="nav nav-tabs nav-tabs-custom mb-3" role="tablist">
@@ -1414,7 +1414,7 @@
                                     <span><strong>Mail Adresleri</strong> <span class="text-danger">*</span></span>
                                     <span class="badge bg-primary" id="emailCount">0 mail</span>
                                 </label>
-                                <textarea class="form-control font-monospace" id="emails" name="emails" rows="12" required placeholder="Her satıra bir mail adresi yazın:
+                                <textarea class="form-control font-monospace" id="emails" name="emails" rows="12" placeholder="Her satıra bir mail adresi yazın:
 
 user@example.com
 info@company.com
@@ -1478,7 +1478,7 @@ Format: email@domain.com veya email@domain.com,İsim" oninput="updateEmailCount(
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form action="/admin/email-data-pool/remove" method="POST" id="removeForm" onsubmit="return showRemoveLoading()">
+            <form action="/admin/email-data-pool/remove" method="POST" id="removeForm" onsubmit="return submitPoolRemove(event)">
                 <input type="hidden" name="pool_list_id" value="{{ current_list_id|default(0) }}">
                 <div class="modal-body">
                     <div class="card border mb-4">
@@ -1523,7 +1523,7 @@ Format: email@domain.com veya email@domain.com,İsim" oninput="updateEmailCount(
                                     <span><strong>Çıkarılacak Mail Adresleri</strong> <span class="text-danger">*</span></span>
                                     <span class="badge bg-danger" id="removeEmailCount">0 mail</span>
                                 </label>
-                                <textarea class="form-control font-monospace" id="removeEmails" name="emails" rows="12" required placeholder="Her satıra bir mail adresi yazın:
+                                <textarea class="form-control font-monospace" id="removeEmails" name="emails" rows="12" placeholder="Her satıra bir mail adresi yazın:
 
 user@example.com
 info@company.com
@@ -1694,6 +1694,9 @@ Format: email@domain.com" oninput="updateRemoveEmailCount()" style="font-size: 1
 <script>
 const CURRENT_POOL_LIST_ID = {{ current_list_id|default(0) }};
 const CLEANER_CSRF_TOKEN = '{{ cleaner_csrf|default('')|e('js') }}';
+const POOL_BATCH_SIZE = 4000;
+const POOL_IMPORT_BATCH_URL = '/admin/email-data-pool/import-batch';
+const POOL_REMOVE_BATCH_URL = '/admin/email-data-pool/remove-batch';
 function appendPoolListToForm(form) {
     if (!CURRENT_POOL_LIST_ID) return;
     const h = document.createElement('input');
@@ -1713,20 +1716,29 @@ function updateEmailCount() {
 
 function handleFileSelect(event) {
     const file = event.target.files[0];
-    if (!file) return;
-
     const statusDiv = document.getElementById('fileStatus');
-    statusDiv.innerHTML = '<div class="alert alert-info">Dosya okunuyor...</div>';
-
-    const fileExt = file.name.split('.').pop().toLowerCase();
-
-    if (fileExt === 'txt' || fileExt === 'csv') {
-        readTextFile(file, fileExt);
-    } else if (fileExt === 'xlsx' || fileExt === 'xls') {
-        readExcelFile(file);
-    } else {
-        statusDiv.innerHTML = '<div class="alert alert-danger">Desteklenmeyen dosya formatı</div>';
+    if (!file) {
+        statusDiv.innerHTML = '';
+        return;
     }
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['txt', 'csv', 'xlsx', 'xls'].includes(ext)) {
+        statusDiv.innerHTML = '<div class="alert alert-danger mb-0">Desteklenmeyen dosya formatı</div>';
+        return;
+    }
+    statusDiv.innerHTML = `
+        <div class="alert alert-info mb-0">
+            <strong>${file.name}</strong> (${formatFileSize(file.size)}) seçildi.
+            <br>Dosya gönderimde parça parça okunur; textarea doldurulmaz (504 / bellek optimizasyonu).
+        </div>`;
+}
+
+function readTextFile(file, type) {
+    handleFileSelect({ target: { files: [file] } });
+}
+
+function readExcelFile(file) {
+    handleFileSelect({ target: { files: [file] } });
 }
 
 function normalizeHeaderName(header) {
@@ -1883,145 +1895,485 @@ function parseRowsToImport(rows, requireHeaderEmailColumn = false) {
     return { records, stats };
 }
 
-function readTextFile(file, type) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const text = String(e.target.result || '').replace(/^\uFEFF/, '');
-            const delimiter = type === 'csv' ? detectDelimiterFromText(text) : ',';
-            const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
-            const rows = type === 'csv'
-                ? lines.map(line => parseCsvLine(line, delimiter))
-                : lines.map(line => [line]);
-
-            const result = parseRowsToImport(rows, true);
-            document.getElementById('emails').value = result.records.join('\n');
-            updateEmailCount();
-
-            document.getElementById('fileStatus').innerHTML = `
-                <div class="alert alert-success alert-dismissible fade show">
-                    <i data-feather="check-circle"></i>
-                    <strong>Import özeti:</strong>
-                    Toplam satır ${result.stats.totalRows.toLocaleString('tr-TR')},
-                    Geçerli ${result.stats.validEmail.toLocaleString('tr-TR')},
-                    Duplicate atlanan ${result.stats.duplicateSkipped.toLocaleString('tr-TR')},
-                    Geçersiz atlanan ${result.stats.invalidSkipped.toLocaleString('tr-TR')},
-                    Durum nedeniyle atlanan ${result.stats.statusSkipped.toLocaleString('tr-TR')}.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>`;
-            feather.replace();
-            document.querySelector('[href="#manualTab"]').click();
-        } catch (err) {
-            document.getElementById('fileStatus').innerHTML = `
-                <div class="alert alert-danger alert-dismissible fade show">
-                    <i data-feather="x-circle"></i>
-                    ${err.message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>`;
-            feather.replace();
-        }
-    };
-    reader.readAsText(file, 'UTF-8');
+function formatFileSize(bytes) {
+    if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return bytes + ' B';
 }
 
-function readExcelFile(file) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, {type: 'array'});
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1, defval: ''});
-            const result = parseRowsToImport(rows, true);
-            document.getElementById('emails').value = result.records.join('\n');
-            updateEmailCount();
-            
-            document.getElementById('fileStatus').innerHTML = `
-                <div class="alert alert-success alert-dismissible fade show">
-                    <i data-feather="check-circle"></i>
-                    <strong>Import özeti:</strong>
-                    Toplam satır ${result.stats.totalRows.toLocaleString('tr-TR')},
-                    Geçerli ${result.stats.validEmail.toLocaleString('tr-TR')},
-                    Duplicate atlanan ${result.stats.duplicateSkipped.toLocaleString('tr-TR')},
-                    Geçersiz atlanan ${result.stats.invalidSkipped.toLocaleString('tr-TR')},
-                    Durum nedeniyle atlanan ${result.stats.statusSkipped.toLocaleString('tr-TR')}.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>`;
-            feather.replace();
-            
-            // Manuel tab'a geç
-            document.querySelector('[href="#manualTab"]').click();
-        } catch (error) {
-            document.getElementById('fileStatus').innerHTML = `
-                <div class="alert alert-danger alert-dismissible fade show">
-                    <i data-feather="x-circle"></i> 
-                    <strong>Hata!</strong> Excel dosyası okunamadı: ${error.message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>`;
-            feather.replace();
-        }
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-function showAddLoading() {
-    const emails = document.getElementById('emails').value.trim();
-    if (!emails) {
-        alert('Lütfen en az bir mail adresi girin');
-        return false;
-    }
-
-    const count = emails.split('\n').filter(l => l.trim()).length;
-    document.getElementById('loadingText').textContent = `${count.toLocaleString()} adres ekleniyor…`;
-    document.getElementById('loadingSubtext').textContent = 'Lütfen bekleyin';
+function showPoolLoading(title, subtext, percent) {
+    document.getElementById('loadingText').textContent = title;
+    document.getElementById('loadingSubtext').textContent = subtext || 'Lütfen bekleyin';
     const progressBar = document.getElementById('loadingProgress');
-    progressBar.style.width = '0%';
-    progressBar.textContent = '';
-    const overlay = document.getElementById('loadingOverlay');
-    overlay.classList.add('is-visible');
-
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += 5;
-        if (progress >= 90) clearInterval(interval);
-        progressBar.style.width = progress + '%';
-    }, 100);
-
-    return true;
+    progressBar.style.width = Math.max(0, Math.min(100, percent || 0)) + '%';
+    progressBar.textContent = percent >= 0 && percent <= 100 ? Math.round(percent) + '%' : '';
+    document.getElementById('loadingOverlay').classList.add('is-visible');
 }
 
-function showRemoveLoading() {
-    const ta = document.getElementById('removeEmails');
-    const emails = (ta && ta.value.trim()) || '';
-    if (!emails) {
-        alert('Lütfen en az bir mail adresi girin veya dosyadan yükleyin');
+function hidePoolLoading() {
+    document.getElementById('loadingOverlay').classList.remove('is-visible');
+}
+
+async function postPoolBatch(url, payload) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'same-origin',
+    });
+    let data = {};
+    try {
+        data = await res.json();
+    } catch (e) {
+        throw new Error('Sunucu yanıtı okunamadı');
+    }
+    if (!res.ok || !data.success) {
+        throw new Error(data.message || 'İşlem başarısız');
+    }
+    return data;
+}
+
+function recordFromRow(row, map) {
+    if (!row || !row.length) return null;
+    let email = map.emailIndex !== null ? row[map.emailIndex] : '';
+    let name = map.nameIndex !== null ? row[map.nameIndex] : '';
+    const status = map.statusIndex !== null ? row[map.statusIndex] : '';
+    if (!email) {
+        const found = row.find(cell => String(cell || '').includes('@'));
+        email = found || '';
+    }
+    email = String(email || '').trim().toLowerCase();
+    name = String(name || '').trim();
+    if (!isValidEmail(email)) return null;
+    if (map.statusIndex !== null && isPassiveStatus(status)) return { skip: 'status' };
+    return { email, name: name || null };
+}
+
+function emailFromRow(row, map) {
+    const rec = recordFromRow(row, map);
+    return rec && !rec.skip ? rec.email : null;
+}
+
+async function processParsedRow(row, map, mode, seen, stats, batch, onBatch) {
+    stats.totalRows++;
+    if (mode === 'remove') {
+        const email = emailFromRow(row, map);
+        if (!email) {
+            stats.invalidSkipped++;
+            return;
+        }
+        if (seen.has(email)) {
+            stats.duplicateSkipped++;
+            return;
+        }
+        seen.add(email);
+        stats.validEmail++;
+        batch.push(email);
+    } else {
+        const rec = recordFromRow(row, map);
+        if (!rec) {
+            stats.invalidSkipped++;
+            return;
+        }
+        if (rec.skip === 'status') {
+            stats.statusSkipped++;
+            return;
+        }
+        if (seen.has(rec.email)) {
+            stats.duplicateSkipped++;
+            return;
+        }
+        seen.add(rec.email);
+        stats.validEmail++;
+        batch.push(rec);
+    }
+    if (batch.length >= POOL_BATCH_SIZE) {
+        const chunk = batch.splice(0, batch.length);
+        await onBatch(chunk, stats, false);
+    }
+}
+
+async function streamTextFileRecords(file, onBatch, mode) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const isCsv = ext === 'csv';
+    const chunkSize = 4 * 1024 * 1024;
+    let offset = 0;
+    let partialLine = '';
+    let headerMap = { hasHeader: false, emailIndex: null, nameIndex: null, statusIndex: null };
+    let delimiter = ',';
+    let headerReady = false;
+    let batch = [];
+    const stats = { totalRows: 0, validEmail: 0, duplicateSkipped: 0, invalidSkipped: 0, statusSkipped: 0 };
+    const seen = new Set();
+
+    while (offset < file.size) {
+        const slice = file.slice(offset, offset + chunkSize);
+        const text = partialLine + await slice.text();
+        const lines = text.split(/\r?\n/);
+        partialLine = lines.pop() || '';
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (!headerReady) {
+                delimiter = isCsv ? detectDelimiterFromText(trimmed) : ',';
+                const headerRow = isCsv ? parseCsvLine(trimmed, delimiter) : [trimmed];
+                headerMap = detectHeaderMap(headerRow);
+                headerReady = true;
+                if (headerMap.hasHeader) continue;
+                await processParsedRow(headerRow, headerMap, mode, seen, stats, batch, onBatch);
+                continue;
+            }
+
+            const row = isCsv ? parseCsvLine(trimmed, delimiter) : [trimmed];
+            await processParsedRow(row, headerMap, mode, seen, stats, batch, onBatch);
+        }
+
+        offset += chunkSize;
+        showPoolLoading(
+            'Dosya okunuyor…',
+            `${stats.validEmail.toLocaleString('tr-TR')} geçerli mail bulundu`,
+            Math.min(95, Math.round((offset / file.size) * 90))
+        );
+    }
+
+    if (partialLine.trim()) {
+        if (!headerReady) {
+            delimiter = isCsv ? detectDelimiterFromText(partialLine.trim()) : ',';
+            const headerRow = isCsv ? parseCsvLine(partialLine.trim(), delimiter) : [partialLine.trim()];
+            headerMap = detectHeaderMap(headerRow);
+            if (!headerMap.hasHeader) {
+                await processParsedRow(headerRow, headerMap, mode, seen, stats, batch, onBatch);
+            }
+        } else {
+            const row = isCsv ? parseCsvLine(partialLine.trim(), delimiter) : [partialLine.trim()];
+            await processParsedRow(row, headerMap, mode, seen, stats, batch, onBatch);
+        }
+    }
+
+    if (batch.length) {
+        await onBatch(batch.splice(0, batch.length), stats, false);
+    }
+    await onBatch([], stats, true);
+    return stats;
+}
+
+async function streamExcelRecords(file, onBatch, mode) {
+    if (typeof XLSX === 'undefined') {
+        throw new Error('Excel kütüphanesi yüklenemedi');
+    }
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+    const result = parseRowsToImport(rows, true);
+    const stats = { ...result.stats };
+    let batch = [];
+
+    for (const line of result.records) {
+        if (mode === 'remove') {
+            const email = String(line).split(',')[0].trim().toLowerCase();
+            batch.push(email);
+        } else {
+            const parts = String(line).split(',');
+            batch.push({ email: parts[0].trim().toLowerCase(), name: parts[1] ? parts[1].trim() : null });
+        }
+        if (batch.length >= POOL_BATCH_SIZE) {
+            await onBatch(batch.splice(0, batch.length), stats, false);
+        }
+    }
+    if (batch.length) {
+        await onBatch(batch.splice(0, batch.length), stats, false);
+    }
+    await onBatch([], stats, true);
+    return stats;
+}
+
+async function runImportBatchStream(records, importStats, startTime) {
+    const totals = {
+        added: 0,
+        existing_skipped: 0,
+        valid_email: importStats?.validEmail || 0,
+        duplicate_skipped: importStats?.duplicateSkipped || 0,
+        invalid_skipped: importStats?.invalidSkipped || 0,
+        status_skipped: importStats?.statusSkipped || 0,
+    };
+    const totalBatches = Math.max(1, Math.ceil(records.length / POOL_BATCH_SIZE));
+
+    for (let i = 0; i < records.length; i += POOL_BATCH_SIZE) {
+        const chunk = records.slice(i, i + POOL_BATCH_SIZE);
+        const batchNo = Math.floor(i / POOL_BATCH_SIZE) + 1;
+        showPoolLoading(
+            `${Math.min(i + chunk.length, records.length).toLocaleString('tr-TR')} / ${records.length.toLocaleString('tr-TR')} adres işleniyor…`,
+            `Parça ${batchNo}/${totalBatches}`,
+            Math.round((batchNo / totalBatches) * 100)
+        );
+        const data = await postPoolBatch(POOL_IMPORT_BATCH_URL, {
+            pool_list_id: CURRENT_POOL_LIST_ID,
+            emails: chunk,
+            is_final: false,
+        });
+        totals.added += data.added || 0;
+        totals.existing_skipped += data.existing_skipped || 0;
+    }
+
+    totals.elapsed_seconds = (Date.now() - startTime) / 1000;
+    const finalData = await postPoolBatch(POOL_IMPORT_BATCH_URL, {
+        pool_list_id: CURRENT_POOL_LIST_ID,
+        emails: [],
+        is_final: true,
+        totals,
+    });
+    if (finalData.redirect) window.location.href = finalData.redirect;
+}
+
+async function runImportBatchLive(onBatchCallback, startTime) {
+    const totals = {
+        added: 0,
+        existing_skipped: 0,
+        valid_email: 0,
+        duplicate_skipped: 0,
+        invalid_skipped: 0,
+        status_skipped: 0,
+    };
+    let batchNo = 0;
+
+    await onBatchCallback(async (chunk, stats, isLast) => {
+        totals.valid_email = stats.validEmail || totals.valid_email;
+        totals.duplicate_skipped = stats.duplicateSkipped || 0;
+        totals.invalid_skipped = stats.invalidSkipped || 0;
+        totals.status_skipped = stats.statusSkipped || 0;
+
+        if (chunk.length) {
+            batchNo++;
+            showPoolLoading(
+                `${totals.valid_email.toLocaleString('tr-TR')} geçerli mail`,
+                `Sunucuya parça ${batchNo} gönderiliyor…`,
+                Math.min(99, 20 + batchNo * 3)
+            );
+            const data = await postPoolBatch(POOL_IMPORT_BATCH_URL, {
+                pool_list_id: CURRENT_POOL_LIST_ID,
+                emails: chunk,
+                is_final: false,
+            });
+            totals.added += data.added || 0;
+            totals.existing_skipped += data.existing_skipped || 0;
+        }
+
+        if (isLast) {
+            if ((totals.valid_email || 0) === 0 && (totals.added || 0) === 0) {
+                throw new Error('Geçerli mail adresi bulunamadı');
+            }
+            totals.elapsed_seconds = (Date.now() - startTime) / 1000;
+            const finalData = await postPoolBatch(POOL_IMPORT_BATCH_URL, {
+                pool_list_id: CURRENT_POOL_LIST_ID,
+                emails: [],
+                is_final: true,
+                totals,
+            });
+            if (finalData.redirect) window.location.href = finalData.redirect;
+        }
+    });
+}
+
+async function runRemoveBatchLive(onBatchCallback, removeScope, startTime) {
+    const totals = { removed: 0 };
+    let batchNo = 0;
+
+    await onBatchCallback(async (chunk, stats, isLast) => {
+        if (chunk.length) {
+            batchNo++;
+            showPoolLoading(
+                `${(stats?.validEmail || batchNo * POOL_BATCH_SIZE).toLocaleString('tr-TR')} adres`,
+                `Silme parçası ${batchNo}…`,
+                Math.min(99, 20 + batchNo * 3)
+            );
+            const data = await postPoolBatch(POOL_REMOVE_BATCH_URL, {
+                pool_list_id: CURRENT_POOL_LIST_ID,
+                remove_scope: removeScope,
+                emails: chunk,
+                is_final: false,
+            });
+            totals.removed += data.removed || 0;
+        }
+
+        if (isLast) {
+            if ((stats?.validEmail || 0) === 0) {
+                throw new Error('Geçerli mail adresi bulunamadı');
+            }
+            totals.elapsed_seconds = (Date.now() - startTime) / 1000;
+            const finalData = await postPoolBatch(POOL_REMOVE_BATCH_URL, {
+                pool_list_id: CURRENT_POOL_LIST_ID,
+                remove_scope: removeScope,
+                emails: [],
+                is_final: true,
+                totals,
+            });
+            if (finalData.redirect) window.location.href = finalData.redirect;
+        }
+    });
+}
+
+function parseManualImportRecords(text) {
+    const lines = String(text || '').split(/\r?\n/).filter(l => l.trim() !== '');
+    const rows = lines.map(line => {
+        if (line.includes(',') || line.includes(';') || line.includes('\t')) {
+            return parseCsvLine(line, detectDelimiterFromText(line));
+        }
+        return [line.trim()];
+    });
+    const result = parseRowsToImport(rows, true);
+    return result.records.map(line => {
+        const parts = String(line).split(',');
+        return { email: parts[0].trim().toLowerCase(), name: parts[1] ? parts[1].trim() : null };
+    });
+}
+
+function parseManualRemoveEmails(text) {
+    const lines = String(text || '').split(/\r?\n/).filter(l => l.trim() !== '');
+    const rows = lines.map(line => {
+        if (line.includes(',') || line.includes(';') || line.includes('\t')) {
+            return parseCsvLine(line, detectDelimiterFromText(line));
+        }
+        return [line.trim()];
+    });
+    const result = parseRowsToImport(rows, false);
+    return result.records.map(line => String(line).split(',')[0].trim().toLowerCase());
+}
+
+async function submitPoolImport(event) {
+    event.preventDefault();
+    if (!CURRENT_POOL_LIST_ID) {
+        alert('Liste seçilmedi');
         return false;
     }
+
+    const startTime = Date.now();
+    const fileTabActive = document.getElementById('fileTab')?.classList.contains('active');
+    const file = document.getElementById('fileInput')?.files?.[0];
+
+    try {
+        if (fileTabActive && file) {
+            showPoolLoading('Dosya hazırlanıyor…', file.name, 5);
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (ext === 'xlsx' || ext === 'xls') {
+                await runImportBatchLive(async (sendBatch) => {
+                    await streamExcelRecords(file, sendBatch, 'import');
+                }, startTime);
+            } else if (ext === 'txt' || ext === 'csv') {
+                await runImportBatchLive(async (sendBatch) => {
+                    await streamTextFileRecords(file, sendBatch, 'import');
+                }, startTime);
+            } else {
+                throw new Error('Desteklenmeyen dosya formatı');
+            }
+            return false;
+        }
+
+        const text = document.getElementById('emails').value.trim();
+        if (!text) {
+            alert('Lütfen en az bir mail adresi girin veya dosya seçin');
+            return false;
+        }
+        const records = parseManualImportRecords(text);
+        if (!records.length) {
+            alert('Geçerli mail adresi bulunamadı');
+            return false;
+        }
+        showPoolLoading(`${records.length.toLocaleString('tr-TR')} adres ekleniyor…`, 'Parçalı yükleme', 10);
+        await runImportBatchStream(records, { validEmail: records.length }, startTime);
+    } catch (err) {
+        hidePoolLoading();
+        alert(err.message || 'Import sırasında hata oluştu');
+    }
+    return false;
+}
+
+async function submitPoolRemove(event) {
+    event.preventDefault();
+    if (!CURRENT_POOL_LIST_ID) {
+        alert('Liste seçilmedi');
+        return false;
+    }
+
     const scopeEl = document.querySelector('input[name="remove_scope"]:checked');
-    const scope = scopeEl ? scopeEl.value : 'current_list';
-    if (scope === 'all_lists') {
+    const removeScope = scopeEl ? scopeEl.value : 'current_list';
+    if (removeScope === 'all_lists') {
         const ok = confirm(
             'Seçilen adresler TÜM havuz listelerinden silinecek.\n\nAynı mail birden fazla listede kayıtlıysa tüm kopyalar kaldırılır. Devam edilsin mi?'
         );
         if (!ok) return false;
     }
-    const count = emails.split('\n').filter(l => l.trim()).length;
-    document.getElementById('loadingText').textContent =
-        scope === 'all_lists'
-            ? `${count.toLocaleString()} adres tüm listelerden çıkarılıyor…`
-            : `${count.toLocaleString()} adres bu listeden çıkarılıyor…`;
-    document.getElementById('loadingSubtext').textContent = 'Lütfen bekleyin';
-    const progressBar = document.getElementById('loadingProgress');
-    progressBar.style.width = '0%';
-    progressBar.textContent = '';
-    document.getElementById('loadingOverlay').classList.add('is-visible');
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += 5;
-        if (progress >= 90) clearInterval(interval);
-        progressBar.style.width = progress + '%';
-    }, 100);
-    return true;
+
+    const startTime = Date.now();
+    const fileTabActive = document.getElementById('removeFileTab')?.classList.contains('active');
+    const file = document.getElementById('removeFileInput')?.files?.[0];
+
+    try {
+        if (fileTabActive && file) {
+            showPoolLoading('Dosya hazırlanıyor…', file.name, 5);
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (ext === 'xlsx' || ext === 'xls') {
+                await runRemoveBatchLive(async (sendBatch) => {
+                    await streamExcelRecords(file, sendBatch, 'remove');
+                }, removeScope, startTime);
+            } else if (ext === 'txt' || ext === 'csv') {
+                await runRemoveBatchLive(async (sendBatch) => {
+                    await streamTextFileRecords(file, sendBatch, 'remove');
+                }, removeScope, startTime);
+            } else {
+                throw new Error('Desteklenmeyen dosya formatı');
+            }
+            return false;
+        }
+
+        const text = document.getElementById('removeEmails').value.trim();
+        if (!text) {
+            alert('Lütfen en az bir mail adresi girin veya dosya seçin');
+            return false;
+        }
+        const emails = parseManualRemoveEmails(text);
+        if (!emails.length) {
+            alert('Geçerli mail adresi bulunamadı');
+            return false;
+        }
+
+        showPoolLoading(`${emails.length.toLocaleString('tr-TR')} adres siliniyor…`, 'Parçalı silme', 10);
+        let batchNo = 0;
+        const totals = { removed: 0 };
+        const totalBatches = Math.max(1, Math.ceil(emails.length / POOL_BATCH_SIZE));
+        for (let i = 0; i < emails.length; i += POOL_BATCH_SIZE) {
+            const chunk = emails.slice(i, i + POOL_BATCH_SIZE);
+            batchNo++;
+            showPoolLoading(
+                `${Math.min(i + chunk.length, emails.length).toLocaleString('tr-TR')} / ${emails.length.toLocaleString('tr-TR')} adres siliniyor…`,
+                `Parça ${batchNo}/${totalBatches}`,
+                Math.round((batchNo / totalBatches) * 100)
+            );
+            const data = await postPoolBatch(POOL_REMOVE_BATCH_URL, {
+                pool_list_id: CURRENT_POOL_LIST_ID,
+                remove_scope: removeScope,
+                emails: chunk,
+                is_final: false,
+            });
+            totals.removed += data.removed || 0;
+        }
+        totals.elapsed_seconds = (Date.now() - startTime) / 1000;
+        const finalData = await postPoolBatch(POOL_REMOVE_BATCH_URL, {
+            pool_list_id: CURRENT_POOL_LIST_ID,
+            remove_scope: removeScope,
+            emails: [],
+            is_final: true,
+            totals,
+        });
+        if (finalData.redirect) window.location.href = finalData.redirect;
+    } catch (err) {
+        hidePoolLoading();
+        alert(err.message || 'Silme sırasında hata oluştu');
+    }
+    return false;
 }
 
 function deleteAll() {
@@ -2058,153 +2410,29 @@ function updateRemoveEmailCount() {
 
 function handleRemoveFileSelect(event) {
     const file = event.target.files[0];
-    if (!file) return;
-
     const statusDiv = document.getElementById('removeFileStatus');
-    statusDiv.innerHTML = '<div class="alert alert-info">Dosya okunuyor...</div>';
-
-    const fileExt = file.name.split('.').pop().toLowerCase();
-
-    if (fileExt === 'txt' || fileExt === 'csv') {
-        readRemoveTextFile(file, fileExt);
-    } else if (fileExt === 'xlsx' || fileExt === 'xls') {
-        readRemoveExcelFile(file);
-    } else {
-        statusDiv.innerHTML = '<div class="alert alert-danger">Desteklenmeyen dosya formatı</div>';
+    if (!file) {
+        statusDiv.innerHTML = '';
+        return;
     }
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['txt', 'csv', 'xlsx', 'xls'].includes(ext)) {
+        statusDiv.innerHTML = '<div class="alert alert-danger mb-0">Desteklenmeyen dosya formatı</div>';
+        return;
+    }
+    statusDiv.innerHTML = `
+        <div class="alert alert-info mb-0">
+            <strong>${file.name}</strong> (${formatFileSize(file.size)}) seçildi.
+            <br>Çıkar dediğinizde dosya parça parça işlenecek.
+        </div>`;
 }
 
 function readRemoveTextFile(file, type) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const text = e.target.result;
-        const lines = text.split('\n');
-        
-        let emails = [];
-        
-        // CSV ise header kontrolü yap
-        if (type === 'csv' && lines.length > 0) {
-            const headers = lines[0].split(/[,\t]/);
-            const emailColumnIndex = headers.findIndex(h => 
-                h.toLowerCase().includes('recipient') || 
-                h.toLowerCase().includes('email')
-            );
-            
-            if (emailColumnIndex !== -1) {
-                // Header var, email kolonundan oku
-                for (let i = 1; i < lines.length; i++) {
-                    const cols = lines[i].split(/[,\t]/);
-                    const email = cols[emailColumnIndex]?.trim();
-                    if (email && email.includes('@')) {
-                        emails.push(email);
-                    }
-                }
-            } else {
-                // Header yok veya bulunamadı, normal parse et
-                lines.forEach(line => {
-                    line = line.trim();
-                    if (line && line.includes('@')) {
-                        // Satırda @ varsa email ara
-                        const parts = line.split(/[,\t]/);
-                        parts.forEach(part => {
-                            part = part.trim();
-                            if (part && part.includes('@')) {
-                                emails.push(part);
-                            }
-                        });
-                    }
-                });
-            }
-        } else {
-            // TXT dosyası
-            lines.forEach(line => {
-                line = line.trim();
-                if (line && line.includes('@')) {
-                    emails.push(line);
-                }
-            });
-        }
-
-        // Benzersiz yap
-        emails = [...new Set(emails)];
-
-        document.getElementById('removeEmails').value = emails.join('\n');
-        updateRemoveEmailCount();
-        
-        document.getElementById('removeFileStatus').innerHTML = `
-            <div class="alert alert-success alert-dismissible fade show">
-                <i data-feather="check-circle"></i> 
-                <strong>Başarılı!</strong> ${emails.length.toLocaleString()} mail adresi yüklendi
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>`;
-        feather.replace();
-    };
-    reader.readAsText(file);
+    handleRemoveFileSelect({ target: { files: [file] } });
 }
 
 function readRemoveExcelFile(file) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-            
-            let emails = [];
-            const headers = jsonData[0] || [];
-            
-            // RecipientAddress veya email kolonunu bul
-            const emailColumnIndex = headers.findIndex(h => 
-                (typeof h === 'string' && (
-                    h.toLowerCase().includes('recipient') || 
-                    h.toLowerCase().includes('email')
-                ))
-            );
-            
-            if (emailColumnIndex !== -1) {
-                // Kolon bulundu, o kolondan oku
-                for (let i = 1; i < jsonData.length; i++) {
-                    const row = jsonData[i];
-                    const email = row[emailColumnIndex];
-                    if (email && typeof email === 'string' && email.includes('@')) {
-                        emails.push(email.trim());
-                    }
-                }
-            } else {
-                // Kolon bulunamadı, tüm satırları tara
-                for (let i = 1; i < jsonData.length; i++) {
-                    const row = jsonData[i];
-                    row.forEach(cell => {
-                        if (cell && typeof cell === 'string' && cell.includes('@')) {
-                            emails.push(cell.trim());
-                        }
-                    });
-                }
-            }
-            
-            // Benzersiz yap
-            emails = [...new Set(emails)];
-            
-            document.getElementById('removeEmails').value = emails.join('\n');
-            updateRemoveEmailCount();
-            
-            document.getElementById('removeFileStatus').innerHTML = `
-                <div class="alert alert-success alert-dismissible fade show">
-                    <i data-feather="check-circle"></i> 
-                    <strong>Başarılı!</strong> ${emails.length.toLocaleString()} mail adresi yüklendi
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>`;
-            feather.replace();
-        } catch (error) {
-            document.getElementById('removeFileStatus').innerHTML = `
-                <div class="alert alert-danger">
-                    <i data-feather="x-circle"></i> Dosya okuma hatası: ${error.message}
-                </div>`;
-            feather.replace();
-        }
-    };
-    reader.readAsArrayBuffer(file);
+    handleRemoveFileSelect({ target: { files: [file] } });
 }
 
 const cleanerState = {

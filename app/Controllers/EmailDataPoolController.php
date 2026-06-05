@@ -320,18 +320,7 @@ class EmailDataPoolController
             $unique = $parseResult['records'];
             $stats = $parseResult['stats'];
             
-            // Existing emails'leri bulk olarak çek (aynı liste içinde)
-            $existingEmails = $this->em->createQueryBuilder()
-                ->select('d.email')
-                ->from(EmailDataPool::class, 'd')
-                ->where('d.poolList = :pl')
-                ->andWhere('d.email IN (:emails)')
-                ->setParameter('pl', $poolList)
-                ->setParameter('emails', array_column($unique, 'email'))
-                ->getQuery()
-                ->getResult();
-            
-            $existingSet = array_flip(array_column($existingEmails, 'email'));
+            $existingSet = $this->fetchExistingEmailsInList(array_column($unique, 'email'), (int) $poolList->getId());
             
             // Yeni email'leri filtrele
             $newEmails = array_filter($unique, fn($item) => !isset($existingSet[$item['email']]));
@@ -725,6 +714,243 @@ class EmailDataPoolController
         }
 
         return $response->withHeader('Location', $this->poolListRedirect($poolList->getId()))->withStatus(302);
+    }
+
+    /**
+     * Parçalı import (JSON — büyük dosyalar için, 504 önleme).
+     */
+    public function importBatch(Request $request, Response $response): Response
+    {
+        @ini_set('memory_limit', '512M');
+        @ini_set('max_execution_time', '300');
+
+        $data = json_decode((string) $request->getBody(), true);
+        if (!is_array($data)) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz istek'], 400);
+        }
+
+        try {
+            $listId = (int) ($data['pool_list_id'] ?? 0);
+            $poolList = $this->resolvePoolListById($listId);
+            $records = $this->normalizeImportBatchRecords($data['emails'] ?? []);
+            if ($records === []) {
+                if (!empty($data['is_final'])) {
+                    $totals = is_array($data['totals'] ?? null) ? $data['totals'] : [];
+                    $elapsed = round((float) ($totals['elapsed_seconds'] ?? 0), 2);
+                    $_SESSION['success'] = sprintf(
+                        'Import tamamlandı (%ss): Geçerli %d, eklenen %d, zaten var %d, duplicate atlanan %d, geçersiz atlanan %d, durum nedeniyle atlanan %d.',
+                        $elapsed,
+                        (int) ($totals['valid_email'] ?? 0),
+                        (int) ($totals['added'] ?? 0),
+                        (int) ($totals['existing_skipped'] ?? 0),
+                        (int) ($totals['duplicate_skipped'] ?? 0),
+                        (int) ($totals['invalid_skipped'] ?? 0),
+                        (int) ($totals['status_skipped'] ?? 0)
+                    );
+
+                    return $this->jsonResponse($response, [
+                        'success' => true,
+                        'added' => 0,
+                        'existing_skipped' => 0,
+                        'redirect' => $this->poolListRedirect((int) $poolList->getId()),
+                    ]);
+                }
+
+                return $this->jsonResponse($response, [
+                    'success' => true,
+                    'added' => 0,
+                    'existing_skipped' => 0,
+                    'invalid_skipped' => is_array($data['emails'] ?? null) ? count($data['emails']) : 0,
+                ]);
+            }
+
+            $existingSet = $this->fetchExistingEmailsInList(array_column($records, 'email'), (int) $poolList->getId());
+            $newEmails = array_values(array_filter(
+                $records,
+                static fn (array $item): bool => !isset($existingSet[$item['email']])
+            ));
+            $existingSkipped = count($records) - count($newEmails);
+
+            $added = 0;
+            if ($newEmails !== []) {
+                $added = $this->bulkInsertEmails($newEmails, (int) $poolList->getId());
+                if ($added > 0) {
+                    $this->incrementListCounts((int) $poolList->getId(), $added, $added, 0);
+                }
+            }
+
+            $isFinal = !empty($data['is_final']);
+            $redirect = null;
+            if ($isFinal) {
+                $totals = is_array($data['totals'] ?? null) ? $data['totals'] : [];
+                $elapsed = round((float) ($totals['elapsed_seconds'] ?? 0), 2);
+                $_SESSION['success'] = sprintf(
+                    'Import tamamlandı (%ss): Geçerli %d, eklenen %d, zaten var %d, duplicate atlanan %d, geçersiz atlanan %d, durum nedeniyle atlanan %d.',
+                    $elapsed,
+                    (int) ($totals['valid_email'] ?? 0),
+                    (int) ($totals['added'] ?? $added),
+                    (int) ($totals['existing_skipped'] ?? $existingSkipped),
+                    (int) ($totals['duplicate_skipped'] ?? 0),
+                    (int) ($totals['invalid_skipped'] ?? 0),
+                    (int) ($totals['status_skipped'] ?? 0)
+                );
+                $redirect = $this->poolListRedirect((int) $poolList->getId());
+            }
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'added' => $added,
+                'existing_skipped' => $existingSkipped,
+                'redirect' => $redirect,
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 400);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::importBatch error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Import batch hatası'], 500);
+        }
+    }
+
+    /**
+     * Parçalı silme (JSON — büyük dosyalar için, 504 önleme).
+     */
+    public function removeBatch(Request $request, Response $response): Response
+    {
+        @ini_set('memory_limit', '512M');
+        @ini_set('max_execution_time', '300');
+
+        $data = json_decode((string) $request->getBody(), true);
+        if (!is_array($data)) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Geçersiz istek'], 400);
+        }
+
+        try {
+            $listId = (int) ($data['pool_list_id'] ?? 0);
+            $poolList = $this->resolvePoolListById($listId);
+            $emails = $this->normalizeRemoveBatchEmails($data['emails'] ?? []);
+            $removeAllLists = (($data['remove_scope'] ?? '') === 'all_lists');
+            $listIdForDelete = $removeAllLists ? null : (int) $poolList->getId();
+            $removed = 0;
+
+            if ($emails !== []) {
+                $removed = $this->bulkDeleteEmails($emails, $listIdForDelete);
+            }
+
+            $isFinal = !empty($data['is_final']);
+            $redirect = null;
+            if ($isFinal) {
+                $totals = is_array($data['totals'] ?? null) ? $data['totals'] : [];
+                $totalRemoved = (int) ($totals['removed'] ?? $removed);
+                $elapsed = round((float) ($totals['elapsed_seconds'] ?? 0), 2);
+                if ($removeAllLists) {
+                    $allListIds = array_map('intval', $this->em->getConnection()->fetchFirstColumn('SELECT id FROM email_data_pool_lists'));
+                    $this->recalculateListCounts($allListIds);
+                } else {
+                    $this->recalculateListCounts([(int) $poolList->getId()]);
+                }
+                if ($totalRemoved > 0) {
+                    $_SESSION['success'] = $removeAllLists
+                        ? "{$totalRemoved} kayıt {$elapsed}s içinde tüm havuz listelerinden silindi"
+                        : "{$totalRemoved} mail adresi {$elapsed}s içinde bu listeden çıkarıldı";
+                } else {
+                    $_SESSION['error'] = $removeAllLists
+                        ? 'Belirtilen mail adresleri hiçbir havuz listesinde bulunamadı'
+                        : 'Belirtilen mail adresleri bu listede bulunamadı';
+                }
+                $redirect = $this->poolListRedirect((int) $poolList->getId());
+            }
+
+            return $this->jsonResponse($response, [
+                'success' => true,
+                'removed' => $removed,
+                'redirect' => $redirect,
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => $e->getMessage()], 400);
+        } catch (\Throwable $e) {
+            error_log('EmailDataPoolController::removeBatch error: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Silme batch hatası'], 500);
+        }
+    }
+
+    /**
+     * @param array<int, mixed> $rawEmails
+     * @return array<int, array{email: string, name: ?string}>
+     */
+    private function normalizeImportBatchRecords(array $rawEmails): array
+    {
+        $records = [];
+        $seen = [];
+        foreach ($rawEmails as $item) {
+            if (is_string($item)) {
+                $parts = explode(',', $item, 2);
+                $email = strtolower(trim($parts[0]));
+                $name = isset($parts[1]) ? (trim($parts[1]) ?: null) : null;
+            } elseif (is_array($item)) {
+                $email = strtolower(trim((string) ($item['email'] ?? '')));
+                $name = trim((string) ($item['name'] ?? '')) ?: null;
+            } else {
+                continue;
+            }
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || isset($seen[$email])) {
+                continue;
+            }
+            $seen[$email] = true;
+            $records[] = ['email' => $email, 'name' => $name];
+        }
+
+        return $records;
+    }
+
+    /**
+     * @param array<int, mixed> $rawEmails
+     * @return array<int, string>
+     */
+    private function normalizeRemoveBatchEmails(array $rawEmails): array
+    {
+        $emails = [];
+        $seen = [];
+        foreach ($rawEmails as $item) {
+            $email = strtolower(trim(is_array($item) ? (string) ($item['email'] ?? '') : (string) $item));
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || isset($seen[$email])) {
+                continue;
+            }
+            $seen[$email] = true;
+            $emails[] = $email;
+        }
+
+        return $emails;
+    }
+
+    /**
+     * @param array<int, string> $emails
+     * @return array<string, true>
+     */
+    private function fetchExistingEmailsInList(array $emails, int $poolListId): array
+    {
+        $emails = array_values(array_unique(array_filter(array_map(
+            static fn (string $email): string => strtolower(trim($email)),
+            $emails
+        ), static fn (string $email): bool => $email !== '')));
+
+        if ($emails === []) {
+            return [];
+        }
+
+        $conn = $this->em->getConnection();
+        $existing = [];
+        foreach (array_chunk($emails, 2000) as $batch) {
+            $placeholders = implode(',', array_fill(0, count($batch), '?'));
+            $rows = $conn->fetchFirstColumn(
+                "SELECT email FROM email_data_pool WHERE pool_list_id = ? AND email IN ($placeholders)",
+                array_merge([$poolListId], $batch)
+            );
+            foreach ($rows as $email) {
+                $existing[strtolower((string) $email)] = true;
+            }
+        }
+
+        return $existing;
     }
 
     /**
