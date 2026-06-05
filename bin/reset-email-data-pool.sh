@@ -10,8 +10,9 @@
 # --force              Zorunlu (yanlışlıkla çalışmayı önler)
 # --keep-lists           Listeleri silmez; sadece mail kayıtları + cache/job tablolarını temizler
 # --clear-alibaba        alibaba_invalid_* tablolarını da temizler
-# --skip-service-stop    pm2 / php-fpm durdurma ve yeniden başlatmayı atlar
-# --default-list NAME    Yeni varsayılan liste adı (varsayılan: Liste 1)
+# --skip-service-stop      pm2 / php-fpm durdurma ve yeniden başlatmayı atlar
+# --restart-mysql          KILL başarısız olursa MySQL servisini yeniden başlatır (sudo)
+# --default-list NAME      Yeni varsayılan liste adı (varsayılan: Liste 1)
 #
 set -eu
 
@@ -22,9 +23,13 @@ FORCE=0
 KEEP_LISTS=0
 CLEAR_ALIBABA=0
 SKIP_SERVICE_STOP=0
+RESTART_MYSQL=0
 DEFAULT_LIST_NAME="Liste 1"
 PHP_FPM_WAS=0
 MYSQL_CNF=""
+MYSQL_ROOT_CNF=""
+LOCK_WAIT_SEC=10
+KILL_ATTEMPTS=15
 
 usage() {
   cat <<'EOF'
@@ -44,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --keep-lists) KEEP_LISTS=1 ;;
     --clear-alibaba) CLEAR_ALIBABA=1 ;;
     --skip-service-stop) SKIP_SERVICE_STOP=1 ;;
+    --restart-mysql) RESTART_MYSQL=1 ;;
     --default-list)
       shift
       DEFAULT_LIST_NAME="${1:-}"
@@ -120,9 +126,39 @@ database=${DB_NAME}
 EOF
 }
 
+setup_mysql_root() {
+  MYSQL_ROOT_CNF=""
+  local root_args=(-uroot -h127.0.0.1)
+  if mysql "${root_args[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+    :
+  elif mysql -uroot -e "SELECT 1" >/dev/null 2>&1; then
+    root_args=(-uroot)
+  else
+    return 1
+  fi
+
+  MYSQL_ROOT_CNF="$(mktemp)"
+  chmod 600 "$MYSQL_ROOT_CNF"
+  if [[ "${root_args[1]:-}" == "-h127.0.0.1" ]]; then
+    cat >"$MYSQL_ROOT_CNF" <<'EOF'
+[client]
+user=root
+host=127.0.0.1
+EOF
+  else
+    cat >"$MYSQL_ROOT_CNF" <<'EOF'
+[client]
+user=root
+EOF
+  fi
+}
+
 cleanup() {
   if [[ -n "$MYSQL_CNF" && -f "$MYSQL_CNF" ]]; then
     rm -f "$MYSQL_CNF"
+  fi
+  if [[ -n "$MYSQL_ROOT_CNF" && -f "$MYSQL_ROOT_CNF" ]]; then
+    rm -f "$MYSQL_ROOT_CNF"
   fi
 }
 
@@ -138,6 +174,65 @@ mysql_query() {
 
 mysql_exec() {
   mysql_cmd -e "$1"
+}
+
+mysql_root_cmd() {
+  [[ -n "$MYSQL_ROOT_CNF" ]] || return 1
+  mysql --defaults-extra-file="$MYSQL_ROOT_CNF" "$@"
+}
+
+mysql_root_query() {
+  mysql_root_cmd -Nse "$1"
+}
+
+mysql_root_exec() {
+  mysql_root_cmd -e "$1"
+}
+
+session_ids_for_db() {
+  local sql="
+    SELECT id
+    FROM information_schema.processlist
+    WHERE id != CONNECTION_ID()
+      AND (
+        db = '${DB_NAME}'
+        OR IFNULL(info, '') LIKE '%email_data_pool%'
+        OR IFNULL(info, '') LIKE '%email_data_pool_%'
+      )
+    ORDER BY time DESC
+  "
+  if [[ -n "$MYSQL_ROOT_CNF" ]]; then
+    mysql_root_query "$sql" 2>/dev/null || true
+  else
+    mysql_query "$sql" 2>/dev/null || true
+  fi
+}
+
+kill_one_session() {
+  local id="$1"
+  local via="${2:-app}"
+
+  echo "  KILL QUERY ${id} (${via})"
+  if [[ "$via" == "root" && -n "$MYSQL_ROOT_CNF" ]]; then
+    mysql_root_exec "KILL QUERY ${id};" 2>/dev/null || true
+    mysql_root_exec "KILL CONNECTION ${id};" 2>/dev/null || mysql_root_exec "KILL ${id};" 2>/dev/null || true
+  else
+    mysql_exec "KILL QUERY ${id};" 2>/dev/null || true
+    mysql_exec "KILL CONNECTION ${id};" 2>/dev/null || mysql_exec "KILL ${id};" 2>/dev/null || true
+  fi
+}
+
+restart_mysql_service() {
+  echo "MySQL servisi yeniden başlatılıyor (takılı oturumlar için)..."
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart mysql 2>/dev/null \
+      || systemctl restart mariadb 2>/dev/null \
+      || systemctl restart mysqld 2>/dev/null \
+      || return 1
+  else
+    service mysql restart 2>/dev/null || service mariadb restart 2>/dev/null || return 1
+  fi
+  sleep 3
 }
 
 table_exists() {
@@ -160,7 +255,20 @@ truncate_table() {
     echo "  atlandı (yok): ${table}"
     return
   fi
-  mysql_exec "TRUNCATE TABLE \`${table//\`/\`\`}\`"
+  echo "  truncate: ${table} (kilit bekleme max ${LOCK_WAIT_SEC}s)..."
+  if ! mysql_cmd -e "
+    SET SESSION innodb_lock_wait_timeout = ${LOCK_WAIT_SEC};
+    SET SESSION lock_wait_timeout = ${LOCK_WAIT_SEC};
+    TRUNCATE TABLE \`${table//\`/\`\`}\`;
+  "; then
+    echo "" >&2
+    echo "Hata: ${table} truncate metadata lock'ta takıldı." >&2
+    echo "Önce takılı oturumları sonlandırın, sonra tekrar deneyin:" >&2
+    echo "  sudo mysql -e \"SELECT id,user,time,state,info FROM information_schema.processlist WHERE db='${DB_NAME}' OR info LIKE '%email_data_pool%'\\G\"" >&2
+    echo "  sudo mysql -e \"KILL QUERY <id>; KILL CONNECTION <id>;\"" >&2
+    echo "  sudo bash bin/reset-email-data-pool.sh --force --restart-mysql" >&2
+    exit 1
+  fi
   echo "  temizlendi: ${table}"
 }
 
@@ -173,12 +281,18 @@ stop_services() {
   echo "Servisler durduruluyor..."
   if command -v pm2 >/dev/null 2>&1; then
     pm2 stop all 2>/dev/null || true
+    pm2 stop data-pool-worker 2>/dev/null || true
+    pm2 stop email-worker 2>/dev/null || true
   fi
-  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet php8.3-fpm 2>/dev/null; then
-    sudo systemctl stop php8.3-fpm
-    PHP_FPM_WAS=1
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet php8.3-fpm 2>/dev/null; then
+      systemctl stop php8.3-fpm
+      PHP_FPM_WAS=1
+    fi
+    systemctl stop php8.2-fpm 2>/dev/null || true
+    systemctl stop php-fpm 2>/dev/null || true
   fi
-  sleep 1
+  sleep 2
 }
 
 start_services() {
@@ -188,7 +302,7 @@ start_services() {
 
   echo "Servisler başlatılıyor..."
   if [[ "$PHP_FPM_WAS" -eq 1 ]]; then
-    sudo systemctl start php8.3-fpm
+    systemctl start php8.3-fpm
   fi
   if command -v pm2 >/dev/null 2>&1 && [[ -f ecosystem.config.js ]]; then
     pm2 start ecosystem.config.js 2>/dev/null || pm2 start all 2>/dev/null || true
@@ -196,69 +310,90 @@ start_services() {
   fi
 }
 
+print_blocking_sessions() {
+  local q="
+    SELECT id, user, time, IFNULL(state,''), LEFT(IFNULL(info,''), 120)
+    FROM information_schema.processlist
+    WHERE id != CONNECTION_ID()
+      AND (
+        db = '${DB_NAME}'
+        OR IFNULL(info, '') LIKE '%email_data_pool%'
+      )
+    ORDER BY time DESC
+  "
+  if [[ -n "$MYSQL_ROOT_CNF" ]]; then
+    mysql_root_cmd -e "$q" 2>/dev/null || mysql_cmd -e "$q" 2>/dev/null || true
+  else
+    mysql_cmd -e "$q" 2>/dev/null || true
+  fi
+}
+
 kill_db_sessions() {
   echo "PROCESSLIST kontrol ediliyor (${DB_NAME})..."
 
-  local rows
-  rows="$(mysql_query "
-    SELECT CONCAT(id, '\t', user, '\t', time, 's\t', IFNULL(state,''), '\t', LEFT(IFNULL(info,''), 100))
-    FROM information_schema.processlist
-    WHERE db = '${DB_NAME}'
-      AND id != CONNECTION_ID()
-    ORDER BY time DESC
-  " 2>/dev/null || true)"
-
-  if [[ -z "$rows" ]]; then
-    echo "  bloklayıcı oturum yok"
-    return
+  if setup_mysql_root; then
+    echo "  MySQL root erişimi: var (zorla KILL için)"
+  else
+    echo "  MySQL root erişimi: yok (sudo ile çalıştırın veya --restart-mysql kullanın)"
   fi
 
-  echo "$rows" | while IFS=$'\t' read -r pid puser ptime pstate pquery; do
-    [[ -z "${pid:-}" ]] && continue
-    echo "  Id=${pid} user=${puser} time=${ptime} state=${pstate}"
-    if [[ -n "${pquery:-}" ]]; then
-      echo "    query: ${pquery}"
-    fi
-  done
+  local ids attempt via remaining
+  ids="$(session_ids_for_db)"
+  if [[ -z "$ids" ]]; then
+    echo "  bloklayıcı oturum yok"
+    return 0
+  fi
 
-  local attempt ids
-  for attempt in 1 2 3; do
-    ids="$(mysql_query "
-      SELECT id
-      FROM information_schema.processlist
-      WHERE db = '${DB_NAME}'
-        AND id != CONNECTION_ID()
-    " 2>/dev/null || true)"
+  echo "  takılı oturumlar:"
+  print_blocking_sessions
 
+  for attempt in $(seq 1 "$KILL_ATTEMPTS"); do
+    ids="$(session_ids_for_db)"
     if [[ -z "$ids" ]]; then
       echo "  tüm oturumlar sonlandırıldı"
-      return
+      return 0
+    fi
+
+    via="app"
+    if [[ -n "$MYSQL_ROOT_CNF" ]]; then
+      via="root"
     fi
 
     while read -r id; do
       [[ -z "$id" ]] && continue
-      echo "  KILL CONNECTION ${id} (deneme ${attempt})"
-      mysql_exec "KILL CONNECTION ${id};" 2>/dev/null \
-        || mysql_exec "KILL ${id};" 2>/dev/null \
-        || echo "    uyarı: Id ${id} sonlandırılamadı" >&2
+      kill_one_session "$id" "$via"
     done <<< "$ids"
 
     sleep 2
   done
 
-  ids="$(mysql_query "
-    SELECT id
-    FROM information_schema.processlist
-    WHERE db = '${DB_NAME}'
-      AND id != CONNECTION_ID()
-  " 2>/dev/null || true)"
-
-  if [[ -n "$ids" ]]; then
-    echo "Uyarı: bazı oturumlar hâlâ açık (root ile tekrar deneyin veya --skip-service-stop kullanmayın):" >&2
-    echo "$ids" | while read -r id; do
-      [[ -n "$id" ]] && echo "  Id=${id}" >&2
-    done
+  remaining="$(session_ids_for_db)"
+  if [[ -z "$remaining" ]]; then
+    echo "  tüm oturumlar sonlandırıldı"
+    return 0
   fi
+
+  if [[ "$RESTART_MYSQL" -eq 1 ]] && [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    restart_mysql_service || true
+    setup_mysql
+    setup_mysql_root || true
+    remaining="$(session_ids_for_db)"
+    if [[ -z "$remaining" ]]; then
+      echo "  MySQL restart sonrası oturum kalmadı"
+      return 0
+    fi
+  fi
+
+  echo "" >&2
+  echo "Hata: sonlandırılamayan MySQL oturumları var; TRUNCATE metadata lock'ta takılır." >&2
+  echo "$remaining" | while read -r id; do
+    [[ -n "$id" ]] && echo "  Id=${id}" >&2
+  done
+  echo "" >&2
+  echo "Manuel (her Id için):" >&2
+  echo "  sudo mysql -e \"KILL QUERY <id>; KILL CONNECTION <id>;\"" >&2
+  echo "  sudo bash bin/reset-email-data-pool.sh --force --restart-mysql" >&2
+  exit 1
 }
 
 reset_tables() {
