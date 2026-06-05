@@ -128,18 +128,21 @@ EOF
 
 setup_mysql_root() {
   MYSQL_ROOT_CNF=""
-  local root_args=(-uroot -h127.0.0.1)
-  if mysql "${root_args[@]}" -e "SELECT 1" >/dev/null 2>&1; then
-    :
+  local root_host=""
+
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]] && mysql -e "SELECT 1" >/dev/null 2>&1; then
+    root_host=""
+  elif mysql -uroot -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
+    root_host="127.0.0.1"
   elif mysql -uroot -e "SELECT 1" >/dev/null 2>&1; then
-    root_args=(-uroot)
+    root_host=""
   else
     return 1
   fi
 
   MYSQL_ROOT_CNF="$(mktemp)"
   chmod 600 "$MYSQL_ROOT_CNF"
-  if [[ "${root_args[1]:-}" == "-h127.0.0.1" ]]; then
+  if [[ -n "$root_host" ]]; then
     cat >"$MYSQL_ROOT_CNF" <<'EOF'
 [client]
 user=root
@@ -249,27 +252,73 @@ count_table() {
   mysql_query "SELECT COUNT(*) FROM \`${table//\`/\`\`}\`"
 }
 
-truncate_table() {
+append_truncate() {
   local table="$1"
+  local -n buf="$2"
   if [[ "$(table_exists "$table")" != "1" ]]; then
     echo "  atlandı (yok): ${table}"
     return
   fi
-  echo "  truncate: ${table} (kilit bekleme max ${LOCK_WAIT_SEC}s)..."
-  if ! mysql_cmd -e "
-    SET SESSION innodb_lock_wait_timeout = ${LOCK_WAIT_SEC};
-    SET SESSION lock_wait_timeout = ${LOCK_WAIT_SEC};
-    TRUNCATE TABLE \`${table//\`/\`\`}\`;
-  "; then
+  echo "  truncate: ${table}..."
+  buf+="TRUNCATE TABLE \`${table//\`/\`\`}\`;"
+}
+
+reset_tables() {
+  local esc_name="${DEFAULT_LIST_NAME//\'/\'\'}"
+  local sql=""
+
+  sql+="SET SESSION innodb_lock_wait_timeout = ${LOCK_WAIT_SEC};"
+  sql+="SET SESSION lock_wait_timeout = ${LOCK_WAIT_SEC};"
+  sql+="SET FOREIGN_KEY_CHECKS = 0;"
+
+  append_truncate "email_data_pool" sql
+  append_truncate "email_data_pool_analysis_cache" sql
+  append_truncate "email_data_pool_analysis_jobs" sql
+  append_truncate "email_pool_stats" sql
+  append_truncate "data_pool_jobs" sql
+
+  if [[ "$CLEAR_ALIBABA" -eq 1 ]]; then
+    append_truncate "alibaba_invalid_addresses" sql
+    append_truncate "alibaba_invalid_fetch_logs" sql
+  fi
+
+  if [[ "$KEEP_LISTS" -eq 1 ]]; then
+    if [[ "$(table_exists email_data_pool_lists)" == "1" ]]; then
+      sql+="UPDATE email_data_pool_lists SET total_count = 0, active_count = 0, passive_count = 0, updated_count_at = NOW();"
+      echo "  sıfırlanacak: email_data_pool_lists (sayılar)"
+    fi
+  else
+    append_truncate "email_data_pool_lists" sql
+    sql+="INSERT INTO email_data_pool_lists
+      (id, name, sort_order, created_at, total_count, active_count, passive_count, updated_count_at)
+      VALUES (1, '${esc_name}', 0, NOW(), 0, 0, 0, NOW());"
+    sql+="ALTER TABLE email_data_pool_lists AUTO_INCREMENT = 2;"
+  fi
+
+  sql+="SET FOREIGN_KEY_CHECKS = 1;"
+
+  if ! mysql_cmd -e "$sql"; then
     echo "" >&2
-    echo "Hata: ${table} truncate metadata lock'ta takıldı." >&2
-    echo "Önce takılı oturumları sonlandırın, sonra tekrar deneyin:" >&2
-    echo "  sudo mysql -e \"SELECT id,user,time,state,info FROM information_schema.processlist WHERE db='${DB_NAME}' OR info LIKE '%email_data_pool%'\\G\"" >&2
-    echo "  sudo mysql -e \"KILL QUERY <id>; KILL CONNECTION <id>;\"" >&2
+    echo "Hata: tablo temizleme başarısız (FK veya kilit)." >&2
     echo "  sudo bash bin/reset-email-data-pool.sh --force --restart-mysql" >&2
     exit 1
   fi
-  echo "  temizlendi: ${table}"
+
+  echo "  temizlendi: email_data_pool"
+  echo "  temizlendi: email_data_pool_analysis_cache"
+  echo "  temizlendi: email_data_pool_analysis_jobs"
+  echo "  temizlendi: email_pool_stats"
+  echo "  temizlendi: data_pool_jobs"
+  if [[ "$CLEAR_ALIBABA" -eq 1 ]]; then
+    echo "  temizlendi: alibaba_invalid_addresses"
+    echo "  temizlendi: alibaba_invalid_fetch_logs"
+  fi
+  if [[ "$KEEP_LISTS" -eq 1 ]]; then
+    echo "  sıfırlandı: email_data_pool_lists (sayılar)"
+  else
+    echo "  temizlendi: email_data_pool_lists"
+    echo "  oluşturuldu: varsayılan liste \"${DEFAULT_LIST_NAME}\""
+  fi
 }
 
 stop_services() {
@@ -394,38 +443,6 @@ kill_db_sessions() {
   echo "  sudo mysql -e \"KILL QUERY <id>; KILL CONNECTION <id>;\"" >&2
   echo "  sudo bash bin/reset-email-data-pool.sh --force --restart-mysql" >&2
   exit 1
-}
-
-reset_tables() {
-  mysql_exec "SET FOREIGN_KEY_CHECKS = 0"
-
-  truncate_table "email_data_pool"
-  truncate_table "email_data_pool_analysis_cache"
-  truncate_table "email_data_pool_analysis_jobs"
-  truncate_table "email_pool_stats"
-  truncate_table "data_pool_jobs"
-
-  if [[ "$CLEAR_ALIBABA" -eq 1 ]]; then
-    truncate_table "alibaba_invalid_addresses"
-    truncate_table "alibaba_invalid_fetch_logs"
-  fi
-
-  if [[ "$KEEP_LISTS" -eq 1 ]]; then
-    if [[ "$(table_exists email_data_pool_lists)" == "1" ]]; then
-      mysql_exec "UPDATE email_data_pool_lists SET total_count = 0, active_count = 0, passive_count = 0, updated_count_at = NOW()"
-      echo "  sıfırlandı: email_data_pool_lists (sayılar)"
-    fi
-  else
-    truncate_table "email_data_pool_lists"
-    local esc_name="${DEFAULT_LIST_NAME//\'/\'\'}"
-    mysql_exec "INSERT INTO email_data_pool_lists
-      (id, name, sort_order, created_at, total_count, active_count, passive_count, updated_count_at)
-      VALUES (1, '${esc_name}', 0, NOW(), 0, 0, 0, NOW())"
-    mysql_exec "ALTER TABLE email_data_pool_lists AUTO_INCREMENT = 2"
-    echo "  oluşturuldu: varsayılan liste \"${DEFAULT_LIST_NAME}\""
-  fi
-
-  mysql_exec "SET FOREIGN_KEY_CHECKS = 1"
 }
 
 clear_cache() {
