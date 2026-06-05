@@ -9,11 +9,14 @@
  *   pm2 save && pm2 startup
  */
 
+const path = require('path');
+const projectRoot = __dirname;
+
 module.exports = {
   apps: [
     {
       name: 'email-worker',
-      cwd: '.',
+      cwd: projectRoot,
       script: './email-worker/src/index.js',
       interpreter: 'node',
       exec_mode: 'fork',
@@ -37,7 +40,7 @@ module.exports = {
     },
     {
       name: 'data-pool-worker',
-      cwd: '.',
+      cwd: projectRoot,
       script: 'bin/console',
       args: ['data-pool:jobs:work'],
       interpreter: 'php',

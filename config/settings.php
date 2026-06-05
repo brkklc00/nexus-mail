@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-// .env dosyasını yükle (eğer yüklenmemişse)
-if (!isset($_ENV['APP_ENV']) && file_exists(__DIR__ . '/../.env')) {
-    if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
-        require_once __DIR__ . '/../vendor/autoload.php';
-        $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
-        $dotenv->load();
-    }
+// .env dosyasını yükle (eksik anahtarlar için; mevcut ortam değişkenlerinin üzerine yazmaz)
+if (file_exists(__DIR__ . '/../.env') && file_exists(__DIR__ . '/../vendor/autoload.php')) {
+    require_once __DIR__ . '/../vendor/autoload.php';
+    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+    $dotenv->safeLoad();
 }
+
+require_once __DIR__ . '/database-env.php';
 
 // Debug log helper: sadece APP_DEBUG=true iken yazar.
 // Üretimde error_log spam'ini önlemek için tüm domain/twig debug loglari bu fonksiyondan geçer.
@@ -186,14 +186,15 @@ if (php_sapi_name() !== 'cli') {
     
     if ($domainToFetch && !empty($domainToFetch)) {
         try {
+            $dbEnv = nexus_database_env();
             $pdo = new \PDO(
                 sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
-                    $_ENV['DB_HOST'] ?? 'localhost',
-                    $_ENV['DB_PORT'] ?? '3306',
-                    $_ENV['DB_NAME'] ?? 'nexus_db'
+                    $dbEnv['host'],
+                    $dbEnv['port'],
+                    $dbEnv['dbname']
                 ),
-                $_ENV['DB_USER'] ?? 'root',
-                $_ENV['DB_PASSWORD'] ?? '',
+                $dbEnv['user'],
+                $dbEnv['password'],
                 [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]
             );
             
@@ -293,18 +294,23 @@ return [
             'rate_window' => (int) ($_ENV['EXTERNAL_API_RATE_WINDOW'] ?? 60),
             'timeout_seconds' => 10,
         ],
-        'database' => [
-            'driver' => $_ENV['DB_DRIVER'] ?? 'pdo_mysql',
-            'host' => $_ENV['DB_HOST'] ?? 'localhost',
-            'port' => (int)($_ENV['DB_PORT'] ?? 3306),
-            'dbname' => $_ENV['DB_NAME'] ?? 'new',
-            'user' => $_ENV['DB_USER'] ?? 'root',
-            // Boş string kontrolü: Eğer DB_PASSWORD boş string ise, null kullan (şifre yok demektir)
-            'password' => (!empty($_ENV['DB_PASSWORD']) && trim($_ENV['DB_PASSWORD']) !== '') 
-                ? trim($_ENV['DB_PASSWORD']) 
-                : (isset($_ENV['DB_PASSWORD']) && $_ENV['DB_PASSWORD'] === '0' ? '0' : ''),
-            'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4',
-        ],
+        'database' => (function (): array {
+            $db = nexus_database_env();
+            $password = $db['password'];
+            if ($password === '' && isset($_ENV['DB_PASSWORD']) && trim((string) $_ENV['DB_PASSWORD']) === '0') {
+                $password = '0';
+            }
+
+            return [
+                'driver' => $db['driver'],
+                'host' => $db['host'],
+                'port' => $db['port'],
+                'dbname' => $db['dbname'],
+                'user' => $db['user'],
+                'password' => $password,
+                'charset' => $db['charset'],
+            ];
+        })(),
         'redis' => [
             'host' => $_ENV['REDIS_HOST'] ?? '127.0.0.1',
             'port' => (int)($_ENV['REDIS_PORT'] ?? 6379),
