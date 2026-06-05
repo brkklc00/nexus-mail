@@ -2,13 +2,9 @@
 
 declare(strict_types=1);
 
-// .env dosyasını yükle (eksik anahtarlar için; mevcut ortam değişkenlerinin üzerine yazmaz)
-if (file_exists(__DIR__ . '/../.env') && file_exists(__DIR__ . '/../vendor/autoload.php')) {
-    require_once __DIR__ . '/../vendor/autoload.php';
-    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
-    $dotenv->safeLoad();
-}
-
+// .env dosyasını yükle (tüm giriş noktalarında aynı mantık)
+require_once __DIR__ . '/load-env.php';
+nexus_ensure_env_loaded();
 require_once __DIR__ . '/database-env.php';
 
 // Debug log helper: sadece APP_DEBUG=true iken yazar.

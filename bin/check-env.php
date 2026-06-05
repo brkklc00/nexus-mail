@@ -21,8 +21,8 @@ echo "✅ .env dosyası bulundu: $envFile\n\n";
 
 // .env dosyasını yükle
 try {
-    $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
-    $dotenv->load();
+    require_once __DIR__ . '/../config/load-env.php';
+    nexus_ensure_env_loaded();
     echo "✅ .env dosyası yüklendi\n\n";
 } catch (Exception $e) {
     echo "❌ .env dosyası yüklenemedi: " . $e->getMessage() . "\n";
@@ -30,13 +30,13 @@ try {
 }
 
 // Database ayarlarını kontrol et
-echo "=== DATABASE AYARLARI ===\n";
-echo "DB_HOST: " . ($_ENV['DB_HOST'] ?? 'NULL') . "\n";
-echo "DB_PORT: " . ($_ENV['DB_PORT'] ?? 'NULL') . "\n";
-echo "DB_NAME: " . ($_ENV['DB_NAME'] ?? 'NULL') . "\n";
-echo "DB_USER: " . ($_ENV['DB_USER'] ?? 'NULL') . "\n";
-$password = $_ENV['DB_PASSWORD'] ?? 'NULL';
-if ($password === 'NULL' || empty($password)) {
+echo "=== DATABASE AYARLARI (.env) ===\n";
+echo "DB_HOST: " . (nexus_env('DB_HOST') ?? 'NULL') . "\n";
+echo "DB_PORT: " . (nexus_env('DB_PORT') ?? 'NULL') . "\n";
+echo "DB_NAME: " . (nexus_env('DB_NAME') ?? 'NULL') . "\n";
+echo "DB_USER: " . (nexus_env('DB_USER') ?? 'NULL') . "\n";
+$password = nexus_env('DB_PASSWORD');
+if ($password === null || $password === '') {
     echo "DB_PASSWORD: ❌ BOŞ VEYA NULL!\n";
 } else {
     echo "DB_PASSWORD: ✅ VAR (uzunluk: " . strlen($password) . " karakter)\n";
