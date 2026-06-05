@@ -63,7 +63,7 @@ sed -i '/^client_max_body_size 1024M;$/d' /etc/nginx/nginx.conf 2>/dev/null || t
 NGINX_SITES=(/etc/nginx/sites-available/*)
 for SITE in "${NGINX_SITES[@]}"; do
   [ -f "$SITE" ] || continue
-  grep -q 'root.*nexus-mail\|/var/www/nexus-mail' "$SITE" 2>/dev/null || continue
+  grep -q 'root.*nexus-mail\|/var/www/nexus-mail\|root.*nexus[^-]\|/var/www/nexus[^-]\|hub-nexus' "$SITE" 2>/dev/null || continue
   echo "Nginx site güncelleniyor: $SITE"
   sed -i "s/client_max_body_size.*/client_max_body_size ${BODY};/" "$SITE"
   if ! grep -q fastcgi_read_timeout "$SITE"; then
