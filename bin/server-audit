@@ -62,6 +62,10 @@ if (is_readable($fpmIni)) {
         $v = sh("grep -E '^;?\\s*{$k}\\s*=' {$fpmIni} | tail -1 | cut -d= -f2- | tr -d ' '");
         line('  ' . $k, $v ?: '?');
     }
+    foreach (['opcache.enable', 'opcache.memory_consumption', 'opcache.jit_buffer_size', 'realpath_cache_size'] as $k) {
+        $v = sh("grep -E '^;?\\s*{$k}\\s*=' {$fpmIni} | tail -1 | cut -d= -f2- | tr -d ' '");
+        line('  ' . $k, $v ?: '?');
+    }
 }
 $pool = '/etc/php/8.3/fpm/pool.d/www.conf';
 if (is_readable($pool)) {
@@ -91,7 +95,7 @@ echo "  fastcgi_read_timeout     → {$timeout}\n";
 echo "  request_terminate_timeout→ " . rtrim($timeout, 's') . "\n";
 echo "  pm.max_children          → ~{$children}\n";
 echo PHP_EOL;
-echo "  Uygulamak için: sudo php bin/server-tune-limits\n";
+echo "  Uygulamak için: sudo bash bin/server-tune-limits\n";
 echo PHP_EOL;
 
 section('AKTİF PM2');

@@ -10,12 +10,16 @@ CPU=$(nproc 2>/dev/null || echo 2)
 
 if [ "$MEM_MB" -ge 16384 ]; then
   BODY="2048M"; MEM="4096M"; TIMEOUT="1800"; CHILDREN=60
+  OPCACHE_MEM=512; REALPATH_CACHE="8192k"
 elif [ "$MEM_MB" -ge 8192 ]; then
   BODY="1024M"; MEM="2048M"; TIMEOUT="900"; CHILDREN=40
+  OPCACHE_MEM=256; REALPATH_CACHE="4096k"
 elif [ "$MEM_MB" -ge 4096 ]; then
   BODY="1024M"; MEM="1024M"; TIMEOUT="900"; CHILDREN=25
+  OPCACHE_MEM=192; REALPATH_CACHE="4096k"
 else
   BODY="512M"; MEM="512M"; TIMEOUT="600"; CHILDREN=15
+  OPCACHE_MEM=128; REALPATH_CACHE="2048k"
 fi
 
 # CPU'ya göre üst sınır
@@ -56,6 +60,29 @@ if [ -f "$FPM_POOL" ]; then
   done
 fi
 
+# OPcache + realpath (FPM performans)
+if [ -f "$FPM_INI" ]; then
+  echo "OPcache ayarlanıyor (memory=${OPCACHE_MEM}MB)..."
+  for kv in \
+    "opcache.enable = 1" \
+    "opcache.enable_cli = 0" \
+    "opcache.memory_consumption = ${OPCACHE_MEM}" \
+    "opcache.interned_strings_buffer = 32" \
+    "opcache.max_accelerated_files = 30000" \
+    "opcache.validate_timestamps = 1" \
+    "opcache.revalidate_freq = 2" \
+    "opcache.save_comments = 1" \
+    "opcache.jit = 1255" \
+    "opcache.jit_buffer_size = 128M" \
+    "realpath_cache_size = ${REALPATH_CACHE}" \
+    "realpath_cache_ttl = 600"; do
+    key="${kv%%=*}"
+    key="${key// /}"
+    sed -i "s/^;\\?${key}.*/${kv}/" "$FPM_INI" || true
+    grep -q "^${key}" "$FPM_INI" || echo "$kv" >> "$FPM_INI"
+  done
+fi
+
 # nginx.conf yanlış satır temizliği
 sed -i '/^client_max_body_size 2048M;$/d' /etc/nginx/nginx.conf 2>/dev/null || true
 sed -i '/^client_max_body_size 1024M;$/d' /etc/nginx/nginx.conf 2>/dev/null || true
@@ -72,6 +99,14 @@ for SITE in "${NGINX_SITES[@]}"; do
     sed -i "s/fastcgi_read_timeout.*/fastcgi_read_timeout ${TIMEOUT}s;/" "$SITE"
     sed -i "s/fastcgi_send_timeout.*/fastcgi_send_timeout ${TIMEOUT}s;/" "$SITE"
   fi
+  if ! grep -q 'fastcgi_buffers' "$SITE"; then
+    sed -i "/fastcgi_read_timeout/a\\    fastcgi_buffers 32 32k;\\n    fastcgi_buffer_size 64k;\\n    fastcgi_busy_buffers_size 128k;" "$SITE" 2>/dev/null || true
+  fi
+  if ! grep -q 'gzip on' "$SITE"; then
+    if grep -q 'server {' "$SITE"; then
+      sed -i "/server {/a\\    gzip on;\\n    gzip_vary on;\\n    gzip_proxied any;\\n    gzip_comp_level 5;\\n    gzip_min_length 256;\\n    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss image/svg+xml;" "$SITE"
+    fi
+  fi
   if grep -q 'location ~ \\.php' "$SITE" && ! grep -A25 'location ~ \\.php' "$SITE" | grep -q fastcgi_read_timeout; then
     sed -i "/location ~ \\\\.php/,/^[[:space:]]*}/ s/fastcgi_pass/&/" "$SITE" 2>/dev/null || true
   fi
@@ -81,4 +116,5 @@ systemctl reload php8.3-fpm
 nginx -t
 systemctl reload nginx
 
-echo "OK — limitler uygulandı. Doğrulama: php bin/server-audit"
+echo "OK — limitler uygulandı. Doğrulama: sudo php bin/server-audit"
+echo "Deploy sonrası OPcache temizlemek için: sudo systemctl reload php8.3-fpm"
