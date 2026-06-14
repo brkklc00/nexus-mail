@@ -36,6 +36,8 @@ class EmailWorker {
         this.reportChecker = new ReportChecker();
         this.isRunning = false;
         this.lastCleanupAt = 0;
+        this.lastHeartbeatAt = 0;
+        this._shutdownPromise = null;
     }
 
     /**
@@ -49,9 +51,11 @@ class EmailWorker {
         Logger.info('═══════════════════════════════════════════════════════');
         console.log('');
         Logger.info('Yapılandırma:');
+        Logger.info(`Worker ID        : ${config.worker.workerId}`);
         Logger.info(`API URL          : ${config.api.baseUrl}`);
         Logger.info(`Poll Interval    : ${config.worker.pollInterval}ms`);
         Logger.info(`Kampanya eşzamanlı: ${config.worker.campaignConcurrency}`);
+        Logger.info(`Claim TTL        : ${config.worker.claimTtlSeconds}s | Stuck TTL: ${config.worker.stuckTtlHours}h`);
         Logger.info(`DB               : ${config.database.host}:${config.database.port} / ${config.database.database}`);
         try {
             await this.apiClient.refreshRuntimeSendingConfig();
@@ -62,17 +66,19 @@ class EmailWorker {
                     `Panel gönderim   : ~${Number.isFinite(r) ? r.toFixed(2) : '?'} mail/sn · havuz çekim ${wr.fetch_batch_size ?? '—'} · gönderim grup ${wr.send_batch_size ?? '—'} · SMTP lane ${wr.max_smtp_lanes ?? '—'} · lane eşzamanlı ${wr.send_concurrency_per_lane ?? '—'} · SMTP pool ${(wr.smtp_pool_max_connections ?? 0) > 0 ? wr.smtp_pool_max_connections : 'kapalı'}`
                 );
             } else {
-                Logger.warn('Panel gönderim ayarları alınamadı; API yanıt verene kadar kod içi varsayılanlar kullanılır.');
+                Logger.warn('Panel gönderim ayarları alınamadı; kod içi varsayılanlar kullanılır.');
             }
         } catch (_) {
             Logger.warn('Panel gönderim ayarları alınamadı; kod içi varsayılanlar kullanılır.');
         }
+
+        // Restart recovery: bu worker'ın işlediği kampanyaları anında pending'e al
+        // (lock TTL süresi beklenmez — ilk poll'da hemen görünürler)
+        Logger.info('Restart recovery kontrolü yapılıyor...');
+        await this.apiClient.cleanupStuckEmailCampaigns(config.worker.workerId);
         console.log('');
 
         this.isRunning = true;
-
-        // Report checker devre dışı (Email'de gerçek zamanlı tracking yok)
-        // this.reportChecker.start();
 
         process.on('SIGINT', () => void this.shutdown());
         process.on('SIGTERM', () => void this.shutdown());
@@ -109,7 +115,12 @@ class EmailWorker {
             const campaigns = await this.apiClient.getPendingEmailCampaigns(config.worker.pendingFetchLimit);
 
             if (campaigns.length === 0) {
-                // Kampanya yoksa sessiz kal (log yazma)
+                // Heartbeat: her 5 dakikada bir "canlı" logu yaz
+                const now = Date.now();
+                if (now - this.lastHeartbeatAt >= 5 * 60 * 1000) {
+                    this.lastHeartbeatAt = now;
+                    Logger.info(`Beklemede — kampanya yok | ${new Date().toLocaleString('tr-TR')}`);
+                }
                 return;
             }
 
@@ -170,25 +181,50 @@ class EmailWorker {
         if (now - this.lastCleanupAt < config.worker.cleanupIntervalMs) {
             return;
         }
-
         this.lastCleanupAt = now;
-        await this.apiClient.cleanupStuckEmailCampaigns();
+        await this.apiClient.cleanupStuckEmailCampaigns(config.worker.workerId);
     }
 
     /**
-     * Worker'ı durdur
+     * Worker'ı durdur — aktif kampanyaların tamamlanması için kısa süre bekler.
      */
     async shutdown() {
+        // Çift çağrı koruması
+        if (this._shutdownPromise) return this._shutdownPromise;
+        this._shutdownPromise = this._doShutdown();
+        return this._shutdownPromise;
+    }
+
+    async _doShutdown() {
         console.log('');
         Logger.info('═══════════════════════════════════════════════════════');
         Logger.info('Email Worker durduruluyor...');
         Logger.info('═══════════════════════════════════════════════════════');
 
         this.isRunning = false;
+
+        // Aktif kampanyalar varsa kısa süre bekle (graceful shutdown)
+        const activeCount = this.processor.processing.size;
+        if (activeCount > 0) {
+            Logger.info(`${activeCount} aktif kampanya — tamamlanması bekleniyor (max 30sn)...`);
+            const deadline = Date.now() + 30_000;
+            while (this.processor.processing.size > 0 && Date.now() < deadline) {
+                await this.sleep(500);
+            }
+            if (this.processor.processing.size > 0) {
+                Logger.warn(`${this.processor.processing.size} kampanya zaman aşımı — iptal ediliyor (restart recovery ile devam eder)`);
+                // cancelledCampaigns Set'ine ekle — send loop bunu görünce durur
+                for (const id of this.processor.processing) {
+                    this.processor.cancelledCampaigns.add(id);
+                }
+                await this.sleep(1000);
+            } else {
+                Logger.info('Tüm aktif kampanyalar tamamlandı');
+            }
+        }
+
         if (this.healthServer) {
-            try {
-                this.healthServer.close();
-            } catch (_) {}
+            try { this.healthServer.close(); } catch (_) {}
         }
         await closeMysqlPool().catch(() => {});
 

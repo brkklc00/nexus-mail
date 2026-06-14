@@ -478,11 +478,22 @@ export class ApiClient {
     }
 
     /**
-     * Takılı kalan email kampanyalarını temizle
+     * Takılı kalan email kampanyalarını temizle.
+     * workerId verilirse o worker'ın sahiplendiği kampanyalar anında pending'e düşer (restart recovery).
      */
-    async cleanupStuckEmailCampaigns() {
+    async cleanupStuckEmailCampaigns(workerId = null) {
         try {
-            await this.client.post('/email-campaigns/cleanup-stuck', {}, { timeout: this.batchTimeout });
+            const payload = workerId ? { worker_id: workerId } : {};
+            const response = await this.client.post('/email-campaigns/cleanup-stuck', payload, {
+                timeout: this.batchTimeout,
+            });
+            const data = response.data ?? {};
+            if (data.worker_released > 0) {
+                Logger.info(`Restart recovery: ${data.worker_released} kampanya bu worker'a aitti → pending'e döndürüldü`);
+            }
+            if (data.time_released > 0) {
+                Logger.info(`Stuck cleanup: ${data.time_released} kampanya ${data.hours}h sınırı aşınca serbest bırakıldı`);
+            }
         } catch (error) {
             Logger.error(`cleanupStuckEmailCampaigns error: ${error.message}`);
         }

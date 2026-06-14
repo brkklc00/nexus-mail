@@ -520,6 +520,10 @@ class ApiController
     /**
      * API: Takılı kalan email kampanyalarını temizle
      * POST /api/email-campaigns/cleanup-stuck
+     *
+     * Body (optional): { "worker_id": "email-worker-hostname" }
+     * worker_id verilirse o worker'ın sahiplendiği kampanyalar anında serbest bırakılır
+     * (restart recovery — lock TTL beklenmez).
      */
     public function cleanupStuckEmailCampaigns(Request $request, Response $response): Response
     {
@@ -528,10 +532,33 @@ class ApiController
             return $tokenError;
         }
 
-        $stuckHours = max(1, (int) ($_ENV['EMAIL_STUCK_TTL_HOURS'] ?? 6));
-        $conn = $this->em->getConnection();
+        $body = (string) $request->getBody();
+        $data = json_decode($body, true) ?: (array) ($request->getParsedBody() ?? []);
+        $workerId = isset($data['worker_id']) ? trim((string) $data['worker_id']) : '';
 
-        $cleaned = $conn->executeStatement(
+        $conn = $this->em->getConnection();
+        $workerReleased = 0;
+
+        // 1. Restart recovery: bu worker'ın sahiplendiği kampanyaları anında serbest bırak
+        if ($workerId !== '') {
+            $workerReleased = (int) $conn->executeStatement(
+                "UPDATE email_orders
+                 SET status = 'pending',
+                     locked_at = NULL,
+                     locked_by = NULL,
+                     updated_at = NOW()
+                 WHERE status = 'processing'
+                   AND locked_by = ?",
+                [$workerId]
+            );
+            if ($workerReleased > 0) {
+                error_log("cleanup-stuck: {$workerReleased} kampanya worker='{$workerId}' restart sonrası serbest bırakıldı");
+            }
+        }
+
+        // 2. Zaman bazlı genel temizleme (herhangi bir worker'dan kalan)
+        $stuckHours = max(1, (int) ($_ENV['EMAIL_STUCK_TTL_HOURS'] ?? 6));
+        $timeReleased = (int) $conn->executeStatement(
             "UPDATE email_orders
              SET status = 'pending',
                  locked_at = NULL,
@@ -543,9 +570,12 @@ class ApiController
         );
 
         $response->getBody()->write(json_encode([
-            'success' => true,
-            'cleaned' => (int) $cleaned,
-            'hours' => $stuckHours,
+            'success'          => true,
+            'cleaned'          => $workerReleased + $timeReleased,
+            'worker_released'  => $workerReleased,
+            'time_released'    => $timeReleased,
+            'worker_id'        => $workerId ?: null,
+            'hours'            => $stuckHours,
         ]));
 
         return $response->withHeader('Content-Type', 'application/json');
