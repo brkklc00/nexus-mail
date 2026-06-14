@@ -62,6 +62,7 @@ module.exports = {
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
+        FORCE_COLOR: '1',
         EMAIL_LOG_LEVEL: 'info',
         EMAIL_WORKER_ID: 'email-worker-0',
         EMAIL_CLAIM_TTL_SECONDS: '900',

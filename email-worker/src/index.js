@@ -44,38 +44,38 @@ class EmailWorker {
      * Worker'ı başlat
      */
     async start() {
-        console.log('');
-        Logger.info('═══════════════════════════════════════════════════════');
         const appTitle = process.env.SITE_TITLE || 'Nexus Panel';
-        Logger.info(`${appTitle} - Email Worker başlatılıyor...`);
-        Logger.info('═══════════════════════════════════════════════════════');
         console.log('');
-        Logger.info('Yapılandırma:');
-        Logger.info(`Worker ID        : ${config.worker.workerId}`);
-        Logger.info(`API URL          : ${config.api.baseUrl}`);
-        Logger.info(`Poll Interval    : ${config.worker.pollInterval}ms`);
-        Logger.info(`Kampanya eşzamanlı: ${config.worker.campaignConcurrency}`);
-        Logger.info(`Claim TTL        : ${config.worker.claimTtlSeconds}s | Stuck TTL: ${config.worker.stuckTtlHours}h`);
-        Logger.info(`DB               : ${config.database.host}:${config.database.port} / ${config.database.database}`);
+        Logger.divider('═');
+        Logger.banner(`  ${appTitle}  ·  Email Worker`);
+        Logger.divider('═');
+        console.log('');
+
+        Logger.kv('Worker ID',  config.worker.workerId);
+        Logger.kv('API',        config.api.baseUrl);
+        Logger.kv('Poll',       `${config.worker.pollInterval}ms`);
+        Logger.kv('Eşzamanlı', `${config.worker.campaignConcurrency} kampanya`);
+        Logger.kv('Claim TTL',  `${config.worker.claimTtlSeconds}s  │  Stuck: ${config.worker.stuckTtlHours}h`);
+        Logger.kv('DB',         `${config.database.host}:${config.database.port} / ${config.database.database}`);
+
         try {
             await this.apiClient.refreshRuntimeSendingConfig();
             const wr = this.apiClient.workerRuntime;
             if (wr) {
                 const r = wr.rate_per_second_effective != null ? Number(wr.rate_per_second_effective) : NaN;
-                Logger.info(
-                    `Panel gönderim   : ~${Number.isFinite(r) ? r.toFixed(2) : '?'} mail/sn · havuz çekim ${wr.fetch_batch_size ?? '—'} · gönderim grup ${wr.send_batch_size ?? '—'} · SMTP lane ${wr.max_smtp_lanes ?? '—'} · lane eşzamanlı ${wr.send_concurrency_per_lane ?? '—'} · SMTP pool ${(wr.smtp_pool_max_connections ?? 0) > 0 ? wr.smtp_pool_max_connections : 'kapalı'}`
-                );
+                const rStr = Number.isFinite(r) ? `~${r.toFixed(2)} mail/sn` : '?';
+                Logger.kv('Gönderim', `${rStr}  │  çekim ${wr.fetch_batch_size ?? '—'}  │  grup ${wr.send_batch_size ?? '—'}  │  lane ${wr.max_smtp_lanes ?? '—'}`);
             } else {
-                Logger.warn('Panel gönderim ayarları alınamadı; kod içi varsayılanlar kullanılır.');
+                Logger.warn('Panel gönderim ayarları alınamadı — kod içi varsayılanlar aktif');
             }
         } catch (_) {
-            Logger.warn('Panel gönderim ayarları alınamadı; kod içi varsayılanlar kullanılır.');
+            Logger.warn('Panel gönderim ayarları alınamadı — kod içi varsayılanlar aktif');
         }
 
-        // Restart recovery: bu worker'ın işlediği kampanyaları anında pending'e al
-        // (lock TTL süresi beklenmez — ilk poll'da hemen görünürler)
-        Logger.info('Restart recovery kontrolü yapılıyor...');
+        console.log('');
+        Logger.info('Restart recovery: önceki kampanyalar kontrol ediliyor...');
         await this.apiClient.cleanupStuckEmailCampaigns(config.worker.workerId);
+        Logger.divider();
         console.log('');
 
         this.isRunning = true;
@@ -197,9 +197,9 @@ class EmailWorker {
 
     async _doShutdown() {
         console.log('');
-        Logger.info('═══════════════════════════════════════════════════════');
-        Logger.info('Email Worker durduruluyor...');
-        Logger.info('═══════════════════════════════════════════════════════');
+        Logger.divider('═');
+        Logger.banner('  Email Worker durduruluyor...');
+        Logger.divider('═');
 
         this.isRunning = false;
 
@@ -228,7 +228,8 @@ class EmailWorker {
         }
         await closeMysqlPool().catch(() => {});
 
-        Logger.info('Email Worker başarıyla durduruldu');
+        Logger.divider();
+        Logger.info('Email Worker durduruldu');
         process.exit(0);
     }
 

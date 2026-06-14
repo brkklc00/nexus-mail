@@ -110,46 +110,38 @@ export class CampaignProcessor {
             .slice(0, 72);
 
         console.log('');
-        Logger.info('╔══════════════════════════════════════════════════════════════════════╗');
-        Logger.info(`║ Kampanya #${campaign.id}  ·  ${campaign.total_emails.toLocaleString()} mail (sipariş toplamı)`);
+        Logger.divider('─');
+        Logger.banner(`  ▶  Kampanya #${campaign.id}  ·  ${campaign.total_emails.toLocaleString()} mail`);
         if (subjectLine) {
-            Logger.info(`║ Konu: ${subjectLine}${String(campaign.subject || '').length > 72 ? '…' : ''}`);
+            Logger.banner(`     ${subjectLine}${String(campaign.subject || '').length > 72 ? '…' : ''}`);
         }
-        Logger.info('╚══════════════════════════════════════════════════════════════════════╝');
+        Logger.divider('─');
 
         try {
-            // Durum: Processing
             const tStatus = Date.now();
             await this.apiClient.updateEmailCampaignStatus(campaign.id, 'processing');
-            Logger.info(`Durum → processing │ ${formatDurationMs(Date.now() - tStatus)}`);
+            Logger.info(`Durum → processing  (${formatDurationMs(Date.now() - tStatus)})`);
 
-            // EMAIL BLACKLIST YÜKLE (Campaign başında bir kez)
             const tBl = Date.now();
             const blacklistSet = await this.apiClient.getEmailBlacklist();
-            Logger.info(`Karaliste yüklen │ ${blacklistSet.size.toLocaleString()} adres │ ${formatDurationMs(Date.now() - tBl)}`);
+            Logger.info(`Karaliste  ${blacklistSet.size.toLocaleString()} adres  (${formatDurationMs(Date.now() - tBl)})`);
 
-            // Telegram bildirimi kaldırıldı
-
-            // Delivery percentage hesapla
             const campaignPercentage = campaign.delivery_percentage || 100;
             const userPercentage = campaign.email_delivery_percentage || 100;
             const finalPercentage = Math.round((campaignPercentage * userPercentage) / 100);
 
-            // Toplam pending email sayısı
             const totalPending = campaign.pending_emails || campaign.total_emails;
-            
-            // Kaç tanesi real, kaç tanesi fake olacak?
             const realCount = Math.floor((totalPending * finalPercentage) / 100);
             const fakeCount = totalPending - realCount;
-            
-            Logger.info(`Gönderim kotası  : gerçek ${realCount.toLocaleString()} · sahte (anında işaret) ${fakeCount.toLocaleString()}`);
+
+            Logger.info(`Kota  gerçek ${realCount.toLocaleString()}  ·  sahte ${fakeCount.toLocaleString()}  ·  oran %${finalPercentage}`);
 
             const wr = this.apiClient.workerRuntime;
             if (wr && wr.rate_per_second_effective != null) {
                 const rp = Number(wr.rate_per_second_effective);
                 if (Number.isFinite(rp) && rp > 0) {
                     const estSec = realCount / rp;
-                    Logger.info(`Panel hedefi     : ~${rp.toFixed(2)} mail/sn → gerçek gönderimler için kabaca ${formatDurationMs(estSec * 1000)} (teorik, SMTP yüküne bağlı)`);
+                    Logger.info(`Hedef hız  ~${rp.toFixed(2)} mail/sn  →  tahmini ${formatDurationMs(estSec * 1000)}`);
                 }
             }
 
@@ -204,7 +196,7 @@ export class CampaignProcessor {
                 prefetchPromise = startFetch(lastPoolCursor);
 
                 Logger.info(
-                    `Havuz/API batch  : ${emails.length.toLocaleString()} adres │ çekim ${prefetched ? `${fetchMs}ms (önbellekte)` : formatDurationMs(fetchMs)} │ limit=${fetchBatchSize}`
+                    `Batch  ${emails.length.toLocaleString()} adres  ·  çekim ${prefetched ? `${fetchMs}ms (önceden)` : formatDurationMs(fetchMs)}`
                 );
 
                 // EMAIL VALIDATION (BOUNCE ÖNLEMİ)
@@ -295,7 +287,7 @@ export class CampaignProcessor {
                     ? `~${formatDurationMs((remaining / overallMps) * 1000)}`
                     : '—';
                 Logger.info(
-                    `İlerleme │ ${processedCount.toLocaleString()}/${totalPending.toLocaleString()} (%${progress}) │ ${formatDurationMs(elapsedCamp)} geçti │ ${overallMps.toFixed(2)} mail/sn │ kalan ${etaStr}`
+                    `↑ ${processedCount.toLocaleString()}/${totalPending.toLocaleString()} (%${progress})  ·  ${overallMps.toFixed(2)} mail/sn  ·  kalan ${etaStr}`
                 );
 
                 if ((batchData.total_pending ?? 0) > emails.length) {
@@ -308,22 +300,14 @@ export class CampaignProcessor {
             const remainingPending = finalCheck ? finalCheck.total_pending : 0;
             
             if (remainingPending > 0) {
-                // Hala pending email var! Kampanyayı completed yapma, processing olarak bırak
-                Logger.error(`⚠️ Kampanya #${campaign.id} işlenirken ${remainingPending} pending email kaldı!`);
-                Logger.error('Kampanya durumu "processing" olarak kaldı. Worker tekrar çalıştığında kalan email\'ler gönderilecek.');
-                Logger.error('Bu durum şu sebeplerden olabilir:');
-                Logger.error('  1. Worker crash oldu veya manuel durduruldu');
-                Logger.error('  2. SMTP bağlantısı kesildi');
-                Logger.error('  3. API iletişiminde sorun oluştu');
-                
-                // İstatistikleri güncelle ama durumu processing olarak bırak
+                Logger.warn(`Kampanya #${campaign.id} — ${remainingPending} pending email kaldı, "processing" olarak bırakıldı`);
+                Logger.warn('Worker tekrar çalışınca kalan emailler gönderilecek');
                 await this.apiClient.updateEmailCampaignStatus(campaign.id, 'processing', {
                     sent_count: successCount,
                     failed_count: failedCount,
                     delivered_count: successCount
                 });
-                
-                return; // Kampanyayı tamamlama, çık
+                return;
             }
             
             // Tüm email'ler işlendi, şimdi completed yapabiliriz
@@ -335,42 +319,36 @@ export class CampaignProcessor {
 
             const totalCampMs = Date.now() - campaignStartedAt;
             const avgMps = mailsPerSecond(processedCount, totalCampMs);
-            const msPerRecord = processedCount > 0 ? totalCampMs / processedCount : 0;
 
-            Logger.info('┌─ Kampanya tamamlandı ───────────────────────────────────────────────');
-            Logger.info(`│ Süre (toplam)    : ${formatDurationMs(totalCampMs)}`);
-            Logger.info(`│ İşlenen kayıt    : ${processedCount.toLocaleString()} (satır bazında)`);
-            Logger.info(`│ Ortalama         : ${avgMps.toFixed(2)} mail/sn │ ~${formatDurationMs(msPerRecord)} / kayıt (havuz+SMTP+API)`);
-            Logger.info(`│ Başarılı gönderim: ${successCount.toLocaleString()}`);
-            Logger.info(`│ Başarısız       : ${failedCount.toLocaleString()}`);
-            Logger.info(`│ Karaliste        : ${blacklistedCount.toLocaleString()}`);
-            Logger.info(`│ Geçersiz adres   : ${invalidEmailCount.toLocaleString()}`);
-            Logger.info(`│ campaigns_dispatched_total=${1} campaign_send_failures_total=${failedCount}`);
-            Logger.info('└──────────────────────────────────────────────────────────────────────');
+            console.log('');
+            Logger.divider('─');
+            Logger.banner(`  ✓  Kampanya #${campaign.id} tamamlandı  ·  ${formatDurationMs(totalCampMs)}`);
+            Logger.divider('─');
+            Logger.kv('Gönderildi',   `${successCount.toLocaleString()}  (${avgMps.toFixed(2)} mail/sn)`);
+            Logger.kv('Başarısız',    failedCount.toLocaleString());
+            Logger.kv('Karaliste',    blacklistedCount.toLocaleString());
+            Logger.kv('Geçersiz',     invalidEmailCount.toLocaleString());
+            Logger.kv('Toplam işlen', processedCount.toLocaleString());
+            Logger.divider();
             
             // SMTP health report
             this.healthMonitor.logStats();
 
         } catch (error) {
-            Logger.error(`Kampanya #${campaign.id} işlenirken hata: ${error.message}`);
-            
-            // ✅ SMTP yok / günlük limit — processing kalsın
-            // ✅ API sonuç yazılamadı (DNS kesintisi vb.) — processing kalsın; failed yapma (çift gönderim riski)
             const keepProcessing =
                 error.message.includes('No SMTP available')
                 || error.message.startsWith(RESULT_PERSIST_FAILED);
 
             if (keepProcessing) {
                 if (error.message.startsWith(RESULT_PERSIST_FAILED)) {
-                    Logger.warn(`⏸️  Kampanya #${campaign.id} "processing" durumunda kaldı (sonuç kaydı başarısız — API veya DB)`);
-                    Logger.warn('⏰ Sorun giderilince aynı pending kayıtlar tekrar işlenecek; kampanya failed olarak işaretlenmedi.');
+                    Logger.warn(`Kampanya #${campaign.id} duraklatıldı — sonuç kaydı başarısız (API/DB)`);
+                    Logger.warn('Sorun giderilince pending kayıtlar tekrar işlenecek');
                 } else {
-                    Logger.warn(`⏸️  Kampanya #${campaign.id} "processing" durumunda kaldı (SMTP günlük limitleri aşıldı)`);
-                    Logger.warn('⏰ Worker tekrar çalıştığında (limitler resetlenince) otomatik devam edecek');
+                    Logger.warn(`Kampanya #${campaign.id} duraklatıldı — SMTP günlük limiti doldu`);
+                    Logger.warn('Limitler resetlenince worker otomatik devam edecek');
                 }
             } else {
-                Logger.error(`❌ Kampanya #${campaign.id} başarısız oldu: ${error.message}`);
-                Logger.error(`campaign_send_failures_total=1 campaign_id=${campaign.id}`);
+                Logger.error(`Kampanya #${campaign.id} başarısız: ${error.message}`);
                 await this.apiClient.updateEmailCampaignStatus(campaign.id, 'failed');
             }
         } finally {
@@ -605,13 +583,12 @@ export class CampaignProcessor {
             }
         }
 
-        const persistLabel =
-            this.resultMode === 'direct-db' && this.flushService ? 'DB flush' : 'panel API';
+        const persistLabel = this.resultMode === 'direct-db' && this.flushService ? 'db' : 'api';
         const delivered = results.filter((r) => r.status === 'delivered').length;
-        const failed = results.filter((r) => r.status === 'failed').length;
-        const smtpMps = smtpMs >= 1 && batch.length > 0 ? batch.length / (smtpMs / 1000) : 0;
+        const failed    = results.filter((r) => r.status === 'failed').length;
+        const smtpMps   = smtpMs >= 1 && batch.length > 0 ? batch.length / (smtpMs / 1000) : 0;
         Logger.info(
-            `Gönderim batch │ ${batch.length} mail │ SMTP ${formatDurationMs(smtpMs)}${smtpMps > 0 ? ` (~${smtpMps.toFixed(2)} mail/sn)` : ''} │ ${persistLabel} ${formatDurationMs(persistMs)} │ ✓ ${delivered} · ✗ ${failed}`
+            `Send  ${batch.length} mail  ·  SMTP ${formatDurationMs(smtpMs)}${smtpMps > 0 ? ` (${smtpMps.toFixed(1)}/sn)` : ''}  ·  ${persistLabel} ${formatDurationMs(persistMs)}  ·  ✓ ${delivered}  ✗ ${failed}`
         );
 
         return results;
