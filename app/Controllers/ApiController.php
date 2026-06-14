@@ -1217,6 +1217,89 @@ class ApiController
     }
 
     /**
+     * API: Tek sorguda N adet SMTP seç (paralel lane kurulumu için)
+     * GET /api/smtp/select-best-batch?count=N&exclude_ids=1,2,3
+     */
+    public function selectBestSmtpBatch(Request $request, Response $response): Response
+    {
+        $tokenError = $this->validateApiToken($request, $response);
+        if ($tokenError) {
+            return $tokenError;
+        }
+
+        $params     = $request->getQueryParams();
+        $count      = max(1, min(20, (int) ($params['count'] ?? 1)));
+        $excludeRaw = (string) ($params['exclude_ids'] ?? '');
+        $excludeSmtpIds = $excludeRaw !== ''
+            ? array_values(array_filter(array_map('intval', explode(',', $excludeRaw)), static fn ($id) => $id > 0))
+            : [];
+
+        $smtpList = $this->emailSmtpSelector->selectBestSmtpBatch($count, $excludeSmtpIds);
+
+        if (empty($smtpList)) {
+            $response->getBody()->write(json_encode([
+                'success'        => false,
+                'smtps'          => [],
+                'error'          => 'No active SMTP accounts found',
+                'worker_runtime' => $this->emailSendingConfigService->getWorkerRuntimePayload(),
+            ], JSON_UNESCAPED_UNICODE));
+            return $response->withHeader('Content-Type', 'application/json');
+        }
+
+        $planConfig   = $this->emailSendingConfigService->getConfig();
+        $globalTotals = $this->emailSmtpSelector->getGlobalUsageTotals();
+
+        $smtpPayloads = [];
+        foreach ($smtpList as $bestSmtp) {
+            $isAlibaba  = str_contains(strtolower($bestSmtp->getHost()), 'aliyun')
+                       || str_contains(strtolower($bestSmtp->getHost()), 'alibaba')
+                       || str_contains(strtolower($bestSmtp->getHost()), 'aliyuncs.com');
+            $baseRate   = (float) ($planConfig['rate_per_second'] ?? 1.0);
+            $alibabaCap = $planConfig['alibaba_rate_cap'] ?? null;
+            $providerRate  = $isAlibaba && $alibabaCap !== null ? max(0.1, (float) $alibabaCap) : $baseRate;
+            $effectiveRate = min($baseRate, $providerRate);
+            $maxCap        = $planConfig['max_rate_per_second'] ?? null;
+            if ($maxCap !== null && $maxCap > 0) {
+                $effectiveRate = min($effectiveRate, (float) $maxCap);
+            }
+
+            $smtpPayloads[] = [
+                'id'                   => $bestSmtp->getId(),
+                'host'                 => $bestSmtp->getHost(),
+                'port'                 => $bestSmtp->getPort(),
+                'username'             => $bestSmtp->getUsername(),
+                'password'             => $this->emailSmtpService->decryptPassword($bestSmtp->getPassword()),
+                'encryption'           => $bestSmtp->getEncryption(),
+                'from_email'           => $bestSmtp->getFromEmail(),
+                'from_name'            => $bestSmtp->getFromName(),
+                'daily_limit'          => $bestSmtp->getDailyLimit(),
+                'daily_sent'           => $bestSmtp->getDailySent(),
+                'hourly_limit'         => $bestSmtp->getHourlyLimit(),
+                'hourly_sent'          => $bestSmtp->getHourlySent(),
+                'minute_limit'         => $bestSmtp->getMinuteLimit(),
+                'minute_sent'          => $bestSmtp->getMinuteSent(),
+                'rate_per_second'      => $effectiveRate,
+                'total_sent'           => $bestSmtp->getTotalSent(),
+                'remaining_today'      => max(0, $planConfig['daily_limit'] - $globalTotals['daily_sent']),
+                'global_daily_sent'    => $globalTotals['daily_sent'],
+                'global_hourly_sent'   => $globalTotals['hourly_sent'],
+                'global_minute_sent'   => $globalTotals['minute_sent'],
+                'pool_max_connections' => (int) ($planConfig['worker_smtp_pool_connections'] ?? 0),
+                'pool_max_messages'    => (int) ($planConfig['worker_smtp_pool_max_messages'] ?? 100),
+            ];
+        }
+
+        $response->getBody()->write(json_encode([
+            'success'        => true,
+            'smtps'          => $smtpPayloads,
+            'count'          => count($smtpPayloads),
+            'worker_runtime' => $this->emailSendingConfigService->getWorkerRuntimePayload(),
+        ], JSON_UNESCAPED_UNICODE));
+
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    /**
      * API: SMTP kullanımını kaydet
      * POST /api/smtp/{id}/usage
      */

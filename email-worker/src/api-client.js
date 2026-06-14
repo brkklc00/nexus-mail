@@ -341,6 +341,34 @@ export class ApiClient {
     }
 
     /**
+     * Tek API çağrısıyla N adet SMTP seç (paralel lane kurulumu için)
+     */
+    async selectBestSmtpBatch(count, excludeIds = []) {
+        try {
+            const params = { count: Math.max(1, Math.min(20, count)) };
+            if (Array.isArray(excludeIds) && excludeIds.length > 0) {
+                params.exclude_ids = excludeIds.join(',');
+            }
+
+            const response = await this.client.get('/smtp/select-best-batch', { params });
+
+            if (response.data?.worker_runtime && typeof response.data.worker_runtime === 'object') {
+                this.workerRuntime = response.data.worker_runtime;
+            }
+
+            if (response.status !== 200 || !response.data?.success) {
+                Logger.debug(`selectBestSmtpBatch: success=false — ${response.data?.error || '—'}`);
+                return [];
+            }
+
+            return response.data.smtps || [];
+        } catch (error) {
+            Logger.error(`selectBestSmtpBatch error: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
      * En uygun SMTP hesabını seç
      */
     async selectBestSmtp(excludeIds = []) {

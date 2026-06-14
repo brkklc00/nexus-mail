@@ -234,6 +234,78 @@ class EmailSmtpSelector
     }
 
     /**
+     * Tek DB transaction'da N adet en uygun SMTP'yi seç.
+     * Paralel lane kurulumu için tasarlandı — worker tek API çağrısıyla tüm lane'leri alır.
+     */
+    public function selectBestSmtpBatch(int $count, array $excludeSmtpIds = []): array
+    {
+        if ($count <= 0) {
+            return [];
+        }
+
+        $conn = $this->em->getConnection();
+        $conn->beginTransaction();
+
+        try {
+            $allSmtps = $this->getActiveSmtps(lockRows: true);
+
+            $excludeMap = array_fill_keys(array_map('intval', $excludeSmtpIds), true);
+            $available = array_values(array_filter(
+                $allSmtps,
+                static fn (EmailSmtpAccount $s): bool => !isset($excludeMap[$s->getId()])
+            ));
+
+            if (empty($available)) {
+                $conn->commit();
+                return [];
+            }
+
+            $planConfig = $this->sendingConfigService?->getConfig() ?? [
+                'daily_limit'  => 20000,
+                'hourly_limit' => 3600,
+                'minute_limit' => 60,
+            ];
+
+            $totals = $this->getGlobalUsageTotals();
+            if ($this->isGlobalPlanLimitReached($planConfig, $totals)) {
+                $conn->commit();
+                return [];
+            }
+
+            // Per-SMTP limit filtresi: bireysel limiti aşan SMTP'leri çıkar
+            $available = array_values(array_filter(
+                $available,
+                static fn (EmailSmtpAccount $s): bool =>
+                    $s->getDailySent()  < $s->getDailyLimit()  &&
+                    $s->getHourlySent() < $s->getHourlyLimit() &&
+                    $s->getMinuteSent() < $s->getMinuteLimit()
+            ));
+
+            $selected   = [];
+            $selectedMap = $excludeMap;
+
+            for ($i = 0; $i < $count && !empty($available); $i++) {
+                $pick = $this->applyStrategy($available, $totals);
+                if (!$pick) {
+                    break;
+                }
+                $selected[]              = $pick;
+                $selectedMap[$pick->getId()] = true;
+                $available = array_values(array_filter(
+                    $available,
+                    static fn (EmailSmtpAccount $s): bool => !isset($selectedMap[$s->getId()])
+                ));
+            }
+
+            $conn->commit();
+            return $selected;
+        } catch (\Throwable $e) {
+            $conn->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * Strateji değiştir
      */
     public function setStrategy(string $strategy): self

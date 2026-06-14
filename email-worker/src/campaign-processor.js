@@ -437,25 +437,73 @@ export class CampaignProcessor {
 
     /**
      * Tek batch işle (SMTP CONNECTION POOL ile + HEALTH MONITORING)
+     * Paralel lane kurulumu: önce pool'dan al, kalan slotlar için batch API çağrısı + Promise.all connect
      */
     async processSingleBatch(campaign, batch) {
         const maxLanes = this.apiClient.getWorkerMaxSmtpLanes();
         const desiredLaneCount = Math.max(1, Math.min(maxLanes, batch.length));
         const smtpLanes = [];
         const excludedIds = new Set();
+        const SAFETY_BUFFER = maxLanes;
 
-        for (let i = 0; i < desiredLaneCount; i++) {
-            const lane = await this.getOrCreateSmtpConnection(Array.from(excludedIds));
-            if (!lane || !lane.client) {
-                break;
+        // 1. Pool'dan mevcut bağlantıları al (ağ maliyeti yok)
+        for (const [smtpId, connection] of this.smtpPool.entries()) {
+            if (smtpLanes.length >= desiredLaneCount) break;
+            if (!connection.isActive || !connection.client.isConnected) continue;
+
+            const dailyRemaining  = (connection.config.daily_limit  || 999999) - (connection.config.daily_sent  || 0);
+            const hourlyRemaining = (connection.config.hourly_limit || 999999) - (connection.config.hourly_sent || 0);
+            const minuteRemaining = (connection.config.minute_limit || 999999) - (connection.config.minute_sent || 0);
+
+            if (dailyRemaining <= SAFETY_BUFFER || hourlyRemaining <= SAFETY_BUFFER || minuteRemaining <= SAFETY_BUFFER) {
+                const which = dailyRemaining <= SAFETY_BUFFER ? 'günlük' : hourlyRemaining <= SAFETY_BUFFER ? 'saatlik' : 'dakikalık';
+                Logger.warn(`SMTP #${smtpId} ${which} limiti dolmak üzere — pool'dan çıkarılıyor`);
+                this.smtpPool.delete(smtpId);
+                try { connection.client.close(); } catch (_) {}
+                continue;
             }
 
-            if (excludedIds.has(lane.config.id)) {
-                break;
-            }
+            excludedIds.add(Number(smtpId));
+            smtpLanes.push(connection);
+            Logger.debug(`SMTP #${smtpId} pool'dan alındı (günlük kalan ${dailyRemaining})`);
+        }
 
-            excludedIds.add(lane.config.id);
-            smtpLanes.push(lane);
+        // 2. Eksik slotları tek API çağrısıyla al, tümünü eş zamanlı bağla
+        const remainingSlots = desiredLaneCount - smtpLanes.length;
+        if (remainingSlots > 0) {
+            const excludeArray = Array.from(excludedIds);
+            const newConfigs = await this.apiClient.selectBestSmtpBatch(remainingSlots, excludeArray);
+
+            if (newConfigs.length > 0) {
+                const tConnect = Date.now();
+                const connectResults = await Promise.all(
+                    newConfigs.map(async (smtpConfig) => {
+                        const smtpClient = new SmtpClient(smtpConfig);
+                        const connected = await smtpClient.connect();
+                        if (!connected) {
+                            Logger.warn(`SMTP #${smtpConfig.id} bağlantısı başarısız`);
+                            return null;
+                        }
+                        const connection = {
+                            config: smtpConfig,
+                            client: smtpClient,
+                            isActive: true,
+                            createdAt: Date.now(),
+                        };
+                        this.smtpPool.set(smtpConfig.id, connection);
+                        return connection;
+                    })
+                );
+                const connectMs = Date.now() - tConnect;
+                const connected = connectResults.filter(Boolean);
+                if (connected.length > 0) {
+                    Logger.info(`${connected.length} SMTP eş zamanlı bağlandı — ${formatDurationMs(connectMs)} (pool: ${this.smtpPool.size})`);
+                    for (const conn of connected) {
+                        smtpLanes.push(conn);
+                        excludedIds.add(conn.config.id);
+                    }
+                }
+            }
         }
 
         if (smtpLanes.length === 0) {
