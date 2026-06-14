@@ -35,6 +35,9 @@ export class ApiClient {
         this.lastErrorLogAt = new Map();
         /** Panelden gelen worker ayarları (runtime-config veya select-best) */
         this.workerRuntime = null;
+        /** Blacklist TTL cache: { data: Set<string>, expiresAt: number } | null */
+        this._blacklistCache = null;
+        this._blacklistTtlMs = parseInt(process.env.BLACKLIST_CACHE_TTL_MS || String(60 * 60 * 1000), 10);
 
         this.client = axios.create({
             baseURL: this.baseUrl,
@@ -373,25 +376,42 @@ export class ApiClient {
     }
 
     /**
-     * Kullanıcının email karalistesini getir (Cache edilebilir)
+     * Kullanıcının email karalistesini getir.
+     * Sonuç 1 saat (BLACKLIST_CACHE_TTL_MS) boyunca önbelleklenir.
+     * API hatası durumunda eski önbellek kullanılır.
      */
     async getEmailBlacklist() {
+        const now = Date.now();
+
+        if (this._blacklistCache && now < this._blacklistCache.expiresAt) {
+            const remainMin = Math.round((this._blacklistCache.expiresAt - now) / 60_000);
+            Logger.info(`Karaliste önbellekten alındı: ${this._blacklistCache.data.size.toLocaleString()} adres (${remainMin}dk geçerli)`);
+            return this._blacklistCache.data;
+        }
+
         try {
             const response = await this.client.get('/email-blacklist');
-            
+
             if (response.status !== 200 || !response.data.success) {
-                Logger.error(`getEmailBlacklist Error: ${JSON.stringify(response.data)}`);
-                return new Set(); // Boş Set döner
+                Logger.error(`getEmailBlacklist HTTP ${response.status}: ${JSON.stringify(response.data)}`);
+                if (this._blacklistCache) {
+                    Logger.warn('Karaliste API hatası — eski önbellek kullanılıyor');
+                    return this._blacklistCache.data;
+                }
+                return new Set();
             }
 
-            // Set olarak döndür (O(1) lookup için)
             const blacklistSet = new Set(response.data.blacklist.map(email => email.toLowerCase()));
-            Logger.info(`Email Blacklist yüklendi: ${blacklistSet.size.toLocaleString()} mail adresi`);
-            
+            this._blacklistCache = { data: blacklistSet, expiresAt: now + this._blacklistTtlMs };
+            Logger.info(`Karaliste API'den yüklendi: ${blacklistSet.size.toLocaleString()} adres (${Math.round(this._blacklistTtlMs / 60_000)}dk önbellekte)`);
             return blacklistSet;
         } catch (error) {
             Logger.error(`getEmailBlacklist error: ${error.message}`);
-            return new Set(); // Hata durumunda boş Set
+            if (this._blacklistCache) {
+                Logger.warn('Karaliste ağ hatası — eski önbellek kullanılıyor');
+                return this._blacklistCache.data;
+            }
+            return new Set();
         }
     }
 

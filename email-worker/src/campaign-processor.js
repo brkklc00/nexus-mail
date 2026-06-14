@@ -1,9 +1,9 @@
 import { Logger } from './logger.js';
 import { ApiClient } from './api-client.js';
 import { SmtpClient } from './smtp-client.js';
+import { SmtpRateLimiter } from './smtp-rate-limiter.js';
 import { config } from './config.js';
 import { insertBatchMetric } from './services/campaign-metric-service.js';
-// Telegram bildirimler kaldırıldı
 import { EmailValidator } from './email-validator.js';
 import { SmtpHealthMonitor } from './smtp-health-monitor.js';
 /** İnsan okumalı süre (ms → sn / dk / saat) */
@@ -54,8 +54,11 @@ export class CampaignProcessor {
         this.emailValidator = new EmailValidator();
         this.healthMonitor = new SmtpHealthMonitor();
         this.processing = new Set();
-        this.smtpPool = new Map(); // SMTP connection pool
-        this.throttleState = new Map(); // smtpId -> adaptive rate state
+        this.smtpPool = new Map();
+        this.throttleState = new Map();
+        this.rateLimiter = new SmtpRateLimiter();
+        this.cancelledCampaigns = new Set();
+        this._poolCleanupTimer = null;
         /** @type {import('mysql2/promise').Pool | null} */
         this.pool = options.pool ?? null;
         this.resultMode = (options.resultMode ?? config.worker.resultMode ?? 'api').toLowerCase();
@@ -90,6 +93,14 @@ export class CampaignProcessor {
             Logger.info(`Kampanya #${campaign.id} iptal edilmiş, atlandı`);
             return;
         }
+
+        // Cancel a pending pool-cleanup so existing SMTP connections are reused
+        if (this._poolCleanupTimer) {
+            clearTimeout(this._poolCleanupTimer);
+            this._poolCleanupTimer = null;
+            Logger.debug('SMTP pool cleanup iptal edildi — yeni kampanya bağlantıları devralıyor');
+        }
+        this.cancelledCampaigns.delete(campaign.id);
 
         this.processing.add(campaign.id);
         const campaignStartedAt = Date.now();
@@ -151,30 +162,36 @@ export class CampaignProcessor {
             const fetchBatchSize = this.apiClient.getWorkerFetchBatchSize();
             let lastPoolCursor = campaign.last_pool_id || null;
 
-            while (true) {
-                // Pending liste sürekli küçüldüğü için offset=0 ile ilk N kaydı çekiyoruz.
-                // Artan offset kullanımı kayıt atlanmasına ve pending kalmasına sebep olur.
-                const tFetch = Date.now();
-                const batchData = await this.apiClient.getEmailCampaignEmailsBatch(
-                    campaign.id, 
-                    0, 
-                    fetchBatchSize,
-                    lastPoolCursor
-                );
-                const fetchMs = Date.now() - tFetch;
+            // Prefetch pipeline: fetch N+1 while sending N.
+            // Pending list shrinks with each batch (offset=0 always), so we always
+            // pass the latest cursor after updating it from the response.
+            const startFetch = (cursor) =>
+                this.apiClient.getEmailCampaignEmailsBatch(campaign.id, 0, fetchBatchSize, cursor);
+            let prefetchPromise = startFetch(lastPoolCursor);
 
-                // API hata verirse null döner - bunu "bitmiş" sanıp çıkmayalım
+            while (true) {
+                // Cancel check (set externally via this.cancelledCampaigns)
+                if (this.cancelledCampaigns.has(campaign.id)) {
+                    Logger.info(`Kampanya #${campaign.id} iptal sinyali alındı — loop durduruluyor`);
+                    break;
+                }
+
+                const tFetch = Date.now();
+                const batchData = await prefetchPromise;
+                const fetchMs = Date.now() - tFetch;
+                const prefetched = fetchMs < 20; // near-zero = prefetch finished while we were sending
+
                 if (!batchData) {
-                    Logger.error(`Batch alınamadı (Kampanya #${campaign.id}, offset=${processedCount}) - API hatası veya bağlantı sorunu`);
+                    Logger.error(`Batch alınamadı (Kampanya #${campaign.id}, işlenen=${processedCount}) — API hatası`);
                     throw new Error(`API batch failed: Kampanya #${campaign.id} için email batch alınamadı`);
                 }
                 if (batchData.emails.length === 0) {
                     const apiTotalPending = batchData.total_pending ?? 0;
                     if (apiTotalPending > 0) {
-                        Logger.error(`API boş batch döndü ama total_pending=${apiTotalPending} (Kampanya #${campaign.id}, offset=${processedCount}) - Backend sorunu`);
-                        throw new Error(`Empty batch but ${apiTotalPending} pending: Kampanya #${campaign.id} - Backend kontrol edilmeli`);
+                        Logger.error(`API boş batch döndü ama total_pending=${apiTotalPending} (Kampanya #${campaign.id}) — backend sorunu`);
+                        throw new Error(`Empty batch but ${apiTotalPending} pending: Kampanya #${campaign.id}`);
                     }
-                    Logger.info('Tüm emailler işlendi veya pending email kalmadı');
+                    Logger.info('Tüm emailler işlendi — pending kalmadı');
                     break;
                 }
 
@@ -182,19 +199,23 @@ export class CampaignProcessor {
                 if (batchData.next_cursor) {
                     lastPoolCursor = batchData.next_cursor;
                 }
-                Logger.info(`Havuz/API batch  : ${emails.length} adres │ çekim ${formatDurationMs(fetchMs)} │ limit=${fetchBatchSize}`);
+
+                // Start fetching the next batch immediately (overlaps with current batch processing)
+                prefetchPromise = startFetch(lastPoolCursor);
+
+                Logger.info(
+                    `Havuz/API batch  : ${emails.length.toLocaleString()} adres │ çekim ${prefetched ? `${fetchMs}ms (önbellekte)` : formatDurationMs(fetchMs)} │ limit=${fetchBatchSize}`
+                );
 
                 // EMAIL VALIDATION (BOUNCE ÖNLEMİ)
                 const validationResult = await this.emailValidator.validateBatch(emails, {
-                    checkMX: false, // MX check yavaştır, skip (sadece syntax ve disposable check)
+                    checkMX: false,
                     autoCorrect: true,
                     skipDisposable: true
                 });
 
                 if (validationResult.invalid.length > 0) {
-                    Logger.warn(`${validationResult.invalid.length} geçersiz email atlandı`);
-                    
-                    // Geçersiz emailleri direkt failed olarak işaretle
+                    Logger.warn(`Geçersiz email: ${validationResult.invalid.length} adres atlandı`);
                     const invalidResults = validationResult.invalid.map(email => ({
                         email: email.email,
                         status: 'failed',
@@ -208,26 +229,19 @@ export class CampaignProcessor {
                     invalidEmailCount += invalidResults.length;
                 }
 
-                // Sadece valid email'lerle devam et
+                // BLACKLIST KONTROLÜ
                 let validEmails = validationResult.valid;
-                
-                // BLACKLIST KONTROLÜ - Karalistedeki emailleri filtrele
                 const blacklistedEmails = [];
                 const cleanEmails = [];
-                
                 for (const emailObj of validEmails) {
-                    const emailAddress = emailObj.email.toLowerCase();
-                    if (blacklistSet.has(emailAddress)) {
+                    if (blacklistSet.has(emailObj.email.toLowerCase())) {
                         blacklistedEmails.push(emailObj);
                     } else {
                         cleanEmails.push(emailObj);
                     }
                 }
-                
-                // Blacklisted email'leri direkt skip olarak işaretle
                 if (blacklistedEmails.length > 0) {
-                    Logger.warn(`${blacklistedEmails.length} email karaliste nedeniyle atlandı`);
-                    
+                    Logger.info(`Karaliste: ${blacklistedEmails.length} adres atlandı`);
                     const blacklistResults = blacklistedEmails.map(email => ({
                         email: email.email,
                         status: 'skipped_blacklist',
@@ -239,39 +253,32 @@ export class CampaignProcessor {
                     }
                     blacklistedCount += blacklistedEmails.length;
                 }
-                
-                // Sadece temiz email'lerle devam et
                 validEmails = cleanEmails;
-                
+
                 if (validEmails.length === 0) {
-                    Logger.warn('Batch\'de gönderilecek email kalmadı (blacklist/invalid), sonraki batch\'e geçiliyor');
+                    Logger.warn('Batch\'de gönderilecek email kalmadı (blacklist/invalid) — sonraki batch\'e geçiliyor');
                     processedCount += emails.length;
                     continue;
                 }
 
-                // Bu batch'deki emaillerin kaç tanesi real/fake olacak?
                 const batchRealCount = Math.min(
                     Math.floor((validEmails.length * finalPercentage) / 100),
-                    realCount - successCount // Kalan real quota
+                    realCount - successCount
                 );
-                
                 const { realEmails, fakeEmails } = this.splitEmailsForBatch(validEmails, batchRealCount);
 
-                // Fake email'leri hemen güncelle
                 if (fakeEmails.length > 0) {
                     const fakeResults = fakeEmails.map(email => ({
                         email: email.email,
                         status: 'delivered',
                         message_id: `fake_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
                     }));
-                    
                     const fakeUpdateSuccess = await this.apiClient.updateEmailCampaignEmails(campaign.id, fakeResults);
                     if (!fakeUpdateSuccess) {
                         throw new Error(`${RESULT_PERSIST_FAILED}: ${fakeResults.length} fake email sonucu kaydedilemedi`);
                     }
                 }
 
-                // Real email'leri gönder
                 if (realEmails.length > 0) {
                     const results = await this.sendBatchEmails(campaign, realEmails);
                     successCount += results.filter(r => r.status === 'delivered').length;
@@ -280,20 +287,17 @@ export class CampaignProcessor {
 
                 processedCount += emails.length;
 
-                // İlerleme + süre + ortalama hız + tahmini kalan
                 const progress = ((processedCount / totalPending) * 100).toFixed(1);
                 const elapsedCamp = Date.now() - campaignStartedAt;
                 const overallMps = mailsPerSecond(processedCount, elapsedCamp);
                 const remaining = Math.max(0, totalPending - processedCount);
-                let etaStr = '—';
-                if (overallMps > 0.02 && remaining > 0) {
-                    etaStr = `${formatDurationMs((remaining / overallMps) * 1000)} (tahmini)`;
-                }
+                const etaStr = overallMps > 0.02 && remaining > 0
+                    ? `~${formatDurationMs((remaining / overallMps) * 1000)}`
+                    : '—';
                 Logger.info(
-                    `İlerleme │ ${processedCount.toLocaleString()}/${totalPending.toLocaleString()} (%${progress}) │ geçen ${formatDurationMs(elapsedCamp)} │ ort. ${overallMps.toFixed(2)} mail/sn │ kalan süre ~${etaStr}`
+                    `İlerleme │ ${processedCount.toLocaleString()}/${totalPending.toLocaleString()} (%${progress}) │ ${formatDurationMs(elapsedCamp)} geçti │ ${overallMps.toFixed(2)} mail/sn │ kalan ${etaStr}`
                 );
 
-                // Batch'ler arası kısa bekle (memory için)
                 if ((batchData.total_pending ?? 0) > emails.length) {
                     await this.sleep(this._batchGapMs());
                 }
@@ -633,6 +637,8 @@ export class CampaignProcessor {
             this._sendConcurrencyPerLane(),
             emails.length
         );
+        const minuteLimit = smtp.config.minute_limit || 0;
+        const smtpTag = `SMTP #${smtp.config.id}`;
 
         const sendOnly = async (emailData) => {
             const result = await smtp.client.sendEmail(
@@ -646,7 +652,23 @@ export class CampaignProcessor {
         };
 
         for (let i = 0; i < emails.length; i += concurrency) {
+            // Cancel check per chunk
+            if (this.cancelledCampaigns.has(campaign.id)) {
+                Logger.info(`Kampanya #${campaign.id} iptal — ${smtpTag} lane durduruluyor`);
+                break;
+            }
+
             const chunk = emails.slice(i, i + concurrency);
+
+            // Token bucket: dakikalık limiti aşmadan önce blokla
+            if (minuteLimit > 0) {
+                const tWait = Date.now();
+                await this.rateLimiter.consume(smtp.config.id, chunk.length, minuteLimit);
+                const waitedMs = Date.now() - tWait;
+                if (waitedMs > 100) {
+                    Logger.info(`${smtpTag} dakikalık limit beklemesi: ${formatDurationMs(waitedMs)} (limit=${minuteLimit}/dk)`);
+                }
+            }
 
             const ratePerSecond = this.getEffectiveRatePerSecond(
                 smtp.config.id,
@@ -659,11 +681,12 @@ export class CampaignProcessor {
 
             for (const { emailData, result } of settled) {
                 if (!result.success) {
-                    Logger.warn(`⚠️  Email gönderilemedi (${emailData.email}) [SMTP #${smtp.config.id}]: ${result.error || 'Bilinmeyen hata'}`);
+                    Logger.warn(`${smtpTag} gönderilemedi (${emailData.email}): ${result.error || 'Bilinmeyen hata'}`);
                 }
 
                 if (!result.success && result.error && result.error.includes('throttling')) {
                     this.markThrottleFailure(smtp.config.id);
+                    Logger.warn(`${smtpTag} throttle hatası — 5sn beklenecek, hız düşürülüyor`);
                     await this.sleep(5000);
                 } else if (result.success) {
                     this.markThrottleSuccess(smtp.config.id);
@@ -683,16 +706,18 @@ export class CampaignProcessor {
             }
 
             if (i + chunk.length < emails.length) {
-                const pauseMs =
-                    ratePerSecond > 0
-                        ? Math.max(0, Math.ceil((1000 * chunk.length) / ratePerSecond))
-                        : 0;
+                const pauseMs = ratePerSecond > 0
+                    ? Math.max(0, Math.ceil((1000 * chunk.length) / ratePerSecond))
+                    : 0;
                 if (pauseMs > 0) {
                     await this.sleep(pauseMs);
                 }
             }
         }
 
+        const sent = results.filter(r => r.status === 'delivered').length;
+        const failed = results.length - sent;
+        Logger.debug(`${smtpTag} lane özeti: ✓ ${sent} · ✗ ${failed} · toplam ${results.length}`);
         return results;
     }
 
@@ -743,7 +768,7 @@ export class CampaignProcessor {
                     continue;
                 }
 
-                Logger.debug(`SMTP pool'dan kullanılıyor: ${smtpId} (Günlük: ${dailyRemaining}/${dailyLimit}, Saatlik: ${hourlyRemaining}/${hourlyLimit}, Dakikalık: ${minuteRemaining}/${minuteLimit})`);
+                Logger.debug(`SMTP #${smtpId} pool'dan alındı | günlük ${dailyRemaining}/${dailyLimit} | saatlik ${hourlyRemaining}/${hourlyLimit} | dakikalık ${minuteRemaining}/${minuteLimit}`);
                 return connection;
             }
         }
@@ -764,46 +789,62 @@ export class CampaignProcessor {
             return null;
         }
 
-        Logger.info(`SMTP seçildi: ${smtpConfig.host}:${smtpConfig.port} (${smtpConfig.username})`);
+        Logger.info(`SMTP #${smtpConfig.id} seçildi: ${smtpConfig.host}:${smtpConfig.port} (${smtpConfig.username})`);
 
-        // SMTP client oluştur
         const smtpClient = new SmtpClient(smtpConfig);
         const connected = await smtpClient.connect();
 
         if (!connected) {
             await this.apiClient.recordSmtpUsage(smtpConfig.id, false, 'Connection failed');
+            Logger.warn(`SMTP #${smtpConfig.id} bağlantısı başarısız`);
             return null;
         }
 
-        // Pool'a ekle
         const connection = {
             config: smtpConfig,
             client: smtpClient,
             isActive: true,
             createdAt: Date.now()
         };
-
         this.smtpPool.set(smtpConfig.id, connection);
-        Logger.info(`SMTP bağlantısı pool'a eklendi`);
+        Logger.info(`SMTP #${smtpConfig.id} pool'a eklendi (toplam: ${this.smtpPool.size})`);
 
         return connection;
     }
 
     /**
-     * SMTP pool'u temizle
+     * SMTP pool'u temizle — 5 saniyelik grace period ile.
+     * Yeni bir kampanya başlarsa timer iptal edilir ve bağlantılar korunur.
      */
-    cleanupSmtpPool() {
-        for (const [smtpId, connection] of this.smtpPool.entries()) {
-            try {
-                if (connection.client) {
-                    connection.client.close();
-                }
-            } catch (error) {
-                Logger.error(`SMTP pool cleanup error: ${error.message}`);
-            }
-            this.smtpPool.delete(smtpId);
+    cleanupSmtpPool(graceMs = 5000) {
+        if (this._poolCleanupTimer) {
+            clearTimeout(this._poolCleanupTimer);
         }
-        Logger.debug('SMTP pool temizlendi');
+        const count = this.smtpPool.size;
+        if (count === 0) return;
+
+        Logger.debug(`SMTP pool temizleme planlandı: ${count} bağlantı ${graceMs}ms içinde kapatılacak`);
+
+        this._poolCleanupTimer = setTimeout(() => {
+            this._poolCleanupTimer = null;
+            if (this.processing.size > 0) {
+                // A new campaign started during grace period — keep connections
+                Logger.debug('SMTP pool temizleme atlandı — aktif kampanya var');
+                return;
+            }
+            let closed = 0;
+            for (const [smtpId, connection] of this.smtpPool.entries()) {
+                try {
+                    if (connection.client) connection.client.close();
+                    closed++;
+                } catch (err) {
+                    Logger.warn(`SMTP #${smtpId} kapatılırken hata: ${err.message}`);
+                }
+                this.smtpPool.delete(smtpId);
+            }
+            this.rateLimiter.resetAll();
+            Logger.info(`SMTP pool temizlendi: ${closed} bağlantı kapatıldı`);
+        }, graceMs);
     }
 
     /**
