@@ -1152,14 +1152,29 @@ class EmailSmtpController
     public function resetLimits(Request $request, Response $response): Response
     {
         try {
-            // Manuel sıfırlama: Günlük, saatlik ve dakikalık TÜM limitleri sıfırla
-            $resetCount = $this->smtpService->forceResetAllLimits();
+            $data = $request->getParsedBody() ?? [];
+            $type = (string) ($data['type'] ?? 'all');
+            if (!in_array($type, ['daily', 'hourly', 'minute', 'all'], true)) {
+                $type = 'all';
+            }
+
+            $smtps = $this->em->getRepository(\App\Domain\Entities\EmailSmtpAccount::class)->findAll();
+            foreach ($smtps as $smtp) {
+                if ($type === 'daily' || $type === 'all') $smtp->resetDailySent();
+                if ($type === 'hourly' || $type === 'all') $smtp->resetHourlySent();
+                if ($type === 'minute' || $type === 'all') $smtp->resetMinuteSent();
+                $this->em->persist($smtp);
+            }
+            $this->em->flush();
+
+            $count = count($smtps);
+            $labels = ['daily' => 'günlük', 'hourly' => 'saatlik', 'minute' => 'dakikalık', 'all' => 'tüm'];
+            $label = $labels[$type] ?? 'tüm';
 
             $response->getBody()->write(json_encode([
                 'success' => true,
-                'message' => "{$resetCount} SMTP hesabının tüm limitleri (günlük, saatlik, dakikalık) sıfırlandı"
+                'message' => "{$count} SMTP hesabının {$label} sayaçları sıfırlandı."
             ]));
-
         } catch (\Exception $e) {
             $response->getBody()->write(json_encode([
                 'success' => false,

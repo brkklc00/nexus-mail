@@ -1,490 +1,201 @@
 {% extends "_layouts/main.twig" %}
 
-{% block title %}Hız & Limitler - {{ site_title|default('Nexus Panel') }}{% endblock %}
+{% block title %}Hız &amp; Limitler - {{ site_title|default('Nexus Panel') }}{% endblock %}
 
 {% block breadcrumb_items %}
 <li class="breadcrumb-item"><a href="/dashboard">Panel</a></li>
-<li class="breadcrumb-item"><a href="/email-dashboard">Mail Yönetimi</a></li>
+<li class="breadcrumb-item"><a href="/email-dashboard">Mail</a></li>
 <li class="breadcrumb-item active">Hız &amp; Limitler</li>
 {% endblock %}
 
 {% block page_icon %}<i data-feather="sliders" class="icon-dual icon-sm me-2"></i>{% endblock %}
-
 {% block title_text %}Hız &amp; Limitler{% endblock %}
 
 {% block page_lead %}
-<p class="nx-es-page-lead">Günlük kota, saniyelik hız ve worker davranışlarını yönetin.</p>
+<p class="nx-es-page-lead">Günde kaç mail atmak istediğinizi girin — hız, worker ve tüm SMTP limitleri otomatik yapılandırılır.</p>
 {% endblock %}
 
-{% block styles %}
-<style>
-.nx-es-page-lead { color: #64748b; margin: 6px 0 0; }
-.email-sending-settings-page {
-    padding-bottom: 10px;
-    max-width: 1520px;
-    margin: 0 auto;
-}
-.settings-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr);
-    gap: 18px;
-    align-items: start;
-}
-.settings-main,
-.settings-side { min-width: 0; }
-.settings-side { display: grid; gap: 12px; }
-.nx-es-main-card,
-.nx-es-side-card {
-    border: 1px solid #dbe4f0;
-    border-radius: 16px;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
-    overflow: hidden;
-    background: #ffffff;
-}
-.panel-card-header {
-    background: linear-gradient(135deg, #07152b 0%, #173a63 100%);
-    color: #fff;
-    padding: 12px 16px;
-    border-radius: 16px 16px 0 0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 62px;
-}
-.panel-card-header .icon-box {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    background: rgba(255,255,255,.10);
-    border: 1px solid rgba(255,255,255,.18);
-    color: #fff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-.panel-card-header .icon-box i { width: 15px; height: 15px; color: #fff; }
-.panel-card-header h2,
-.panel-card-header h3,
-.panel-card-header h4,
-.panel-card-header h5,
-.panel-card-header h6,
-.panel-card-header .title { color: #fff !important; font-weight: 700; margin: 0; font-size: 1.02rem; }
-.panel-card-header p,
-.panel-card-header small,
-.panel-card-header .subtitle { color: rgba(255,255,255,.78) !important; margin: 1px 0 0; font-size: 0.77rem; }
+{% set daily_sent    = global_totals.daily_sent|default(0) %}
+{% set hourly_sent   = global_totals.hourly_sent|default(0) %}
+{% set minute_sent   = global_totals.minute_sent|default(0) %}
+{% set daily_limit   = config.daily_limit %}
+{% set hourly_limit  = config.hourly_limit %}
+{% set minute_limit  = config.minute_limit %}
+{% set daily_pct     = daily_limit  > 0 ? min(100, (daily_sent  / daily_limit  * 100)|round(1)) : 0 %}
+{% set hourly_pct    = hourly_limit > 0 ? min(100, (hourly_sent / hourly_limit * 100)|round(1)) : 0 %}
+{% set minute_pct    = minute_limit > 0 ? min(100, (minute_sent / minute_limit * 100)|round(1)) : 0 %}
+{% set daily_pct_raw = daily_limit  > 0 ? (daily_sent / daily_limit * 100)|round(1) : 0 %}
 
-.nx-es-main-card .card-body { padding: 14px 14px 12px; }
-.nx-es-form-section {
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
-    padding: 11px 12px;
-    margin-bottom: 10px;
-    background: #fff;
-}
-.nx-es-form-section:last-of-type { margin-bottom: 0; }
-.nx-es-section-title {
-    font-size: 0.86rem;
-    font-weight: 700;
-    color: #0f172a;
-    margin: 0 0 9px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.nx-es-section-title i {
-    width: 14px;
-    height: 14px;
-    color: #2563eb;
-}
-
-.nx-es-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
-.nx-es-field label { font-weight: 600; font-size: 0.79rem; color: #0f172a; margin-bottom: 4px; }
-.nx-es-field--full { grid-column: 1 / -1; }
-.nx-es-field .form-text,
-.nx-es-field small { font-size: 0.69rem; color: #94a3b8 !important; line-height: 1.3; display: inline-block; margin-top: 3px; }
-.nx-es-input,
-.nx-es-form-grid .form-control,
-.nx-es-form-grid .form-select {
-    height: 44px;
-    border-radius: 11px;
-    border: 1px solid #dbe4f0;
-    color: #0f172a;
-    background: #fff;
-    font-size: 0.83rem;
-    padding-top: 0.38rem;
-    padding-bottom: 0.38rem;
-}
-.nx-es-form-grid textarea.form-control { height: auto; }
-.nx-es-form-grid .form-control:focus,
-.nx-es-form-grid .form-select:focus {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.16);
-}
-.nx-es-rate-box {
-    border-radius: 11px;
-    border: 1px solid #dbe4f0;
-    background: #f8fafc;
-    padding: 8px 10px;
-}
-.nx-es-rate-box .form-check { margin-bottom: 5px !important; }
-.nx-es-rate-box .form-check:last-child { margin-bottom: 0 !important; }
-.nx-es-rate-box .form-check-label { color: #0f172a; font-size: 0.8rem; }
-
-.nx-es-worker-section {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
-    padding: 10px 11px;
-}
-.nx-es-worker-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
-.nx-es-worker-head .icon-box {
-    width: 30px; height: 30px; border-radius: 10px; background: #e2e8f0; color: #173a63;
-    display: inline-flex; align-items: center; justify-content: center;
-}
-.nx-es-worker-head h6 { font-size: 0.85rem; }
-.nx-es-worker-head small { font-size: 0.69rem; }
-.nx-es-worker-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 10px; }
-
-.nx-es-summary {
-    border-radius: 12px;
-    border: 1px solid #dbe4f0;
-    background: #f8fafc;
-}
-.nx-es-effective-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-.nx-es-effective-badge {
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    border: 1px solid #cbd5e1;
-    background: #fff;
-    color: #0f172a;
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 0.2rem 0.55rem;
-}
-
-.nx-es-save-btn {
-    background: linear-gradient(135deg, #07152b, #2563eb);
-    color: #fff;
-    height: 42px;
-    border-radius: 11px;
-    font-weight: 600;
-    border: 0;
-    box-shadow: 0 9px 20px rgba(37,99,235,.18);
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.83rem;
-}
-.nx-es-save-btn:hover { color: #fff; filter: brightness(1.03); }
-.nx-es-action-btn {
-    height: 42px;
-    border-radius: 11px;
-    font-size: 0.82rem;
-}
-
-.nx-es-side-card .card-body { padding: 11px 12px 12px; }
-.nx-es-usage-row { margin-bottom: 11px; }
-.nx-es-usage-row:last-child { margin-bottom: 0; }
-.nx-es-usage-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: #0f172a; }
-.nx-es-usage-label { color: #64748b; font-size: 0.74rem; display: inline-flex; align-items: center; gap: 5px; }
-.nx-es-usage-value { font-size: 0.76rem; font-weight: 700; color: #0f172a; }
-.nx-es-usage-progress.progress { height: 8px; background: #e5edf8; }
-.nx-es-side-stat-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-}
-.nx-es-side-stat {
-    border: 1px solid #dbe4f0;
-    border-radius: 10px;
-    padding: 7px 8px;
-    background: #fff;
-}
-.nx-es-side-stat .lab { font-size: 0.68rem; color: #64748b; display: block; }
-.nx-es-side-stat .val { font-size: 0.8rem; font-weight: 700; color: #0f172a; display: block; margin-top: 2px; }
-.settings-preset-body {
-    max-height: 320px;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-.settings-preset-btn {
-    min-height: 64px;
-    border-radius: 10px;
-    padding: 7px 8px !important;
-    font-size: 0.78rem;
-}
-.settings-preset-btn .preset-title {
-    display: block;
-    font-size: 0.81rem;
-    font-weight: 700;
-    color: #0f172a;
-}
-.settings-preset-btn .preset-sub {
-    display: block;
-    font-size: 0.72rem;
-    color: #64748b;
-    margin-top: 2px;
-}
-.settings-preset-btn.is-active {
-    border-color: #2563eb !important;
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14) inset;
-    background: #eff6ff !important;
-}
-
-.nx-es-inline-error {
-    color: #dc2626;
-    font-size: 0.69rem;
-    margin-top: 3px;
-    display: none;
-}
-.is-invalid + .nx-es-inline-error {
-    display: block;
-}
-
-@media (max-width: 1199.98px) {
-    .nx-es-worker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .settings-layout { grid-template-columns: minmax(0, 1fr) 320px; }
-    .nx-es-form-grid { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 1023.98px) {
-    .settings-layout { grid-template-columns: minmax(0, 1fr) 300px; }
-}
-@media (max-width: 991.98px) {
-    .settings-layout { grid-template-columns: 1fr; gap: 12px; }
-    .settings-preset-body { max-height: none; overflow: visible; }
-}
-@media (max-width: 767.98px) {
-    .nx-es-form-grid,
-    .nx-es-worker-grid { grid-template-columns: 1fr; }
-    .panel-card-header { padding: 10px 12px; }
-    .nx-es-main-card .card-body,
-    .nx-es-side-card .card-body { padding: 10px; }
-    .nx-es-side-stat-grid { grid-template-columns: 1fr; }
-}
-</style>
-{% endblock %}
-
-{% set daily_sent = global_totals.daily_sent|default(0) %}
-{% set hourly_sent = global_totals.hourly_sent|default(0) %}
-{% set minute_sent = global_totals.minute_sent|default(0) %}
-{% set daily_limit = config.daily_limit %}
-{% set hourly_limit = config.hourly_limit %}
-{% set minute_limit = config.minute_limit %}
-{% set daily_pct_raw = daily_limit > 0 ? (daily_sent / daily_limit * 100)|round(1) : 0 %}
-{% set hourly_pct_raw = hourly_limit > 0 ? (hourly_sent / hourly_limit * 100)|round(1) : 0 %}
-{% set minute_pct_raw = minute_limit > 0 ? (minute_sent / minute_limit * 100)|round(1) : 0 %}
-{% set daily_pct = daily_pct_raw > 100 ? 100 : daily_pct_raw %}
-{% set hourly_pct = hourly_pct_raw > 100 ? 100 : hourly_pct_raw %}
-{% set minute_pct = minute_pct_raw > 100 ? 100 : minute_pct_raw %}
+{% macro progress_bar_class(pct) %}{% if pct >= 90 %}bg-danger{% elseif pct >= 70 %}bg-warning{% else %}bg-primary{% endif %}{% endmacro %}
 
 {% block content %}
-<div class="container-fluid email-sending-settings-page">
+<div class="container-fluid">
+
     {% if success %}
     <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm" role="alert">
-        <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>
-        {{ success }}
+        <i data-feather="check-circle" class="align-self-center icon-xs me-2"></i>{{ success }}
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
     </div>
     {% endif %}
     {% if error %}
     <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm" role="alert">
-        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>
-        {{ error }}
+        <i data-feather="alert-circle" class="align-self-center icon-xs me-2"></i>{{ error }}
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Kapat"></button>
     </div>
     {% endif %}
 
-    <div class="settings-layout">
-        <section class="settings-main">
+    <div class="row nx-es-layout">
+
+        {# ── Sol kolon ── #}
+        <div class="col-xl-9 col-lg-8 d-flex flex-column gap-4">
+
+            {# Kart 1: Günlük Gönderim Hedefi #}
             <div class="card nx-es-main-card mb-0">
                 <div class="panel-card-header">
-                    <span class="icon-box"><i data-feather="zap"></i></span>
+                    <span class="icon-box"><i data-feather="send"></i></span>
                     <div>
-                        <h5>Günlük kota ve saniyelik hız</h5>
-                        <p class="small mb-0">Tüm aktif SMTP hesapları için toplam günlük tavan. Saatlik ve dakikalık tavanlar efektif saniyelik hızdan türetilir.</p>
+                        <h5 class="title">Günlük Gönderim Hedefi</h5>
+                        <p class="subtitle small mb-0">Sadece hedefi girin. Hız, worker pacing ve tüm SMTP limitleri otomatik hesaplanır.</p>
                     </div>
                 </div>
-                <div class="card-body">
+                <div class="card-body pt-4 pb-4">
                     <form method="post" action="/admin/email-sending-settings/save" id="sendingSettingsForm">
-                        <div class="nx-es-form-section">
-                            <h6 class="nx-es-section-title"><i data-feather="gauge"></i> Kota &amp; hız</h6>
-                        <div class="nx-es-form-grid">
-                            <div class="nx-es-field">
-                                <label class="form-label">24 saatte gönderilecek toplam mail</label>
-                                <input type="number" name="daily_limit" id="dailyLimitInput" class="form-control nx-es-input" min="1" max="100000000" required
+
+                        <div class="nx-es-hero-wrap">
+                            <label class="nx-es-hero-label" for="dailyLimitInput">24 saatte gönderilecek toplam mail</label>
+                            <div class="nx-es-hero-row">
+                                <input type="number" name="daily_limit" id="dailyLimitInput"
+                                       class="form-control nx-es-hero-input"
+                                       min="1" max="100000000" required
                                        value="{{ config.daily_limit }}">
-                                <div class="nx-es-inline-error" id="dailyLimitError"></div>
-                                <small class="text-muted">Günlük kota (tüm SMTP’ler toplamı)</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label d-block">Saniyelik hız modu</label>
-                                <div class="nx-es-rate-box">
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="radio" name="rate_source" id="rateManual" value="{{ RATE_MANUAL }}"
-                                               {{ config.rate_source == RATE_MANUAL ? 'checked' : '' }}>
-                                        <label class="form-check-label" for="rateManual">Manuel</label>
-                                    </div>
-                                    <div class="form-check mb-0">
-                                        <input class="form-check-input" type="radio" name="rate_source" id="rateDailyAvg" value="{{ RATE_DAILY_AVG }}"
-                                               {{ config.rate_source == RATE_DAILY_AVG ? 'checked' : '' }}>
-                                        <label class="form-check-label" for="rateDailyAvg">Otomatik (24 saate yay)</label>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="nx-es-field" id="manualRateWrap">
-                                <label class="form-label">Saniyede mail (manuel)</label>
-                                <input type="text" name="rate_per_second" id="ratePerSecondInput" class="form-control nx-es-input" inputmode="decimal"
-                                       value="{{ config.stored_rate_per_second }}" placeholder="örn. 15">
-                                <div class="nx-es-inline-error" id="ratePerSecondError"></div>
-                                <small class="text-muted">Worker throttle ve API bu hedefe göre çalışır.</small>
-                            </div>
-                            <div class="nx-es-field" id="autoRateWrap" style="display:none;">
-                                <label class="form-label">Otomatik hesaplanan saniyelik hız</label>
-                                <div class="form-control nx-es-input d-flex align-items-center bg-light border" id="autoRateDisplay">
-                                    ≈ {{ preview_auto_rate|number_format(4, '.', '') }} / sn
-                                </div>
-                                <small class="text-muted">Kayıtta veritabanına da yazılır (tavan {{ email_max_rate_per_second|number_format(0, ',', '.') }}/sn, taban 0,01/sn).</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Alibaba / Aliyun SMTP tavanı <span class="text-muted fw-normal">(opsiyonel)</span></label>
-                                <input type="text" name="alibaba_rate_cap" class="form-control nx-es-input" inputmode="decimal"
-                                       value="{{ config.alibaba_rate_cap is not null ? config.alibaba_rate_cap : '' }}"
-                                       placeholder="Boş = genel saniyelik hız">
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Ek genel saniye tavanı <span class="text-muted fw-normal">(opsiyonel)</span></label>
-                                <input type="text" name="max_rate_per_second" class="form-control nx-es-input" inputmode="decimal"
-                                       value="{{ config.max_rate_per_second is not null ? config.max_rate_per_second : '' }}"
-                                       placeholder="Boş = yalnızca yukarıdaki hız">
-                            </div>
-                        </div>
-                        </div>
-
-                        <div class="nx-es-form-section">
-                            <h6 class="nx-es-section-title"><i data-feather="cpu"></i> Worker davranışı</h6>
-                            <div class="nx-es-worker-section">
-                            <div class="nx-es-worker-head">
-                                <span class="icon-box"><i data-feather="cpu" style="width: 16px; height: 16px;"></i></span>
-                                <div>
-                                    <h6 class="mb-0" style="color:#0f172a;font-weight:700;">Worker ayarları</h6>
-                                    <small class="text-muted">Gönderim hızı ve pacing değerleri</small>
-                                </div>
-                            </div>
-                            <div class="nx-es-worker-grid">
-                            <div class="nx-es-field">
-                                <label class="form-label">Batch arası (ms)</label>
-                                <input type="number" name="worker_batch_gap_ms" class="form-control nx-es-input" min="0" max="60000"
-                                       value="{{ config.worker_batch_gap_ms }}">
-                                <small class="text-muted">Havuz batch’leri arası</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Chunk arası (ms)</label>
-                                <input type="number" name="worker_chunk_gap_ms" class="form-control nx-es-input" min="0" max="60000"
-                                       value="{{ config.worker_chunk_gap_ms }}">
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Lane eşzamanlı mail</label>
-                                <input type="number" name="worker_send_concurrency" class="form-control nx-es-input" min="1" max="50"
-                                       value="{{ config.worker_send_concurrency }}">
-                                <small class="text-muted">1 = sırayla</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">SMTP pool</label>
-                                <input type="number" name="worker_smtp_pool_connections" class="form-control nx-es-input" min="0" max="10000"
-                                       value="{{ config.worker_smtp_pool_connections }}">
-                                <small class="text-muted">0 = kapalı (üst sınır: 10.000)</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Pool max mesaj</label>
-                                <input type="number" name="worker_smtp_pool_max_messages" class="form-control nx-es-input" min="1" max="50000"
-                                       value="{{ config.worker_smtp_pool_max_messages }}">
-                                <small class="text-muted">Nodemailer / bağlantı</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Havuzdan çekim</label>
-                                <input type="number" name="worker_fetch_batch_size" class="form-control nx-es-input" min="100" max="500000"
-                                       value="{{ config.worker_fetch_batch_size }}">
-                                <small class="text-muted">API’den tek seferde adres</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Gönderim alt-grup</label>
-                                <input type="number" name="worker_send_batch_size" class="form-control nx-es-input" min="10" max="5000"
-                                       value="{{ config.worker_send_batch_size }}">
-                                <small class="text-muted">SMTP iş yükü parçası</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Paralel SMTP lane</label>
-                                <input type="number" name="worker_max_smtp_lanes" class="form-control nx-es-input" min="1" max="50"
-                                       value="{{ config.worker_max_smtp_lanes }}">
-                                <small class="text-muted">Aynı anda kaç hesap</small>
-                            </div>
-                            <div class="nx-es-field nx-es-field--full">
-                                <h6 class="nx-es-section-title mb-1"><i data-feather="thermometer"></i> Throttle / Isınma</h6>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Throttle + adım (/sn)</label>
-                                <input type="text" name="worker_throttle_step_up" class="form-control nx-es-input" inputmode="decimal"
-                                       value="{{ config.worker_throttle_step_up }}">
-                                <small class="text-muted">Başarılı gönderimde hız artışı</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Throttle bekleme (ms)</label>
-                                <input type="number" name="worker_throttle_cooldown_ms" class="form-control nx-es-input" min="1000" max="600000"
-                                       value="{{ config.worker_throttle_cooldown_ms }}">
-                                <small class="text-muted">Hata sonrası yavaşlatma</small>
-                            </div>
-                            <div class="nx-es-field">
-                                <label class="form-label">Alibaba ısınma tavanı <span class="text-muted fw-normal">(opsiyonel)</span></label>
-                                <input type="text" name="alibaba_warmup_max_rate_per_second" class="form-control nx-es-input" inputmode="decimal"
-                                       value="{{ config.alibaba_warmup_max_rate_per_second is not null ? config.alibaba_warmup_max_rate_per_second : '' }}"
-                                       placeholder="Boş = 15/sn üst sınır">
-                                <small class="text-muted">Kademeli ısınma merdiveninin tavanı</small>
-                            </div>
-                            </div>
-                        </div>
-                        </div>
-
-                        <div class="nx-es-summary rounded-3 border p-3 mt-2 mb-0">
-                            <div class="small">
-                                <strong class="d-block mb-2">Efektif limit özeti</strong>
-                                <div class="nx-es-effective-badges">
-                                    <span class="nx-es-effective-badge">{{ config.rate_per_second|number_format(4, '.', '') }} / sn</span>
-                                    <span class="nx-es-effective-badge">{{ config.hourly_limit|number_format }} / saat</span>
-                                    <span class="nx-es-effective-badge">{{ config.minute_limit|number_format }} / dk</span>
-                                    {% if config.rate_source == RATE_DAILY_AVG %}
-                                    <span class="nx-es-effective-badge">24 saate yay</span>
-                                    {% else %}
-                                    <span class="nx-es-effective-badge">Manuel hız</span>
-                                    {% endif %}
-                                </div>
+                                <span class="nx-es-hero-unit">mail / gün</span>
                             </div>
                         </div>
 
-                        <div class="d-flex flex-wrap align-items-center gap-2 pt-3 mt-2 border-top">
-                            <button type="submit" class="btn nx-es-save-btn nx-es-action-btn" id="nxEsSaveBtn">
-                                <i data-feather="save" class="icon-xs me-1"></i> Ayarları Kaydet
+                        <div class="nx-es-stat-row mt-3">
+                            <div class="nx-es-stat-chip">
+                                <span class="nx-es-stat-lbl">Saniyelik hız</span>
+                                <span class="nx-es-stat-val" id="summaryRate">≈ {{ config.rate_per_second|number_format(4, ',', '.') }} / sn</span>
+                            </div>
+                            <div class="nx-es-stat-sep"></div>
+                            <div class="nx-es-stat-chip">
+                                <span class="nx-es-stat-lbl">Saatlik limit</span>
+                                <span class="nx-es-stat-val" id="summaryHourly">≈ {{ config.hourly_limit|number_format(0, ',', '.') }}</span>
+                            </div>
+                            <div class="nx-es-stat-sep"></div>
+                            <div class="nx-es-stat-chip">
+                                <span class="nx-es-stat-lbl">Dakikalık limit</span>
+                                <span class="nx-es-stat-val" id="summaryMinute">≈ {{ config.minute_limit|number_format(0, ',', '.') }}</span>
+                            </div>
+                            <div class="nx-es-stat-sep"></div>
+                            <div class="nx-es-stat-chip">
+                                <span class="nx-es-stat-lbl">Paralel SMTP</span>
+                                <span class="nx-es-stat-val nx-es-stat-val--accent">{{ active_smtp_count }} hesap — eş zamanlı</span>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap align-items-center gap-3 pt-4 mt-3 border-top">
+                            <button type="submit" class="btn nx-es-save-btn" id="nxEsSaveBtn">
+                                <i data-feather="save" class="icon-xs me-1"></i> Kaydet ve Uygula
                             </button>
-                            <a href="/admin/email-smtp" class="btn btn-outline-secondary nx-es-action-btn">
-                                <i data-feather="server" class="icon-xs me-1"></i> SMTP hesapları
-                            </a>
+                            <small class="text-muted">Worker ayarları, hız ve tüm SMTP limitleri otomatik güncellenir.</small>
                         </div>
                     </form>
                 </div>
             </div>
-        </section>
 
-        <aside class="settings-side">
-            <div class="card nx-es-side-card mb-0">
+            {# Kart 2: Sayaç Sıfırlama #}
+            <div class="card nx-es-main-card mb-0">
+                <div class="panel-card-header">
+                    <span class="icon-box"><i data-feather="rotate-ccw"></i></span>
+                    <div>
+                        <h5 class="title">Sayaç Sıfırlama</h5>
+                        <p class="subtitle small mb-0">Tüm SMTP hesaplarının gönderim sayaçlarını seçerek veya toplu sıfırlayın. Toplam istatistikler korunur.</p>
+                    </div>
+                </div>
+                <div class="card-body pt-4 pb-4">
+                    <div class="nx-es-reset-grid">
+
+                        <div class="nx-es-reset-tile">
+                            <div class="nx-es-reset-tile-icon" style="background:#eff6ff;color:#2563eb;">
+                                <i data-feather="calendar"></i>
+                            </div>
+                            <div class="nx-es-reset-tile-body">
+                                <span class="nx-es-reset-tile-title">Günlük sayaç</span>
+                                <span class="nx-es-reset-tile-desc">Bugünkü gönderim sayısını sıfırla</span>
+                            </div>
+                            <button type="button" class="btn nx-es-reset-tile-btn"
+                                    onclick="nxResetSmtp('daily', this)"
+                                    data-confirm="Tüm SMTP hesaplarının günlük sayaçları sıfırlanacak. Devam edilsin mi?">
+                                <i data-feather="rotate-ccw" class="icon-xs me-1"></i>Sıfırla
+                            </button>
+                        </div>
+
+                        <div class="nx-es-reset-tile">
+                            <div class="nx-es-reset-tile-icon" style="background:#f0fdf4;color:#16a34a;">
+                                <i data-feather="clock"></i>
+                            </div>
+                            <div class="nx-es-reset-tile-body">
+                                <span class="nx-es-reset-tile-title">Saatlik sayaç</span>
+                                <span class="nx-es-reset-tile-desc">Bu saatteki gönderim sayısını sıfırla</span>
+                            </div>
+                            <button type="button" class="btn nx-es-reset-tile-btn"
+                                    onclick="nxResetSmtp('hourly', this)"
+                                    data-confirm="Tüm SMTP hesaplarının saatlik sayaçları sıfırlanacak. Devam edilsin mi?">
+                                <i data-feather="rotate-ccw" class="icon-xs me-1"></i>Sıfırla
+                            </button>
+                        </div>
+
+                        <div class="nx-es-reset-tile">
+                            <div class="nx-es-reset-tile-icon" style="background:#fefce8;color:#ca8a04;">
+                                <i data-feather="watch"></i>
+                            </div>
+                            <div class="nx-es-reset-tile-body">
+                                <span class="nx-es-reset-tile-title">Dakikalık sayaç</span>
+                                <span class="nx-es-reset-tile-desc">Bu dakikadaki gönderim sayısını sıfırla</span>
+                            </div>
+                            <button type="button" class="btn nx-es-reset-tile-btn"
+                                    onclick="nxResetSmtp('minute', this)"
+                                    data-confirm="Tüm SMTP hesaplarının dakikalık sayaçları sıfırlanacak. Devam edilsin mi?">
+                                <i data-feather="rotate-ccw" class="icon-xs me-1"></i>Sıfırla
+                            </button>
+                        </div>
+
+                        <div class="nx-es-reset-tile nx-es-reset-tile--danger">
+                            <div class="nx-es-reset-tile-icon" style="background:#fef2f2;color:#dc2626;">
+                                <i data-feather="alert-triangle"></i>
+                            </div>
+                            <div class="nx-es-reset-tile-body">
+                                <span class="nx-es-reset-tile-title">Toplu sıfırla</span>
+                                <span class="nx-es-reset-tile-desc">Günlük + saatlik + dakikalık hepsini sıfırla</span>
+                            </div>
+                            <button type="button" class="btn nx-es-reset-tile-btn nx-es-reset-tile-btn--danger"
+                                    onclick="nxResetSmtp('all', this)"
+                                    data-confirm="TÜM SMTP hesaplarının günlük, saatlik ve dakikalık sayaçları sıfırlanacak. Emin misiniz?">
+                                <i data-feather="rotate-ccw" class="icon-xs me-1"></i>Tümünü Sıfırla
+                            </button>
+                        </div>
+
+                    </div>
+
+                    <div id="nxResetFeedback" class="nx-es-reset-feedback d-none mt-3">
+                        <i data-feather="check-circle" class="icon-xs me-2"></i>
+                        <span id="nxResetFeedbackMsg"></span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        {# ── Sağ kolon ── #}
+        <div class="col-xl-3 col-lg-4 d-flex flex-column gap-3">
+
+            <div class="card nx-es-side-card">
                 <div class="panel-card-header">
                     <span class="icon-box"><i data-feather="bar-chart-2"></i></span>
                     <div>
-                        <h5>Bugünkü kullanım</h5>
-                        <small>Global sayaçlar (tüm SMTP)</small>
+                        <h5 class="title">Bugünkü kullanım</h5>
+                        <p class="subtitle small mb-0">Global sayaçlar (tüm SMTP)</p>
                     </div>
                 </div>
                 <div class="card-body pt-3">
@@ -494,11 +205,13 @@
                             <span class="nx-es-usage-value">{{ daily_sent|number_format }} / {{ daily_limit|number_format }}</span>
                         </div>
                         <div class="progress nx-es-usage-progress">
-                            <div class="progress-bar rounded-pill {% if daily_pct_raw >= 85 %}bg-danger{% elseif daily_pct_raw >= 60 %}bg-warning{% else %}bg-success{% endif %}"
-                                 role="progressbar" style="width: {{ daily_pct }}%;" aria-valuenow="{{ daily_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+                            <div class="progress-bar rounded-pill {{ _self.progress_bar_class(daily_pct_raw) }}"
+                                 role="progressbar" style="width:{{ daily_pct }}%;"></div>
                         </div>
-                        {% if daily_pct_raw > 100 %}
-                        <small class="text-danger">Kota aşımı ({{ daily_pct_raw|number_format(1, '.', '') }}%)</small>
+                        {% if daily_pct_raw >= 90 %}
+                        <small class="text-danger">Kota limitine yaklaşıldı ({{ daily_pct_raw|number_format(1,'.','') }}%)</small>
+                        {% elseif daily_pct_raw >= 70 %}
+                        <small class="text-warning">Kullanım yüksek ({{ daily_pct_raw|number_format(1,'.','') }}%)</small>
                         {% endif %}
                     </div>
                     <div class="nx-es-usage-row">
@@ -507,8 +220,8 @@
                             <span class="nx-es-usage-value">{{ hourly_sent|number_format }} / {{ hourly_limit|number_format }}</span>
                         </div>
                         <div class="progress nx-es-usage-progress">
-                            <div class="progress-bar rounded-pill {% if hourly_pct_raw >= 85 %}bg-danger{% elseif hourly_pct_raw >= 60 %}bg-warning{% else %}bg-success{% endif %}"
-                                 role="progressbar" style="width: {{ hourly_pct }}%;" aria-valuenow="{{ hourly_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+                            <div class="progress-bar rounded-pill {{ _self.progress_bar_class(hourly_pct) }}"
+                                 role="progressbar" style="width:{{ hourly_pct }}%;"></div>
                         </div>
                     </div>
                     <div class="nx-es-usage-row mb-0">
@@ -517,182 +230,129 @@
                             <span class="nx-es-usage-value">{{ minute_sent|number_format }} / {{ minute_limit|number_format }}</span>
                         </div>
                         <div class="progress nx-es-usage-progress">
-                            <div class="progress-bar rounded-pill {% if minute_pct_raw >= 85 %}bg-danger{% elseif minute_pct_raw >= 60 %}bg-warning{% else %}bg-success{% endif %}"
-                                 role="progressbar" style="width: {{ minute_pct }}%;" aria-valuenow="{{ minute_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+                            <div class="progress-bar rounded-pill {{ _self.progress_bar_class(minute_pct) }}"
+                                 role="progressbar" style="width:{{ minute_pct }}%;"></div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="card nx-es-side-card mb-0">
-                <div class="panel-card-header">
-                    <span class="icon-box"><i data-feather="clipboard"></i></span>
-                    <div>
-                        <h6>Ayar özeti</h6>
-                        <small>Aktif değerler</small>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="nx-es-side-stat-grid">
-                        <div class="nx-es-side-stat">
-                            <span class="lab">Günlük kota</span>
-                            <span class="val">{{ config.daily_limit|number_format }}</span>
-                        </div>
-                        <div class="nx-es-side-stat">
-                            <span class="lab">Otomatik hız</span>
-                            <span class="val">{{ config.rate_source == RATE_DAILY_AVG ? 'Açık' : 'Kapalı' }}</span>
-                        </div>
-                        <div class="nx-es-side-stat">
-                            <span class="lab">Paralel lane</span>
-                            <span class="val">{{ config.worker_max_smtp_lanes }}</span>
-                        </div>
-                        <div class="nx-es-side-stat">
-                            <span class="lab">SMTP pool</span>
-                            <span class="val">{{ config.worker_smtp_pool_connections }}</span>
-                        </div>
-                        <div class="nx-es-side-stat">
-                            <span class="lab">Worker batch</span>
-                            <span class="val">{{ config.worker_batch_gap_ms }} ms</span>
-                        </div>
-                        <div class="nx-es-side-stat">
-                            <span class="lab">Throttle bekleme</span>
-                            <span class="val">{{ config.worker_throttle_cooldown_ms }} ms</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card nx-es-side-card mb-0">
+            <div class="card nx-es-side-card">
                 <div class="panel-card-header">
                     <span class="icon-box"><i data-feather="package"></i></span>
                     <div>
-                        <h6>Hazır paketler</h6>
-                        <small>Tek tık: kota + hız + worker önerileri</small>
+                        <h5 class="title">Hazır paketler</h5>
+                        <p class="subtitle small mb-0">Tek tıkla hedefi seç, Kaydet ile uygula.</p>
                     </div>
                 </div>
-                <div class="card-body settings-preset-body">
-                    <form method="post" action="/admin/email-sending-settings/apply-preset" class="row g-2">
+                <div class="card-body pt-3">
+                    <div class="nx-es-preset-grid" id="nxEsPresetGrid">
                         {% for key, p in plans %}
-                        {% set isActivePlan = config.daily_limit == p.daily_limit and config.rate_source == RATE_DAILY_AVG %}
-                        <div class="col-6">
-                            <button type="submit" name="plan" value="{{ key }}" class="btn btn-outline-primary w-100 text-start h-100 settings-preset-btn {{ isActivePlan ? 'is-active' : '' }}">
-                                <span class="preset-title">{{ p.title }}</span>
-                                <span class="preset-sub">≈ {{ p.effective_rate|number_format(2, ',', '.') }} mail/sn · yaklaşık değer</span>
-                                {% if isActivePlan %}
-                                <span class="preset-sub text-primary">Aktif paket</span>
-                                {% endif %}
-                            </button>
-                        </div>
+                        <button type="button" class="nx-es-preset-btn"
+                                data-daily-limit="{{ p.daily_limit }}"
+                                data-effective-rate="{{ p.effective_rate }}">
+                            <span class="nx-es-preset-title">{{ p.title }}</span>
+                            <span class="nx-es-preset-rate">≈ {{ p.effective_rate|number_format(2, ',', '.') }} mail/sn</span>
+                        </button>
                         {% endfor %}
-                    </form>
+                    </div>
                 </div>
             </div>
-        </aside>
+
+        </div>
     </div>
 </div>
 <script>
 (function () {
-    const RATE_DAILY = {{ RATE_DAILY_AVG|json_encode|raw }};
     const EMAIL_MAX_RATE = {{ email_max_rate_per_second|json_encode|raw }};
-    const dailyInput = document.getElementById('dailyLimitInput');
-    const autoDisplay = document.getElementById('autoRateDisplay');
-    const manualWrap = document.getElementById('manualRateWrap');
-    const autoWrap = document.getElementById('autoRateWrap');
-    const rateInput = document.getElementById('ratePerSecondInput');
+    const dailyInput  = document.getElementById('dailyLimitInput');
     const settingsForm = document.getElementById('sendingSettingsForm');
-    const saveBtn = document.getElementById('nxEsSaveBtn');
-    const dailyLimitError = document.getElementById('dailyLimitError');
-    const ratePerSecondError = document.getElementById('ratePerSecondError');
-    const flashSuccess = '{{ success|default('')|e('js') }}';
-    const flashError = '{{ error|default('')|e('js') }}';
-
-    function clearFieldError(input, errorEl) {
-        if (!input || !errorEl) return;
-        input.classList.remove('is-invalid');
-        errorEl.textContent = '';
-    }
-
-    function setFieldError(input, errorEl, message) {
-        if (!input || !errorEl) return;
-        input.classList.add('is-invalid');
-        errorEl.textContent = message;
-    }
+    const saveBtn     = document.getElementById('nxEsSaveBtn');
+    const summaryRate   = document.getElementById('summaryRate');
+    const summaryHourly = document.getElementById('summaryHourly');
+    const summaryMinute = document.getElementById('summaryMinute');
 
     function clampRate(r) {
         if (!isFinite(r) || r <= 0) return 0.01;
         return Math.min(EMAIL_MAX_RATE, Math.max(0.01, Math.round(r * 10000) / 10000));
     }
+    function formatNum(n)  { return Math.round(n).toLocaleString('tr-TR'); }
+    function formatRate(n) { return n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }); }
 
-    function computedDailyAvg() {
-        const d = parseInt(dailyInput.value, 10) || 0;
-        if (d < 1) return 0.01;
-        return clampRate(d / 86400);
+    function refreshSummary() {
+        var d = parseInt(dailyInput.value, 10) || 0;
+        if (d < 1) return;
+        var rate = clampRate(d / 86400);
+        if (summaryRate)   summaryRate.textContent   = '≈ ' + formatRate(rate) + ' / sn';
+        if (summaryHourly) summaryHourly.textContent = '≈ ' + formatNum(Math.floor(rate * 3600));
+        if (summaryMinute) summaryMinute.textContent = '≈ ' + formatNum(Math.floor(rate * 60));
     }
 
-    function refreshAutoDisplay() {
-        if (autoDisplay) {
-            autoDisplay.textContent = '≈ ' + computedDailyAvg().toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' / sn';
-        }
-    }
+    if (dailyInput) dailyInput.addEventListener('input', refreshSummary);
 
-    function syncMode() {
-        const daily = document.getElementById('rateDailyAvg')?.checked;
-        if (daily) {
-            manualWrap.style.display = 'none';
-            autoWrap.style.display = '';
-            if (rateInput) rateInput.removeAttribute('required');
-        } else {
-            manualWrap.style.display = '';
-            autoWrap.style.display = 'none';
-            if (rateInput) rateInput.setAttribute('required', 'required');
-        }
-        refreshAutoDisplay();
-    }
-
-    document.querySelectorAll('input[name="rate_source"]').forEach(function (el) {
-        el.addEventListener('change', syncMode);
+    document.querySelectorAll('.nx-es-preset-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var limit = parseInt(btn.getAttribute('data-daily-limit'), 10);
+            if (dailyInput && limit > 0) dailyInput.value = String(limit);
+            document.querySelectorAll('.nx-es-preset-btn').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            refreshSummary();
+        });
     });
-    if (dailyInput) dailyInput.addEventListener('input', refreshAutoDisplay);
-    syncMode();
 
     if (settingsForm && saveBtn) {
-        settingsForm.addEventListener('submit', function (event) {
-            clearFieldError(dailyInput, dailyLimitError);
-            clearFieldError(rateInput, ratePerSecondError);
-
-            const dailyLimit = parseInt(dailyInput.value || '0', 10);
-            if (!Number.isFinite(dailyLimit) || dailyLimit < 1 || dailyLimit > 100000000) {
-                event.preventDefault();
-                setFieldError(dailyInput, dailyLimitError, 'Günlük limit 1 - 100.000.000 arasında olmalı.');
-                if (window.NexusToast?.error) window.NexusToast.error('Lütfen günlük limit alanını kontrol edin.');
-                return;
-            }
-
-            const dailyMode = document.getElementById('rateDailyAvg')?.checked;
-            if (!dailyMode) {
-                const rateVal = parseFloat(String(rateInput.value || '').replace(',', '.'));
-                if (!Number.isFinite(rateVal) || rateVal < 0.01 || rateVal > EMAIL_MAX_RATE) {
-                    event.preventDefault();
-                    setFieldError(rateInput, ratePerSecondError, 'Manuel hız 0,01 ile ' + EMAIL_MAX_RATE.toLocaleString('tr-TR') + ' arasında olmalı.');
-                    if (window.NexusToast?.error) window.NexusToast.error('Manuel saniyelik hız değeri geçersiz.');
-                    return;
-                }
-            }
-
+        settingsForm.addEventListener('submit', function () {
             saveBtn.disabled = true;
-            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Kaydediliyor...';
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Uygulanıyor...';
         });
     }
 
-    if (typeof feather !== 'undefined') {
-        feather.replace();
-    }
-    if (flashSuccess && window.NexusToast?.success) {
-        window.NexusToast.success(flashSuccess);
-    }
-    if (flashError && window.NexusToast?.error) {
-        window.NexusToast.error(flashError);
-    }
+    if (typeof feather !== 'undefined') feather.replace();
+
+    /* ── Sayaç sıfırlama ── */
+    window.nxResetSmtp = function (type, btn) {
+        var msg = btn.getAttribute('data-confirm') || 'Sayaçlar sıfırlanacak. Devam edilsin mi?';
+        if (!confirm(msg)) return;
+
+        var original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+        fetch('/admin/email-smtp/reset-limits', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+            body: 'type=' + encodeURIComponent(type)
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.success) {
+                btn.innerHTML = '<i data-feather="check" class="icon-xs me-1"></i>Sıfırlandı';
+                btn.classList.add('nx-es-reset-tile-btn--done');
+                var fb = document.getElementById('nxResetFeedback');
+                var fm = document.getElementById('nxResetFeedbackMsg');
+                if (fb && fm) { fm.textContent = data.message; fb.classList.remove('d-none'); }
+                if (typeof feather !== 'undefined') feather.replace();
+                setTimeout(function () {
+                    btn.disabled = false;
+                    btn.innerHTML = original;
+                    btn.classList.remove('nx-es-reset-tile-btn--done');
+                    if (fb) fb.classList.add('d-none');
+                    if (typeof feather !== 'undefined') feather.replace();
+                }, 3500);
+            } else {
+                alert(data.message || 'Sıfırlama başarısız.');
+                btn.disabled = false;
+                btn.innerHTML = original;
+                if (typeof feather !== 'undefined') feather.replace();
+            }
+        })
+        .catch(function () {
+            alert('Bağlantı hatası.');
+            btn.disabled = false;
+            btn.innerHTML = original;
+            if (typeof feather !== 'undefined') feather.replace();
+        });
+    };
 })();
 </script>
 {% endblock %}
