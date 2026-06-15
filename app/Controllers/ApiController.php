@@ -1181,6 +1181,12 @@ class ApiController
             $effectiveRate = min($effectiveRate, (float) $maxCap);
         }
 
+        // Global saat/dakika limiti aktif SMTP sayısına bölünür.
+        // Her lane tam limiti kullanırsa N lane × limit = N× aşım olur.
+        $activeSmtpCount    = max(1, $this->emailSmtpSelector->getAvailableSmtpCount());
+        $perSmtpHourlyLimit = max(1, (int) floor($planConfig['hourly_limit'] / $activeSmtpCount));
+        $perSmtpMinuteLimit = max(1, (int) floor($planConfig['minute_limit'] / $activeSmtpCount));
+
         // Şifreyi decrypt et (şifre encrypted saklanıyor)
         $decryptedPassword = $this->emailSmtpService->decryptPassword($bestSmtp->getPassword());
 
@@ -1197,9 +1203,9 @@ class ApiController
                 'from_name' => $bestSmtp->getFromName(),
                 'daily_limit' => $planConfig['daily_limit'],
                 'daily_sent' => $bestSmtp->getDailySent(),
-                'hourly_limit' => $planConfig['hourly_limit'],
+                'hourly_limit' => $perSmtpHourlyLimit,
                 'hourly_sent' => $bestSmtp->getHourlySent(),
-                'minute_limit' => $planConfig['minute_limit'],
+                'minute_limit' => $perSmtpMinuteLimit,
                 'minute_sent' => $bestSmtp->getMinuteSent(),
                 'rate_per_second' => $effectiveRate,
                 'total_sent' => $bestSmtp->getTotalSent(),
@@ -1249,6 +1255,11 @@ class ApiController
         $planConfig   = $this->emailSendingConfigService->getConfig();
         $globalTotals = $this->emailSmtpSelector->getGlobalUsageTotals();
 
+        // Aktif SMTP sayısına böl — her lane tam limiti alırsa N× aşım olur
+        $activeSmtpCount    = max(1, $this->emailSmtpSelector->getAvailableSmtpCount());
+        $perSmtpHourlyLimit = max(1, (int) floor($planConfig['hourly_limit'] / $activeSmtpCount));
+        $perSmtpMinuteLimit = max(1, (int) floor($planConfig['minute_limit'] / $activeSmtpCount));
+
         $smtpPayloads = [];
         foreach ($smtpList as $bestSmtp) {
             $isAlibaba  = str_contains(strtolower($bestSmtp->getHost()), 'aliyun')
@@ -1274,9 +1285,9 @@ class ApiController
                 'from_name'            => $bestSmtp->getFromName(),
                 'daily_limit'          => $bestSmtp->getDailyLimit(),
                 'daily_sent'           => $bestSmtp->getDailySent(),
-                'hourly_limit'         => $bestSmtp->getHourlyLimit(),
+                'hourly_limit'         => $perSmtpHourlyLimit,
                 'hourly_sent'          => $bestSmtp->getHourlySent(),
-                'minute_limit'         => $bestSmtp->getMinuteLimit(),
+                'minute_limit'         => $perSmtpMinuteLimit,
                 'minute_sent'          => $bestSmtp->getMinuteSent(),
                 'rate_per_second'      => $effectiveRate,
                 'total_sent'           => $bestSmtp->getTotalSent(),
