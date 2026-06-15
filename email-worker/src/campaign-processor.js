@@ -454,7 +454,10 @@ export class CampaignProcessor {
         while (remaining.length > 0) {
             roundNum++;
             const roundEmails = remaining.splice(0, maxLanes * ROTATION_LIMIT);
-            const neededLanes = Math.min(maxLanes, Math.ceil(roundEmails.length / ROTATION_LIMIT));
+            // Always use as many lanes as emails available (up to maxLanes).
+            // Do NOT base lane count on ROTATION_LIMIT — that causes neededLanes=1
+            // when batch < ROTATION_LIMIT and results in a single SMTP running.
+            const neededLanes = Math.max(1, Math.min(maxLanes, roundEmails.length));
 
             let roundLanes = await this._buildRotationLanes(neededLanes, usedInCycle);
 
