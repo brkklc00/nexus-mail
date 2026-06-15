@@ -91,6 +91,9 @@ class EmailOrder
     #[ORM\Column(type: 'boolean', name: 'worker_stop_requested')]
     private bool $workerStopRequested = false;
 
+    #[ORM\Column(type: 'integer', options: ['unsigned' => true, 'default' => 500], name: 'smtp_rotation_limit')]
+    private int $smtpRotationLimit = 500;
+
     #[ORM\OneToMany(mappedBy: 'order', targetEntity: EmailOrderEmail::class, cascade: ['persist', 'remove'])]
     private Collection $emails;
 
@@ -402,6 +405,17 @@ class EmailOrder
     public function setWorkerStopRequested(bool $workerStopRequested): self
     {
         $this->workerStopRequested = $workerStopRequested;
+        return $this;
+    }
+
+    public function getSmtpRotationLimit(): int
+    {
+        return $this->smtpRotationLimit;
+    }
+
+    public function setSmtpRotationLimit(int $limit): self
+    {
+        $this->smtpRotationLimit = max(1, $limit);
         return $this;
     }
 

@@ -440,101 +440,72 @@ export class CampaignProcessor {
      * Paralel lane kurulumu: önce pool'dan al, kalan slotlar için batch API çağrısı + Promise.all connect
      */
     async processSingleBatch(campaign, batch) {
-        const maxLanes = this.apiClient.getWorkerMaxSmtpLanes();
-        const desiredLaneCount = Math.max(1, Math.min(maxLanes, batch.length));
-        const smtpLanes = [];
-        const excludedIds = new Set();
-        const SAFETY_BUFFER = maxLanes;
+        const maxLanes       = this.apiClient.getWorkerMaxSmtpLanes();
+        const ROTATION_LIMIT = Math.max(1, campaign.smtp_rotation_limit || 500);
 
-        // 1. Pool'dan mevcut bağlantıları al (ağ maliyeti yok)
-        for (const [smtpId, connection] of this.smtpPool.entries()) {
-            if (smtpLanes.length >= desiredLaneCount) break;
-            if (!connection.isActive || !connection.client.isConnected) continue;
+        const allResults  = [];
+        const allLanesMap = new Map();  // smtpId → lane (for per-lane stats at end)
+        const usedInCycle = new Set();  // SMTP IDs used this cycle; resets after full rotation
+        const tStart      = Date.now();
+        let totalSmtpMs   = 0;
+        let remaining     = [...batch];
+        let roundNum      = 0;
 
-            const dailyRemaining  = (connection.config.daily_limit  || 999999) - (connection.config.daily_sent  || 0);
-            const hourlyRemaining = (connection.config.hourly_limit || 999999) - (connection.config.hourly_sent || 0);
-            const minuteRemaining = (connection.config.minute_limit || 999999) - (connection.config.minute_sent || 0);
+        while (remaining.length > 0) {
+            roundNum++;
+            const roundEmails = remaining.splice(0, maxLanes * ROTATION_LIMIT);
+            const neededLanes = Math.min(maxLanes, Math.ceil(roundEmails.length / ROTATION_LIMIT));
 
-            if (dailyRemaining <= SAFETY_BUFFER || hourlyRemaining <= SAFETY_BUFFER || minuteRemaining <= SAFETY_BUFFER) {
-                const which = dailyRemaining <= SAFETY_BUFFER ? 'günlük' : hourlyRemaining <= SAFETY_BUFFER ? 'saatlik' : 'dakikalık';
-                Logger.warn(`SMTP #${smtpId} ${which} limiti dolmak üzere — pool'dan çıkarılıyor`);
-                this.smtpPool.delete(smtpId);
-                try { connection.client.close(); } catch (_) {}
-                continue;
+            let roundLanes = await this._buildRotationLanes(neededLanes, usedInCycle);
+
+            if (roundLanes.length === 0 && usedInCycle.size > 0) {
+                Logger.info(`Rotasyon turu ${roundNum}: Tüm SMTP'ler kullanıldı — döngü başa sarılıyor`);
+                usedInCycle.clear();
+                roundLanes = await this._buildRotationLanes(neededLanes, usedInCycle);
             }
 
-            excludedIds.add(Number(smtpId));
-            smtpLanes.push(connection);
-            Logger.debug(`SMTP #${smtpId} pool'dan alındı (günlük kalan ${dailyRemaining})`);
-        }
+            if (roundLanes.length === 0) {
+                Logger.error('❌ SMTP bağlantısı alınamadı (Günlük limitler aşılmış olabilir)');
+                Logger.warn('⏸️  Kampanya #' + campaign.id + ' processing durumunda kalacak');
+                throw new Error('No SMTP available - Daily limits may be exceeded. Waiting for next run...');
+            }
 
-        // 2. Eksik slotları tek API çağrısıyla al, tümünü eş zamanlı bağla
-        const remainingSlots = desiredLaneCount - smtpLanes.length;
-        if (remainingSlots > 0) {
-            const excludeArray = Array.from(excludedIds);
-            const newConfigs = await this.apiClient.selectBestSmtpBatch(remainingSlots, excludeArray);
+            for (const lane of roundLanes) {
+                usedInCycle.add(lane.config.id);
+                if (!allLanesMap.has(lane.config.id)) allLanesMap.set(lane.config.id, lane);
+            }
 
-            if (newConfigs.length > 0) {
-                const tConnect = Date.now();
-                const connectResults = await Promise.all(
-                    newConfigs.map(async (smtpConfig) => {
-                        const smtpClient = new SmtpClient(smtpConfig);
-                        const connected = await smtpClient.connect();
-                        if (!connected) {
-                            Logger.warn(`SMTP #${smtpConfig.id} bağlantısı başarısız`);
-                            return null;
-                        }
-                        const connection = {
-                            config: smtpConfig,
-                            client: smtpClient,
-                            isActive: true,
-                            createdAt: Date.now(),
-                        };
-                        this.smtpPool.set(smtpConfig.id, connection);
-                        return connection;
-                    })
-                );
-                const connectMs = Date.now() - tConnect;
-                const connected = connectResults.filter(Boolean);
-                if (connected.length > 0) {
-                    Logger.info(`${connected.length} SMTP eş zamanlı bağlandı — ${formatDurationMs(connectMs)} (pool: ${this.smtpPool.size})`);
-                    for (const conn of connected) {
-                        smtpLanes.push(conn);
-                        excludedIds.add(conn.config.id);
-                    }
-                }
+            if (roundNum > 1 || remaining.length > 0) {
+                Logger.info(`Rotasyon turu ${roundNum}: ${roundLanes.length} SMTP × max ${ROTATION_LIMIT} mail = ${roundEmails.length} mail`);
             } else {
-                // Fallback: batch endpoint henüz sunucuda yok — tekil seçime düş
-                Logger.warn('selectBestSmtpBatch boş döndü — tekil SMTP seçimine düşülüyor (sunucu güncellemesi gerekiyor olabilir)');
-                for (let i = 0; i < remainingSlots; i++) {
-                    const lane = await this.getOrCreateSmtpConnection(Array.from(excludedIds));
-                    if (!lane || !lane.client) break;
-                    if (excludedIds.has(lane.config.id)) break;
-                    excludedIds.add(lane.config.id);
-                    smtpLanes.push(lane);
-                }
+                Logger.info(`SMTP lane sayisi  : ${roundLanes.length} (rotasyon: ${ROTATION_LIMIT}/SMTP)`);
+            }
+
+            // Distribute round emails across lanes via round-robin
+            const laneBatches = roundLanes.map(() => []);
+            for (let i = 0; i < roundEmails.length; i++) {
+                laneBatches[i % roundLanes.length].push(roundEmails[i]);
+            }
+
+            const tRound = Date.now();
+            const laneResults = await Promise.all(
+                roundLanes.map((lane, idx) => this.sendEmailsWithLane(campaign, lane, laneBatches[idx]))
+            );
+            totalSmtpMs += Date.now() - tRound;
+            allResults.push(...laneResults.flat());
+
+            // Retire connections after rotation
+            for (const lane of roundLanes) {
+                this.smtpPool.delete(lane.config.id);
+                try { lane.client.close(); } catch (_) {}
             }
         }
 
-        if (smtpLanes.length === 0) {
-            Logger.error('❌ SMTP bağlantısı alınamadı (Günlük limitler aşılmış olabilir)');
-            Logger.warn('⏸️  Kampanya #' + campaign.id + ' processing durumunda kalacak');
-            throw new Error('No SMTP available - Daily limits may be exceeded. Waiting for next run...');
-        }
-
-        Logger.info(`SMTP lane sayisi  : ${smtpLanes.length}`);
-
-        // Email'leri lane'lere round-robin dağıt
-        const laneBatches = smtpLanes.map(() => []);
-        for (let i = 0; i < batch.length; i++) {
-            laneBatches[i % smtpLanes.length].push(batch[i]);
-        }
-
-        const tSmtp = Date.now();
-        const lanePromises = smtpLanes.map((lane, index) => this.sendEmailsWithLane(campaign, lane, laneBatches[index]));
-        const laneResults = await Promise.all(lanePromises);
-        const results = laneResults.flat();
-        const smtpMs = Date.now() - tSmtp;
+        // Aliases for compatibility with persistence/stats code below
+        const smtpLanes = [...allLanesMap.values()];
+        const results   = allResults;
+        const tSmtp     = tStart;
+        const smtpMs    = totalSmtpMs;
 
         const tPersist = Date.now();
         let persistMs = 0;
@@ -650,6 +621,71 @@ export class CampaignProcessor {
         );
 
         return results;
+    }
+
+    async _buildRotationLanes(neededCount, usedIds) {
+        const lanes         = [];
+        const SAFETY_BUFFER = neededCount;
+        const excludedIds   = new Set(usedIds);
+
+        // 1. Pool'dan (excluding used SMTPs in current cycle)
+        for (const [smtpId, conn] of this.smtpPool.entries()) {
+            if (lanes.length >= neededCount) break;
+            if (excludedIds.has(Number(smtpId))) continue;
+            if (!conn.isActive || !conn.client.isConnected) continue;
+
+            const dailyRem  = (conn.config.daily_limit  || 999999) - (conn.config.daily_sent  || 0);
+            const hourlyRem = (conn.config.hourly_limit || 999999) - (conn.config.hourly_sent || 0);
+            const minuteRem = (conn.config.minute_limit || 999999) - (conn.config.minute_sent || 0);
+
+            if (dailyRem <= SAFETY_BUFFER || hourlyRem <= SAFETY_BUFFER || minuteRem <= SAFETY_BUFFER) {
+                this.smtpPool.delete(smtpId);
+                try { conn.client.close(); } catch (_) {}
+                continue;
+            }
+
+            excludedIds.add(Number(smtpId));
+            lanes.push(conn);
+        }
+
+        // 2. API'den kalan slotları doldur (eş zamanlı bağlan)
+        const remaining = neededCount - lanes.length;
+        if (remaining > 0) {
+            const excludeArray = Array.from(excludedIds);
+            const newConfigs   = await this.apiClient.selectBestSmtpBatch(remaining, excludeArray);
+
+            if (newConfigs.length > 0) {
+                const tConnect = Date.now();
+                const connected = (await Promise.all(
+                    newConfigs.map(async (cfg) => {
+                        const client = new SmtpClient(cfg);
+                        if (!await client.connect()) { Logger.warn(`SMTP #${cfg.id} bağlantısı başarısız`); return null; }
+                        const conn = { config: cfg, client, isActive: true, createdAt: Date.now() };
+                        this.smtpPool.set(cfg.id, conn);
+                        return conn;
+                    })
+                )).filter(Boolean);
+                if (connected.length > 0) {
+                    Logger.info(`${connected.length} SMTP eş zamanlı bağlandı — ${formatDurationMs(Date.now() - tConnect)}`);
+                    for (const conn of connected) {
+                        lanes.push(conn);
+                        excludedIds.add(conn.config.id);
+                    }
+                }
+            } else {
+                // Fallback: tekil seçim
+                Logger.warn('selectBestSmtpBatch boş döndü — tekil SMTP seçimine düşülüyor');
+                for (let i = 0; i < remaining; i++) {
+                    const lane = await this.getOrCreateSmtpConnection(Array.from(excludedIds));
+                    if (!lane || !lane.client) break;
+                    if (excludedIds.has(lane.config.id)) break;
+                    excludedIds.add(lane.config.id);
+                    lanes.push(lane);
+                }
+            }
+        }
+
+        return lanes;
     }
 
     async sendEmailsWithLane(campaign, smtp, emails) {

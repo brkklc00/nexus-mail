@@ -243,6 +243,7 @@ class ApiController
                     'total_emails' => $order->getTotal(),
                     'pending_emails' => (int) $pendingCount,
                     'last_pool_id' => $order->getLastPoolId(),
+                    'smtp_rotation_limit' => $order->getSmtpRotationLimit(),
                     'created_at' => $order->getCreatedAt()->format('Y-m-d H:i:s'),
                 ];
             }
