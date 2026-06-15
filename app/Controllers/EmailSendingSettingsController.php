@@ -59,7 +59,15 @@ class EmailSendingSettingsController
 
         $activeSmtps = $this->em->getRepository(EmailSmtpAccount::class)->findBy(['isActive' => true]);
         $activeCount = count($activeSmtps);
-        if ($activeCount > 1) {
+
+        // Eş zamanlı SMTP (rotasyon grubu): kampanyada aynı anda kaç SMTP çalışsın.
+        // > 0 → o kadar SMTP eş zamanlı; tüm aktif SMTP'ler rotasyonla sırayla kullanılır.
+        //   0/boş → tüm aktif SMTP'ler aynı anda (eski davranış).
+        $concurrentLanes = isset($data['smtp_concurrent_lanes']) ? (int) $data['smtp_concurrent_lanes'] : 0;
+        $concurrentLanes = $concurrentLanes > 0 ? max(1, min(50, $concurrentLanes)) : 0;
+        if ($concurrentLanes > 0) {
+            $workerProfile['worker_max_smtp_lanes'] = $concurrentLanes;
+        } elseif ($activeCount > 1) {
             $workerProfile['worker_max_smtp_lanes'] = $activeCount;
         }
 
