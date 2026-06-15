@@ -441,7 +441,7 @@ export class CampaignProcessor {
      */
     async processSingleBatch(campaign, batch) {
         const maxLanes       = this.apiClient.getWorkerMaxSmtpLanes();
-        const ROTATION_LIMIT = Math.max(1, campaign.smtp_rotation_limit || 500);
+        const ROTATION_LIMIT = Math.max(1, campaign.smtp_rotation_limit || this.apiClient.getWorkerSmtpRotationLimit());
 
         const allResults  = [];
         const allLanesMap = new Map();  // smtpId → lane (for per-lane stats at end)

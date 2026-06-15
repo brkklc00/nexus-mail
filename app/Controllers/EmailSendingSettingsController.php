@@ -63,6 +63,8 @@ class EmailSendingSettingsController
             $workerProfile['worker_max_smtp_lanes'] = $activeCount;
         }
 
+        $rotationLimit = max(1, min(10000, (int) ($data['smtp_rotation_limit'] ?? 500)));
+
         try {
             $this->sendingConfigService->saveAdminSettings(array_merge([
                 'daily_limit' => $dailyLimit,
@@ -70,6 +72,7 @@ class EmailSendingSettingsController
                 'rate_source' => EmailSendingConfigService::RATE_SOURCE_DAILY_AVERAGE_24H,
                 'alibaba_rate_cap' => null,
                 'max_rate_per_second' => null,
+                'worker_smtp_rotation_limit' => $rotationLimit,
             ], $workerProfile));
 
             $cfg = $this->sendingConfigService->getConfig();

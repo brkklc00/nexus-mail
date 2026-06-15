@@ -190,6 +190,7 @@ class EmailSendingConfigService
         $throttleStep = isset($row['worker_throttle_step_up']) ? (float) $row['worker_throttle_step_up'] : 0.5;
         $throttleCd = isset($row['worker_throttle_cooldown_ms']) ? (int) $row['worker_throttle_cooldown_ms'] : 15000;
         $poolMsg = isset($row['worker_smtp_pool_max_messages']) ? (int) $row['worker_smtp_pool_max_messages'] : 100;
+        $rotationLimit = isset($row['worker_smtp_rotation_limit']) ? (int) $row['worker_smtp_rotation_limit'] : 500;
         $aliWarm = isset($row['alibaba_warmup_max_rate_per_second']) && $row['alibaba_warmup_max_rate_per_second'] !== null && $row['alibaba_warmup_max_rate_per_second'] !== ''
             ? (float) $row['alibaba_warmup_max_rate_per_second']
             : null;
@@ -216,6 +217,7 @@ class EmailSendingConfigService
             'worker_throttle_step_up' => max(0.01, min(10.0, $throttleStep)),
             'worker_throttle_cooldown_ms' => max(1000, min(600000, $throttleCd)),
             'worker_smtp_pool_max_messages' => max(1, min(50000, $poolMsg)),
+            'worker_smtp_rotation_limit' => max(1, min(10000, $rotationLimit)),
             'alibaba_warmup_max_rate_per_second' => $aliWarm,
         ];
     }
@@ -233,6 +235,7 @@ class EmailSendingConfigService
             'send_concurrency_per_lane' => $c['worker_send_concurrency'],
             'smtp_pool_max_connections' => $c['worker_smtp_pool_connections'],
             'smtp_pool_max_messages' => $c['worker_smtp_pool_max_messages'],
+            'smtp_rotation_limit' => $c['worker_smtp_rotation_limit'],
             'rate_per_second_effective' => $c['rate_per_second'],
             'fetch_batch_size' => $c['worker_fetch_batch_size'],
             'send_batch_size' => $c['worker_send_batch_size'],
@@ -264,6 +267,7 @@ class EmailSendingConfigService
             'worker_throttle_step_up' => 0.5,
             'worker_throttle_cooldown_ms' => 15000,
             'worker_smtp_pool_max_messages' => 100,
+            'worker_smtp_rotation_limit' => 500,
             'alibaba_warmup_max_rate_per_second' => null,
         ];
     }
@@ -310,14 +314,16 @@ class EmailSendingConfigService
         }
 
         $conn = $this->em->getConnection();
+        $rotationLimit = isset($data['worker_smtp_rotation_limit']) ? max(1, min(10000, (int) $data['worker_smtp_rotation_limit'])) : 500;
+
         $conn->executeStatement(
             'INSERT INTO email_sending_config (
                 id, daily_limit, rate_per_second, alibaba_rate_cap, max_rate_per_second,
                 rate_source, worker_batch_gap_ms, worker_chunk_gap_ms, worker_send_concurrency, worker_smtp_pool_connections,
                 worker_fetch_batch_size, worker_send_batch_size, worker_max_smtp_lanes,
                 worker_throttle_step_up, worker_throttle_cooldown_ms, worker_smtp_pool_max_messages,
-                alibaba_warmup_max_rate_per_second
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                worker_smtp_rotation_limit, alibaba_warmup_max_rate_per_second
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 daily_limit = VALUES(daily_limit),
                 rate_per_second = VALUES(rate_per_second),
@@ -334,6 +340,7 @@ class EmailSendingConfigService
                 worker_throttle_step_up = VALUES(worker_throttle_step_up),
                 worker_throttle_cooldown_ms = VALUES(worker_throttle_cooldown_ms),
                 worker_smtp_pool_max_messages = VALUES(worker_smtp_pool_max_messages),
+                worker_smtp_rotation_limit = VALUES(worker_smtp_rotation_limit),
                 alibaba_warmup_max_rate_per_second = VALUES(alibaba_warmup_max_rate_per_second)',
             [
                 $daily,
@@ -351,6 +358,7 @@ class EmailSendingConfigService
                 (float) $data['worker_throttle_step_up'],
                 (int) $data['worker_throttle_cooldown_ms'],
                 (int) $data['worker_smtp_pool_max_messages'],
+                $rotationLimit,
                 $aliWarmSave,
             ]
         );
@@ -381,6 +389,7 @@ class EmailSendingConfigService
             'worker_throttle_step_up' => $cur['worker_throttle_step_up'],
             'worker_throttle_cooldown_ms' => $cur['worker_throttle_cooldown_ms'],
             'worker_smtp_pool_max_messages' => $cur['worker_smtp_pool_max_messages'],
+            'worker_smtp_rotation_limit' => $cur['worker_smtp_rotation_limit'],
             'alibaba_warmup_max_rate_per_second' => $cur['alibaba_warmup_max_rate_per_second'],
         ]);
     }

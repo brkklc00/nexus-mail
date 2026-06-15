@@ -327,6 +327,14 @@ export class ApiClient {
         return 100;
     }
 
+    getWorkerSmtpRotationLimit() {
+        const v = this.workerRuntime?.smtp_rotation_limit;
+        if (Number.isFinite(v) && v >= 1) {
+            return Math.min(10000, v);
+        }
+        return 500;
+    }
+
     /** null = 15/sn tavan (eski davranış) */
     getWorkerAlibabaWarmupMaxRatePerSecond() {
         const v = this.workerRuntime?.alibaba_warmup_max_rate_per_second;
