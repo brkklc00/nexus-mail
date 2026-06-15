@@ -64,6 +64,8 @@ class EmailSendingSettingsController
         }
 
         $rotationLimit = max(1, min(10000, (int) ($data['smtp_rotation_limit'] ?? 500)));
+        $poolConnections = isset($data['smtp_pool_connections']) ? max(0, min(50, (int) $data['smtp_pool_connections'])) : $workerProfile['worker_smtp_pool_connections'];
+        $workerProfile['worker_smtp_pool_connections'] = $poolConnections;
 
         try {
             $this->sendingConfigService->saveAdminSettings(array_merge([
