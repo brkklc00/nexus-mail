@@ -503,6 +503,16 @@ export class CampaignProcessor {
                         excludedIds.add(conn.config.id);
                     }
                 }
+            } else {
+                // Fallback: batch endpoint henüz sunucuda yok — tekil seçime düş
+                Logger.warn('selectBestSmtpBatch boş döndü — tekil SMTP seçimine düşülüyor (sunucu güncellemesi gerekiyor olabilir)');
+                for (let i = 0; i < remainingSlots; i++) {
+                    const lane = await this.getOrCreateSmtpConnection(Array.from(excludedIds));
+                    if (!lane || !lane.client) break;
+                    if (excludedIds.has(lane.config.id)) break;
+                    excludedIds.add(lane.config.id);
+                    smtpLanes.push(lane);
+                }
             }
         }
 
