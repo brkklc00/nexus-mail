@@ -86,16 +86,24 @@ class EmailSendingSettingsController
             ], $workerProfile));
 
             $cfg = $this->sendingConfigService->getConfig();
-            $laneCount = max(1, $activeCount);
+            // Günlük kota TÜM aktif hesaplara bölünür (rotasyonla hepsi gün boyu kullanılır).
+            // Dakika/saat HIZ limiti ise yalnızca EŞ ZAMANLI çalışan gruba bölünür — böylece
+            // N hesap aynı anda çalışırken global hıza ulaşılır. Aksi halde grup < aktif olunca
+            // hız (grup / aktif) oranında düşerdi (ör. 15 eş zamanlı / 30 aktif = yarı hız).
+            $dailyDivisor = max(1, $activeCount);
+            $rateDivisor  = max(1, $concurrentLanes > 0 ? min($concurrentLanes, $activeCount) : $activeCount);
             foreach ($this->em->getRepository(EmailSmtpAccount::class)->findAll() as $smtp) {
-                $smtp->setDailyLimit((int) ceil($cfg['daily_limit'] / $laneCount));
-                $smtp->setHourlyLimit((int) ceil($cfg['hourly_limit'] / $laneCount));
-                $smtp->setMinuteLimit((int) ceil($cfg['minute_limit'] / $laneCount));
+                $smtp->setDailyLimit((int) ceil($cfg['daily_limit'] / $dailyDivisor));
+                $smtp->setHourlyLimit((int) ceil($cfg['hourly_limit'] / $rateDivisor));
+                $smtp->setMinuteLimit((int) ceil($cfg['minute_limit'] / $rateDivisor));
             }
             $this->em->flush();
 
+            $laneInfo = $concurrentLanes > 0
+                ? $concurrentLanes . ' SMTP eş zamanlı (rotasyonla ' . $activeCount . ' hesap sırayla)'
+                : $activeCount . ' aktif SMTP eş zamanlı';
             $_SESSION['success'] = number_format($dailyLimit, 0, '.', '.') . ' mail/gün hedefi uygulandı.'
-                . ($activeCount > 0 ? ' ' . $activeCount . ' aktif SMTP hesabı eş zamanlı çalışacak şekilde yapılandırıldı.' : '');
+                . ($activeCount > 0 ? ' ' . $laneInfo . ' çalışacak şekilde yapılandırıldı.' : '');
         } catch (\Throwable $e) {
             $_SESSION['error'] = 'Kayıt hatası: ' . $e->getMessage();
         }
