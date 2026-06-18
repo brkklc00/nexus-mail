@@ -247,6 +247,9 @@
                                                     {% if order.status == 'pending_approval' %}
                                                     <li><button type="button" class="dropdown-item" onclick="editOrderTemplate({{ order.id }})"><i data-feather="edit-2" class="icon-xs me-2"></i>Düzenle</button></li>
                                                     <li><button type="button" class="dropdown-item" onclick="approveOrder({{ order.id }}, {{ order.sourceType == 'pool' ? 'true' : 'false' }})"><i data-feather="check" class="icon-xs me-2"></i>Onayla</button></li>
+                                                    {% if sibling_panels|default([])|length > 0 %}
+                                                    <li><button type="button" class="dropdown-item" onclick="dispatchOrder({{ order.id }})"><i data-feather="send" class="icon-xs me-2"></i>Başka panele taşı</button></li>
+                                                    {% endif %}
                                                     {% endif %}
                                                     {% if order.status == 'pending' or order.status == 'processing' %}
                                                     <li><button type="button" class="dropdown-item" onclick="cancelOrder({{ order.id }})"><i data-feather="pause" class="icon-xs me-2"></i>Duraklat</button></li>
@@ -477,6 +480,92 @@
         </div>
     </div>
 </div>
+
+<!-- Başka Panele Taşı Modal -->
+<div class="modal fade nx-adm-eo-modal-root" id="dispatchPanelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="send" class="icon-sm me-2"></i> Siparişi Başka Panele Taşı</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">Yalnızca sipariş bilgisi (konu, içerik, adet, ayarlar) gönderilir. Müşteri ve alıcı listesi <strong>hedef panelde onay aşamasında</strong> seçilir. Kaynak sipariş iptal edilir.</p>
+                <label class="form-label small fw-semibold" for="dispatchPanelSelect">Hedef panel</label>
+                <select class="form-select" id="dispatchPanelSelect"></select>
+                <div id="dispatchPanelAlert" class="alert d-none mt-3 mb-0" role="alert"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-primary" id="dispatchPanelConfirmBtn"><i data-feather="send" class="icon-xs me-1"></i> Taşı</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    const PANELS = {{ sibling_panels|default([])|json_encode|raw }};
+    let dispatchOrderId = null;
+    let dispatchModal = null;
+
+    function fillSelect() {
+        const sel = document.getElementById('dispatchPanelSelect');
+        if (!sel) return;
+        sel.innerHTML = PANELS.map(function (p) {
+            return '<option value="' + p.key + '">' + (p.label || p.url) + '</option>';
+        }).join('');
+    }
+
+    window.dispatchOrder = function (orderId) {
+        dispatchOrderId = orderId;
+        fillSelect();
+        const alertEl = document.getElementById('dispatchPanelAlert');
+        if (alertEl) { alertEl.className = 'alert d-none mt-3 mb-0'; alertEl.textContent = ''; }
+        const el = document.getElementById('dispatchPanelModal');
+        if (!el) return;
+        if (!dispatchModal) dispatchModal = new bootstrap.Modal(el);
+        dispatchModal.show();
+        setTimeout(function () { if (typeof feather !== 'undefined') feather.replace(); }, 100);
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const btn = document.getElementById('dispatchPanelConfirmBtn');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            const sel = document.getElementById('dispatchPanelSelect');
+            const alertEl = document.getElementById('dispatchPanelAlert');
+            const panelKey = sel ? sel.value : '';
+            if (!dispatchOrderId || !panelKey) return;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Taşınıyor...';
+            fetch('/admin/email-orders/' + dispatchOrderId + '/dispatch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ panel: panelKey }),
+            })
+            .then(function (r) { return r.json().catch(function () { return { success: false, message: 'Geçersiz yanıt' }; }); })
+            .then(function (data) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-feather="send" class="icon-xs me-1"></i> Taşı';
+                if (typeof feather !== 'undefined') feather.replace();
+                if (data.success) {
+                    if (typeof iziToast !== 'undefined') iziToast.success({ title: 'Taşındı', message: data.message || 'Sipariş taşındı.', position: 'topRight', timeout: 4000 });
+                    if (dispatchModal) dispatchModal.hide();
+                    setTimeout(function () { window.location.reload(); }, 1500);
+                } else if (alertEl) {
+                    alertEl.className = 'alert alert-danger mt-3 mb-0';
+                    alertEl.textContent = data.message || 'Taşıma başarısız.';
+                }
+            })
+            .catch(function () {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-feather="send" class="icon-xs me-1"></i> Taşı';
+                if (alertEl) { alertEl.className = 'alert alert-danger mt-3 mb-0'; alertEl.textContent = 'Bağlantı hatası.'; }
+            });
+        });
+    });
+})();
+</script>
 
 <script>
 let searchTimer;
