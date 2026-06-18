@@ -228,8 +228,26 @@ class SettingsController
                 ->withStatus(302);
         }
 
+        // Yeni şifre doğrulama (sunucu tarafı — JS bypass'a karşı, boş/kısa şifre engeli)
+        $newPassword = (string) ($data['new_password'] ?? '');
+        $confirmPassword = (string) ($data['confirm_password'] ?? $newPassword);
+        $validationError = null;
+        if (strlen($newPassword) < 6) {
+            $validationError = 'Yeni şifre en az 6 karakter olmalıdır.';
+        } elseif ($newPassword !== $confirmPassword) {
+            $validationError = 'Yeni şifreler eşleşmiyor.';
+        }
+        if ($validationError !== null) {
+            if (strpos($request->getHeaderLine('Accept'), 'application/json') !== false) {
+                $response->getBody()->write(json_encode(['success' => false, 'message' => $validationError]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+            $_SESSION['flash_error'] = $validationError;
+            return $response->withHeader('Location', '/dashboard')->withStatus(302);
+        }
+
         // Yeni şifreyi hashle ve kaydet
-        $user->setPassword($this->passwordHasher->hash($data['new_password'] ?? ''));
+        $user->setPassword($this->passwordHasher->hash($newPassword));
         $this->em->flush();
 
         $this->auditLogger->log($userId, 'user.password_changed', 'User', $userId);
