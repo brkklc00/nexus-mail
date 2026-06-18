@@ -120,6 +120,7 @@
                             <option value="completed" {{ selected_status == 'completed' ? 'selected' : '' }}>Tamamlandı</option>
                             <option value="failed" {{ selected_status == 'failed' ? 'selected' : '' }}>Başarısız</option>
                             <option value="cancelled" {{ selected_status == 'cancelled' ? 'selected' : '' }}>İptal Edildi</option>
+                            <option value="transferred" {{ selected_status == 'transferred' ? 'selected' : '' }}>Panele Taşındı</option>
                         </select>
                     </div>
                     <div class="nx-adm-eo-field nx-adm-eo-field--select">
@@ -226,6 +227,8 @@
                                         <span class="nx-adm-eo-status nx-adm-eo-status--completed">Tamamlandı</span>
                                         {% elseif order.status == 'failed' %}
                                         <span class="nx-adm-eo-status nx-adm-eo-status--failed">Başarısız</span>
+                                        {% elseif order.status == 'transferred' %}
+                                        <span class="nx-adm-eo-status nx-adm-eo-status--cancelled">{{ order.lockedBy|default('Başka panel') }} paneline taşındı</span>
                                         {% elseif order.status == 'cancelled' %}
                                         <span class="nx-adm-eo-status nx-adm-eo-status--cancelled">İptal Edildi</span>
                                         {% endif %}
@@ -1578,7 +1581,8 @@ function renderOrderDetails(order) {
         'sent': '<span class="nx-adm-eo-status nx-adm-eo-status--sent">Gönderildi</span>',
         'completed': '<span class="nx-adm-eo-status nx-adm-eo-status--completed">Tamamlandı</span>',
         'failed': '<span class="nx-adm-eo-status nx-adm-eo-status--failed">Başarısız</span>',
-        'cancelled': '<span class="nx-adm-eo-status nx-adm-eo-status--cancelled">İptal Edildi</span>'
+        'cancelled': '<span class="nx-adm-eo-status nx-adm-eo-status--cancelled">İptal Edildi</span>',
+        'transferred': '<span class="nx-adm-eo-status nx-adm-eo-status--cancelled">Başka panele taşındı</span>'
     };
     const templateBadge = order.template && order.template.id
         ? `TPL #${order.template.id}`

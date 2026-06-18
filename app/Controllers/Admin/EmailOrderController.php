@@ -1838,8 +1838,9 @@ class EmailOrderController
             return $this->jsonResponse($response, ['success' => false, 'message' => 'Hedef panel siparişi kabul etmedi: ' . $msg], 422);
         }
 
-        // Kaynak sipariş taşındı → iptal et (iz kalsın diye silmiyoruz)
-        $order->setStatus(EmailOrderStatus::CANCELLED);
+        // Kaynak sipariş taşındı → "taşındı" durumuna al; hedef panel adını sakla (lockedBy).
+        $order->setStatus(EmailOrderStatus::TRANSFERRED);
+        $order->setLockedBy($panel['label']);
         $this->em->flush();
 
         $remoteId = $remoteBody['order_id'] ?? '?';
