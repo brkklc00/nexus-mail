@@ -463,6 +463,10 @@
 </div>
 
 <!-- Detay Modal -->
+<style>
+.nx-adm-eo-body-frame { width: 100%; height: 420px; border: 1px solid var(--bs-border-color, #e2e8f0); border-radius: 8px; background: #fff; display: block; }
+.nx-adm-eo-body-frame--expand { height: 75vh; }
+</style>
 <div class="modal fade nx-adm-eo-modal-root" id="orderDetailModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content nx-adm-eo-modal">
@@ -767,7 +771,7 @@ function viewOrderDetails(orderId) {
     `;
     modal.show();
     
-    fetch(`/admin/email-orders/${orderId}/details?section=summary`)
+    fetch(`/admin/email-orders/${orderId}/details?section=summary&include_body=1`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -1664,6 +1668,21 @@ function renderOrderDetails(order) {
                 ${['sent', 'completed', 'failed', 'cancelled'].includes(order.status) ? '<button type="button" class="btn btn-outline-success btn-sm" onclick="bootstrap.Modal.getInstance(document.getElementById(\'orderDetailModal\')).hide(); restartOrder(' + order.id + ', ' + (order.is_pool_order ? 'true' : 'false') + ', \'' + order.status + '\');"><i data-feather="refresh-cw" class="icon-xs me-1"></i>Tekrar başlat</button>' : ''}
             </div>
         </div>
+
+        ${order.body ? `
+        <div class="nx-adm-eo-detail-card mt-3">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="nx-adm-eo-detail-card-label text-uppercase mb-0">E-Posta İçeriği</span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="this.closest('.nx-adm-eo-detail-card').querySelector('.nx-adm-eo-body-frame').classList.toggle('nx-adm-eo-body-frame--expand'); this.textContent = this.textContent.trim() === 'Büyüt' ? 'Küçült' : 'Büyüt';">Büyüt</button>
+            </div>
+            <iframe class="nx-adm-eo-body-frame" srcdoc="${order.body.replace(/"/g, '&quot;')}" sandbox="allow-same-origin" loading="lazy"></iframe>
+        </div>
+        ` : `
+        <div class="nx-adm-eo-detail-card mt-3">
+            <span class="nx-adm-eo-detail-card-label text-uppercase mb-0">E-Posta İçeriği</span>
+            <div class="text-muted small mt-2">Bu sipariş için e-posta içeriği bulunamadı.</div>
+        </div>
+        `}
 
         <div class="nx-adm-eo-detail-card mt-3 mb-0">
             <ul class="nav nav-tabs" id="nxDetailTabs" role="tablist">
