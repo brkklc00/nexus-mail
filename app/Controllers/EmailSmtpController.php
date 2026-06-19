@@ -499,8 +499,23 @@ class EmailSmtpController
         $body = (string) $request->getBody();
         $data = json_decode($body, true) ?? [];
         $testEmail = $data['test_email'] ?? null;
+        $deactivateOnFail = filter_var($data['deactivate_on_fail'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         $result = $this->smtpService->testSmtpConnection($smtp, $testEmail);
+
+        // Toplu test: hata + bayrak → SMTP'yi otomatik pasife al
+        if (($result['success'] ?? false) !== true && $deactivateOnFail && $smtp->isActive()) {
+            $smtp->setIsActive(false);
+            $this->em->persist($smtp);
+            $this->em->flush();
+            $result['auto_deactivated'] = true;
+            $result['message'] = trim((string) ($result['message'] ?? 'Test başarısız')) . ' (SMTP otomatik pasife alındı)';
+        } else {
+            $result['auto_deactivated'] = false;
+        }
+        $result['smtp_id'] = $smtp->getId();
+        $result['smtp_name'] = $smtp->getName();
+        $result['smtp_host'] = $smtp->getHost();
 
         $response->getBody()->write(json_encode($result));
         return $response->withHeader('Content-Type', 'application/json');

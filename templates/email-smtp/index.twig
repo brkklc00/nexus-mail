@@ -251,6 +251,10 @@
                                 <i data-feather="trash-2" class="icon-xs me-1"></i>
                                 <span class="d-none d-sm-inline">Seçilenleri sil</span>
                             </button>
+                            <button type="button" class="btn btn-outline-primary btn-sm nx-esmtp-tool" id="smtpBulkTestBtn" onclick="openBulkTestModal()" disabled title="Seçili SMTP'leri tek tek test et">
+                                <i data-feather="zap" class="icon-xs me-1"></i>
+                                <span class="d-none d-sm-inline">Seçilenleri test et</span>
+                            </button>
                             {% endif %}
                             <button type="button" class="btn btn-outline-warning btn-sm nx-esmtp-tool" onclick="resetAllLimits()">
                                 <i data-feather="rotate-ccw" class="icon-xs me-1"></i>
@@ -1827,8 +1831,10 @@ function updateSmtpBulkDeleteUi() {
     var btn = document.getElementById('smtpBulkDeleteBtn');
     var btnActive = document.getElementById('smtpBulkActiveBtn');
     var btnPassive = document.getElementById('smtpBulkPassiveBtn');
+    var btnTest = document.getElementById('smtpBulkTestBtn');
     if (btnActive) btnActive.disabled = n === 0;
     if (btnPassive) btnPassive.disabled = n === 0;
+    if (btnTest) btnTest.disabled = n === 0;
     if (btn) {
         btn.disabled = n === 0;
         btn.innerHTML = n > 0
@@ -2137,6 +2143,142 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     updateSmtpBulkDeleteUi();
 });
+
+/* ─── Toplu SMTP Test ─── */
+function bulkTestEsc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML; }
+
+function openBulkTestModal() {
+    var ids = getSelectedSmtpIds();
+    if (!ids.length) { alert('Önce test etmek istediğiniz SMTP hesaplarını seçin.'); return; }
+    var setup = document.getElementById('bulkTestSetup'), progress = document.getElementById('bulkTestProgress'),
+        startBtn = document.getElementById('bulkTestStartBtn'), targetEl = document.getElementById('bulkTestTargetAddress'),
+        emailEl = document.getElementById('bulkTestEmail'), disableEl = document.getElementById('bulkTestDisableOnFail');
+    if (setup) setup.classList.remove('d-none');
+    if (progress) progress.classList.add('d-none');
+    if (startBtn) { startBtn.disabled = false; startBtn.innerHTML = '<i data-feather="play" class="icon-xs me-1"></i> Testi Başlat'; }
+    var remembered = ''; try { remembered = localStorage.getItem('nx-esmtp-bulk-test-email') || ''; } catch (e) {}
+    var seed = (emailEl && emailEl.value.trim()) || remembered || '';
+    if (emailEl) { emailEl.value = seed; emailEl.oninput = function () { if (targetEl) targetEl.textContent = (emailEl.value || '').trim() || '—'; }; }
+    if (targetEl) targetEl.textContent = seed || '—';
+    if (disableEl) disableEl.checked = true;
+    var listEl = document.getElementById('bulkTestSmtpList');
+    if (listEl) {
+        var badges = ids.map(function (id) { return '<span class="badge bg-secondary-subtle text-secondary border me-1 mb-1">#' + id + '</span>'; }).join('');
+        listEl.innerHTML = '<div class="mb-1 small fw-semibold text-muted">' + ids.length + ' SMTP seçili:</div><div class="d-flex flex-wrap gap-1">' + badges + '</div>';
+    }
+    var modalEl = document.getElementById('bulkTestModal');
+    (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).show();
+    if (typeof feather !== 'undefined') setTimeout(function () { feather.replace(); }, 80);
+}
+
+async function runBulkTest() {
+    var emailEl = document.getElementById('bulkTestEmail');
+    var testEmail = (emailEl && emailEl.value ? emailEl.value.trim() : '');
+    if (!testEmail || !testEmail.includes('@')) { alert('Lütfen geçerli bir hedef e-posta adresi girin.'); if (emailEl) emailEl.focus(); return; }
+    try { localStorage.setItem('nx-esmtp-bulk-test-email', testEmail); } catch (e) {}
+    var disableEl = document.getElementById('bulkTestDisableOnFail');
+    var deactivateOnFail = !!(disableEl && disableEl.checked);
+    var ids = getSelectedSmtpIds(); if (!ids.length) return;
+    var setup = document.getElementById('bulkTestSetup'), progress = document.getElementById('bulkTestProgress'),
+        resultsEl = document.getElementById('bulkTestResults'), barEl = document.getElementById('bulkTestProgressBar'),
+        labelEl = document.getElementById('bulkTestProgressLabel'), countEl = document.getElementById('bulkTestProgressCount'),
+        startBtn = document.getElementById('bulkTestStartBtn'), closeBtn = document.getElementById('bulkTestCloseBtn');
+    setup.classList.add('d-none'); progress.classList.remove('d-none'); resultsEl.innerHTML = '';
+    if (startBtn) startBtn.disabled = true; if (closeBtn) closeBtn.disabled = true;
+    var successN = 0, failN = 0;
+    for (var i = 0; i < ids.length; i++) {
+        var id = ids[i];
+        barEl.style.width = Math.round((i / ids.length) * 100) + '%';
+        labelEl.textContent = 'Test ediliyor… SMTP #' + id;
+        countEl.textContent = (i + 1) + ' / ' + ids.length;
+        var itemId = 'btr-' + id;
+        resultsEl.insertAdjacentHTML('beforeend', '<div class="d-flex align-items-center gap-2 p-2 rounded border bg-light" id="' + itemId + '"><div class="spinner-border spinner-border-sm text-secondary flex-shrink-0"></div><div class="min-w-0 flex-grow-1"><div class="small fw-semibold">SMTP #' + id + '</div></div></div>');
+        try {
+            var res = await fetch('/admin/email-smtp/' + id + '/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ test_email: testEmail, deactivate_on_fail: deactivateOnFail }) });
+            var data = await res.json();
+            var ok = data.success === true; if (ok) successN++; else failN++;
+            var el = document.getElementById(itemId);
+            if (el) {
+                el.className = 'd-flex align-items-center gap-2 p-2 rounded border ' + (ok ? 'bg-success-subtle border-success' : 'bg-danger-subtle border-danger');
+                el.innerHTML = '<div class="flex-shrink-0">' + (ok ? '<i data-feather="check-circle" class="icon-sm text-success"></i>' : '<i data-feather="x-circle" class="icon-sm text-danger"></i>') + '</div>' +
+                    '<div class="min-w-0 flex-grow-1"><div class="small fw-semibold">' + bulkTestEsc(data.smtp_name || ('SMTP #' + id)) + (data.smtp_host ? ' · ' + bulkTestEsc(data.smtp_host) : '') + '</div>' +
+                    '<div class="small text-muted text-truncate">' + bulkTestEsc(data.message || '') + '</div></div>' +
+                    '<div class="d-flex flex-column align-items-end gap-1"><span class="badge ' + (ok ? 'bg-success' : 'bg-danger') + ' flex-shrink-0">' + (ok ? 'OK' : 'HATA') + '</span>' + (!ok && data.auto_deactivated ? '<span class="badge bg-warning text-dark">Pasife alındı</span>' : '') + '</div>';
+                if (typeof feather !== 'undefined') feather.replace();
+            }
+        } catch (err) {
+            failN++;
+            var el2 = document.getElementById(itemId);
+            if (el2) { el2.className = 'd-flex align-items-center gap-2 p-2 rounded border bg-danger-subtle border-danger'; el2.innerHTML = '<i data-feather="alert-triangle" class="icon-sm text-danger flex-shrink-0"></i><div class="min-w-0 flex-grow-1"><div class="small fw-semibold">SMTP #' + id + '</div><div class="small text-muted">' + bulkTestEsc(err.message) + '</div></div><span class="badge bg-danger flex-shrink-0">HATA</span>'; if (typeof feather !== 'undefined') feather.replace(); }
+        }
+    }
+    barEl.style.width = '100%';
+    barEl.classList.remove('progress-bar-animated', 'progress-bar-striped');
+    barEl.classList.add(failN === 0 ? 'bg-success' : (successN === 0 ? 'bg-danger' : 'bg-warning'));
+    labelEl.innerHTML = '<strong>Tamamlandı</strong> · ' + successN + ' başarılı · ' + failN + ' başarısız';
+    countEl.textContent = ids.length + ' / ' + ids.length;
+    if (closeBtn) closeBtn.disabled = false;
+    if (typeof feather !== 'undefined') feather.replace();
+}
 </script>
+
+<!-- Toplu SMTP Test Modal -->
+<div class="modal fade" id="bulkTestModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-0" style="background:linear-gradient(135deg,#0c2340 0%,#1d4ed8 100%)">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2">
+                    <i data-feather="zap" class="icon-sm"></i>
+                    Toplu SMTP Test
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="bulkTestSetup">
+                    <div class="alert alert-primary-subtle border border-primary-subtle mb-3">
+                        <div class="d-flex align-items-start gap-2">
+                            <i data-feather="mail" class="icon-sm text-primary mt-1"></i>
+                            <div>
+                                <div class="fw-semibold mb-1">Toplu test alıcısı</div>
+                                <code id="bulkTestTargetAddress">—</code>
+                                <div class="small text-muted mt-1">Seçilen her SMTP bu adrese 1 test maili gönderir.</div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <label for="bulkTestEmail" class="form-label small fw-semibold mb-1">Hedef e-posta</label>
+                            <input type="email" class="form-control form-control-sm" id="bulkTestEmail" placeholder="ornek@alanadi.com" value="">
+                        </div>
+                    </div>
+                    <div id="bulkTestSmtpList" class="mb-3"></div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="bulkTestDisableOnFail" checked>
+                        <label class="form-check-label fw-semibold" for="bulkTestDisableOnFail">Testte hata alan SMTP'yi otomatik pasife al</label>
+                    </div>
+                    <div class="alert alert-warning py-2 small mb-0">
+                        <i data-feather="alert-triangle" class="icon-xs me-1"></i>
+                        Çok sayıda SMTP seçiliyse işlem uzun sürebilir. Testler sırayla çalışır.
+                    </div>
+                </div>
+                <div id="bulkTestProgress" class="d-none">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small fw-semibold" id="bulkTestProgressLabel">Test ediliyor…</span>
+                        <span class="small text-muted" id="bulkTestProgressCount">0 / 0</span>
+                    </div>
+                    <div class="progress mb-3" style="height:8px;border-radius:8px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="bulkTestProgressBar" style="width:0%"></div>
+                    </div>
+                    <div id="bulkTestResults" class="d-flex flex-column gap-2"></div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-top">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="bulkTestCloseBtn">Kapat</button>
+                <button type="button" class="btn btn-primary" id="bulkTestStartBtn" onclick="runBulkTest()">
+                    <i data-feather="play" class="icon-xs me-1"></i>
+                    Testi Başlat
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
