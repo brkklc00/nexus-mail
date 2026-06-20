@@ -64,9 +64,10 @@ export class CampaignProcessor {
         this.resultMode = (options.resultMode ?? config.worker.resultMode ?? 'api').toLowerCase();
         this.flushService = options.flushService ?? null;
         this.workerId = options.workerId ?? config.worker.workerId;
-        this._batchSeq = 0;
-        /** Kampanya boyu SMTP rotasyon durumu (processCampaign başında sıfırlanır) */
-        this._rotation = null;
+        /** Kampanya ID → batch sıra numarası (eş zamanlı kampanyalar karışmasın) */
+        this._batchSeqs = new Map();
+        /** Kampanya ID → SMTP rotasyon durumu (eş zamanlı kampanyalar kendi state'ini taşır) */
+        this._rotations = new Map();
     }
 
     _batchGapMs() {
@@ -107,18 +108,19 @@ export class CampaignProcessor {
         this.processing.add(campaign.id);
         const campaignStartedAt = Date.now();
 
-        // Kampanya boyu kalıcı SMTP rotasyonu:
+        // Kampanya boyu kalıcı SMTP rotasyonu (kampanya başına ayrı state):
         // groupSize SMTP eş zamanlı çalışır; her biri cap kadar mail atınca emekli olur
         // ve sıradaki SMTP grubu devralır. Tüm SMTP'ler bir kez dönünce döngü sıfırlanır.
         // Sayaçlar batch'ler arasında korunur (küçük batch'ler 500'e birikerek ulaşır).
-        this._rotation = {
+        this._rotations.set(campaign.id, {
             groupSize: Math.max(1, this.apiClient.getWorkerMaxSmtpLanes()),
             cap: Math.max(1, campaign.smtp_rotation_limit || this.apiClient.getWorkerSmtpRotationLimit()),
             active: [],
             sent: new Map(),   // smtpId → bu döngüde gönderilen adet
             used: new Set(),   // bu döngüde cap'e ulaşan smtpId'ler
             lastSig: '',
-        };
+        });
+        this._batchSeqs.set(campaign.id, 0);
         const subjectLine = String(campaign.subject || '')
             .replace(/\s+/g, ' ')
             .trim()
@@ -368,6 +370,8 @@ export class CampaignProcessor {
             }
         } finally {
             this.processing.delete(campaign.id);
+            this._rotations.delete(campaign.id);
+            this._batchSeqs.delete(campaign.id);
 
             // Aynı anda birden fazla kampanya işlenirken global pool'u kapatmak,
             // diğer kampanyalarda "Connection pool was closed" hatası üretir.
@@ -455,7 +459,7 @@ export class CampaignProcessor {
      * Paralel lane kurulumu: önce pool'dan al, kalan slotlar için batch API çağrısı + Promise.all connect
      */
     async processSingleBatch(campaign, batch) {
-        const rot = this._rotation;
+        const rot = this._rotations.get(campaign.id);
 
         const allResults  = [];
         const allLanesMap = new Map();  // smtpId → lane (for per-lane stats at end)
@@ -537,7 +541,8 @@ export class CampaignProcessor {
                 }
 
                 if (this.pool) {
-                    this._batchSeq += 1;
+                    const nextSeq = (this._batchSeqs.get(campaign.id) || 0) + 1;
+                    this._batchSeqs.set(campaign.id, nextSeq);
                     const deliveredN = results.filter((r) => r.status === 'delivered').length;
                     const failedN = results.filter((r) => r.status === 'failed').length;
                     const fails = results.filter((r) => r.status === 'failed');
@@ -548,7 +553,7 @@ export class CampaignProcessor {
                     insertBatchMetric(this.pool, {
                         campaignId: campaign.id,
                         workerId: this.workerId,
-                        batchNo: this._batchSeq,
+                        batchNo: nextSeq,
                         batchSize: batch.length,
                         successCount: deliveredN,
                         failedCount: failedN,
@@ -643,7 +648,8 @@ export class CampaignProcessor {
      * - tüm SMTP'ler bu döngüde kullanıldıysa döngüyü sıfırlar (baştan)
      */
     async _acquireRotationGroup(campaign) {
-        const rot = this._rotation;
+        const rot = this._rotations.get(campaign.id);
+        if (!rot) throw new Error(`No rotation state for campaign #${campaign.id}`);
 
         // 1) Emekli edilmesi gereken lane'leri ayıkla
         const stillActive = [];
