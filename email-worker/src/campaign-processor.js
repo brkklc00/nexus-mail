@@ -65,6 +65,8 @@ export class CampaignProcessor {
         this.flushService = options.flushService ?? null;
         this.workerId = options.workerId ?? config.worker.workerId;
         this._batchSeq = 0;
+        /** Kampanya boyu SMTP rotasyon durumu (processCampaign başında sıfırlanır) */
+        this._rotation = null;
     }
 
     _batchGapMs() {
@@ -104,6 +106,19 @@ export class CampaignProcessor {
 
         this.processing.add(campaign.id);
         const campaignStartedAt = Date.now();
+
+        // Kampanya boyu kalıcı SMTP rotasyonu:
+        // groupSize SMTP eş zamanlı çalışır; her biri cap kadar mail atınca emekli olur
+        // ve sıradaki SMTP grubu devralır. Tüm SMTP'ler bir kez dönünce döngü sıfırlanır.
+        // Sayaçlar batch'ler arasında korunur (küçük batch'ler 500'e birikerek ulaşır).
+        this._rotation = {
+            groupSize: Math.max(1, this.apiClient.getWorkerMaxSmtpLanes()),
+            cap: Math.max(1, campaign.smtp_rotation_limit || this.apiClient.getWorkerSmtpRotationLimit()),
+            active: [],
+            sent: new Map(),   // smtpId → bu döngüde gönderilen adet
+            used: new Set(),   // bu döngüde cap'e ulaşan smtpId'ler
+            lastSig: '',
+        };
         const subjectLine = String(campaign.subject || '')
             .replace(/\s+/g, ' ')
             .trim()
@@ -440,68 +455,62 @@ export class CampaignProcessor {
      * Paralel lane kurulumu: önce pool'dan al, kalan slotlar için batch API çağrısı + Promise.all connect
      */
     async processSingleBatch(campaign, batch) {
-        const maxLanes       = this.apiClient.getWorkerMaxSmtpLanes();
-        const ROTATION_LIMIT = Math.max(1, campaign.smtp_rotation_limit || this.apiClient.getWorkerSmtpRotationLimit());
+        const rot = this._rotation;
 
         const allResults  = [];
         const allLanesMap = new Map();  // smtpId → lane (for per-lane stats at end)
-        const usedInCycle = new Set();  // SMTP IDs used this cycle; resets after full rotation
         const tStart      = Date.now();
         let totalSmtpMs   = 0;
         let remaining     = [...batch];
-        let roundNum      = 0;
 
         while (remaining.length > 0) {
-            roundNum++;
-            const roundEmails = remaining.splice(0, maxLanes * ROTATION_LIMIT);
-            // Always use as many lanes as emails available (up to maxLanes).
-            // Do NOT base lane count on ROTATION_LIMIT — that causes neededLanes=1
-            // when batch < ROTATION_LIMIT and results in a single SMTP running.
-            const neededLanes = Math.max(1, Math.min(maxLanes, roundEmails.length));
+            const group = await this._acquireRotationGroup(campaign);
 
-            let roundLanes = await this._buildRotationLanes(neededLanes, usedInCycle);
-
-            if (roundLanes.length === 0 && usedInCycle.size > 0) {
-                Logger.info(`Rotasyon turu ${roundNum}: Tüm SMTP'ler kullanıldı — döngü başa sarılıyor`);
-                usedInCycle.clear();
-                roundLanes = await this._buildRotationLanes(neededLanes, usedInCycle);
-            }
-
-            if (roundLanes.length === 0) {
+            if (group.length === 0) {
                 Logger.error('❌ SMTP bağlantısı alınamadı (Günlük limitler aşılmış olabilir)');
                 Logger.warn('⏸️  Kampanya #' + campaign.id + ' processing durumunda kalacak');
                 throw new Error('No SMTP available - Daily limits may be exceeded. Waiting for next run...');
             }
 
-            for (const lane of roundLanes) {
-                usedInCycle.add(lane.config.id);
-                if (!allLanesMap.has(lane.config.id)) allLanesMap.set(lane.config.id, lane);
+            // Her lane'in bu döngüde kalan kapasitesi (cap − şimdiye kadar gönderdiği)
+            const caps     = group.map(l => Math.max(0, rot.cap - (rot.sent.get(l.config.id) || 0)));
+            const totalCap = caps.reduce((a, b) => a + b, 0);
+            if (totalCap <= 0) {
+                // Gruptaki herkes cap'e ulaştı — emekli edip sıradaki gruba geç
+                for (const l of group) rot.used.add(l.config.id);
+                rot.active = [];
+                continue;
             }
 
-            if (roundNum > 1 || remaining.length > 0) {
-                Logger.info(`Rotasyon turu ${roundNum}: ${roundLanes.length} SMTP × max ${ROTATION_LIMIT} mail = ${roundEmails.length} mail`);
-            } else {
-                Logger.info(`SMTP lane sayisi  : ${roundLanes.length} (rotasyon: ${ROTATION_LIMIT}/SMTP)`);
-            }
+            const take  = Math.min(remaining.length, totalCap);
+            const slice = remaining.splice(0, take);
 
-            // Distribute round emails across lanes via round-robin
-            const laneBatches = roundLanes.map(() => []);
-            for (let i = 0; i < roundEmails.length; i++) {
-                laneBatches[i % roundLanes.length].push(roundEmails[i]);
+            // Slice'ı lane'lere, her birinin kalan kapasitesine saygı göstererek round-robin dağıt
+            const laneBatches = group.map(() => []);
+            let li = 0;
+            for (const email of slice) {
+                let guard = 0;
+                while (laneBatches[li].length >= caps[li] && guard < group.length) {
+                    li = (li + 1) % group.length;
+                    guard++;
+                }
+                laneBatches[li].push(email);
+                li = (li + 1) % group.length;
             }
 
             const tRound = Date.now();
             const laneResults = await Promise.all(
-                roundLanes.map((lane, idx) => this.sendEmailsWithLane(campaign, lane, laneBatches[idx]))
+                group.map((lane, idx) => this.sendEmailsWithLane(campaign, lane, laneBatches[idx]))
             );
             totalSmtpMs += Date.now() - tRound;
             allResults.push(...laneResults.flat());
 
-            // Retire connections after rotation
-            for (const lane of roundLanes) {
-                this.smtpPool.delete(lane.config.id);
-                try { lane.client.close(); } catch (_) {}
-            }
+            // Gönderim sayaçlarını ilerlet — cap'e ulaşan lane sıradaki turda emekli olur
+            group.forEach((lane, idx) => {
+                const n = laneBatches[idx].length;
+                if (n > 0) rot.sent.set(lane.config.id, (rot.sent.get(lane.config.id) || 0) + n);
+                if (!allLanesMap.has(lane.config.id)) allLanesMap.set(lane.config.id, lane);
+            });
         }
 
         // Aliases for compatibility with persistence/stats code below
@@ -624,6 +633,72 @@ export class CampaignProcessor {
         );
 
         return results;
+    }
+
+    /**
+     * Kampanya boyu kalıcı rotasyon grubunu döndürür.
+     * - cap'e ulaşan veya günlük/saatlik limiti dolan lane'leri emekli eder (used'a ekler)
+     * - bağlantısı düşen lane'leri gruptan çıkarır (used'a EKLEMEZ; tekrar denenebilir)
+     * - grubu groupSize'a kadar yeni SMTP ile doldurur (used + aktif hariç)
+     * - tüm SMTP'ler bu döngüde kullanıldıysa döngüyü sıfırlar (baştan)
+     */
+    async _acquireRotationGroup(campaign) {
+        const rot = this._rotation;
+
+        // 1) Emekli edilmesi gereken lane'leri ayıkla
+        const stillActive = [];
+        for (const lane of rot.active) {
+            const sent = rot.sent.get(lane.config.id) || 0;
+            const c = lane.config;
+            const dailyRem  = (c.daily_limit  || 999999) - (c.daily_sent  || 0);
+            const hourlyRem = (c.hourly_limit || 999999) - (c.hourly_sent || 0);
+
+            if (sent >= rot.cap || dailyRem <= rot.groupSize || hourlyRem <= rot.groupSize) {
+                // cap doldu ya da limit yaklaştı → bu döngüde tekrar seçilmesin
+                rot.used.add(lane.config.id);
+                this.smtpPool.delete(lane.config.id);
+                try { lane.client.close(); } catch (_) {}
+            } else if (lane.client && lane.client.isConnected) {
+                stillActive.push(lane);
+            } else {
+                // Bağlantı düştü → gruptan çıkar (used'a ekleme, yeniden seçilebilsin)
+                this.smtpPool.delete(lane.config.id);
+                try { lane.client.close(); } catch (_) {}
+            }
+        }
+        rot.active = stillActive;
+
+        // 2) Grubu groupSize'a kadar doldur
+        if (rot.active.length < rot.groupSize) {
+            const needed   = rot.groupSize - rot.active.length;
+            const excluded = new Set([...rot.used, ...rot.active.map(l => l.config.id)]);
+            let fresh = await this._buildRotationLanes(needed, excluded);
+
+            if (fresh.length === 0 && rot.active.length === 0 && rot.used.size > 0) {
+                // Tüm SMTP'ler bu döngüde kullanıldı — döngüyü başa sar
+                Logger.info(`Rotasyon döngüsü tamamlandı (${rot.used.size} SMTP kullanıldı) — başa sarılıyor`);
+                rot.used.clear();
+                rot.sent.clear();
+                fresh = await this._buildRotationLanes(needed, new Set());
+            }
+
+            for (const lane of fresh) {
+                if (!rot.active.some(l => l.config.id === lane.config.id)) {
+                    rot.active.push(lane);
+                }
+            }
+        }
+
+        const group = rot.active.slice(0, rot.groupSize);
+
+        // Grup değiştiğinde logla — "5'erli geçiş"i kullanıcıya göster
+        const sig = group.map(l => l.config.id).sort((a, b) => a - b).join(', ');
+        if (sig !== rot.lastSig) {
+            rot.lastSig = sig;
+            Logger.info(`Aktif SMTP grubu  : [${sig}] · ${group.length} eş zamanlı × ${rot.cap} mail/SMTP`);
+        }
+
+        return group;
     }
 
     async _buildRotationLanes(neededCount, usedIds) {

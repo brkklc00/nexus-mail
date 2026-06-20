@@ -72,6 +72,106 @@ class ApiController
     }
 
     /**
+     * API: Başka panelden taşınan siparişi al (paneller arası sipariş taşıma).
+     * Sadece sipariş bilgisi gelir; müşteri/alıcı/liste burada onay aşamasında seçilir.
+     * POST /api/email-orders/receive  (X-Api-Token korumalı)
+     */
+    public function receiveTransferredOrder(Request $request, Response $response): Response
+    {
+        if ($authError = $this->validateApiToken($request, $response)) {
+            return $authError;
+        }
+
+        $raw = (string) $request->getBody();
+        $data = json_decode($raw, true);
+        if (!is_array($data)) {
+            $data = $request->getParsedBody() ?: [];
+        }
+
+        $subject = trim((string) ($data['subject'] ?? ''));
+        $body = (string) ($data['body'] ?? '');
+        $total = (int) ($data['total'] ?? 0);
+
+        if ($subject === '' || trim($body) === '' || $total < 1) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'error' => 'subject, body ve total (>=1) zorunludur.',
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(422);
+        }
+
+        $deliveryPercentage = (int) ($data['delivery_percentage'] ?? 100);
+        if ($deliveryPercentage < 1 || $deliveryPercentage > 100) {
+            $deliveryPercentage = 100;
+        }
+        $rotation = (int) ($data['smtp_rotation_limit'] ?? 500);
+        if ($rotation < 1) {
+            $rotation = 500;
+        }
+        $sourceType = isset($data['source_type']) && $data['source_type'] !== '' ? (string) $data['source_type'] : null;
+
+        try {
+            // Sahip kullanıcı (kozmetik — gerçek müşteri onayda seçilir):
+            // payload'daki kullanıcı adı → admin → ilk kullanıcı.
+            $userRepo = $this->em->getRepository(User::class);
+            $owner = null;
+            $ownerUsername = trim((string) ($data['owner_username'] ?? ''));
+            if ($ownerUsername !== '') {
+                $owner = $userRepo->findOneBy(['username' => $ownerUsername]);
+            }
+            if (!$owner) {
+                $owner = $userRepo->findOneBy(['username' => 'admin']);
+            }
+            if (!$owner) {
+                $owner = $userRepo->findOneBy([], ['id' => 'ASC']);
+            }
+            if (!$owner) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'error' => 'Hedef panelde siparişe atanacak kullanıcı bulunamadı.',
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+            }
+
+            $order = new \App\Domain\Entities\EmailOrder();
+            $order->setUser($owner);
+            $order->setSubject(mb_substr($subject, 0, 500));
+            $order->setBody($body);
+            // Şablon panele özgüdür (paneller arası taşınmaz) — null bırakılır.
+            $order->setTemplate(null);
+            $order->setTotal($total);
+            $order->setCost((float) $total);
+            $order->setStatus(\App\Domain\Enum\EmailOrderStatus::PENDING_APPROVAL);
+            $order->setDeliveryPercentage($deliveryPercentage);
+            $order->setSmtpRotationLimit($rotation);
+            if ($sourceType !== null) {
+                $order->setSourceType($sourceType);
+            }
+
+            $this->em->persist($order);
+            $this->em->flush();
+
+            error_log(sprintf(
+                'Panel transfer alındı: yeni sipariş #%d (kaynak: %s #%s, total=%d)',
+                (int) $order->getId(),
+                (string) ($data['source_panel'] ?? '?'),
+                (string) ($data['source_order_id'] ?? '?'),
+                $total
+            ));
+
+            $response->getBody()->write(json_encode(['success' => true, 'order_id' => $order->getId()]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Throwable $e) {
+            error_log('[receiveTransferredOrder] HATA: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'error' => 'Sipariş oluşturulamadı: ' . $e->getMessage(),
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
      * API: Kullanıcının API Key'ini yenile
      * POST /api/regenerate-key
      */

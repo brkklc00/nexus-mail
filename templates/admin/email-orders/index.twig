@@ -120,6 +120,7 @@
                             <option value="completed" {{ selected_status == 'completed' ? 'selected' : '' }}>Tamamlandı</option>
                             <option value="failed" {{ selected_status == 'failed' ? 'selected' : '' }}>Başarısız</option>
                             <option value="cancelled" {{ selected_status == 'cancelled' ? 'selected' : '' }}>İptal Edildi</option>
+                            <option value="transferred" {{ selected_status == 'transferred' ? 'selected' : '' }}>Panele Taşındı</option>
                         </select>
                     </div>
                     <div class="nx-adm-eo-field nx-adm-eo-field--select">
@@ -226,6 +227,8 @@
                                         <span class="nx-adm-eo-status nx-adm-eo-status--completed">Tamamlandı</span>
                                         {% elseif order.status == 'failed' %}
                                         <span class="nx-adm-eo-status nx-adm-eo-status--failed">Başarısız</span>
+                                        {% elseif order.status == 'transferred' %}
+                                        <span class="nx-adm-eo-status nx-adm-eo-status--cancelled">{{ order.lockedBy|default('Başka panel') }} paneline taşındı</span>
                                         {% elseif order.status == 'cancelled' %}
                                         <span class="nx-adm-eo-status nx-adm-eo-status--cancelled">İptal Edildi</span>
                                         {% endif %}
@@ -247,6 +250,9 @@
                                                     {% if order.status == 'pending_approval' %}
                                                     <li><button type="button" class="dropdown-item" onclick="editOrderTemplate({{ order.id }})"><i data-feather="edit-2" class="icon-xs me-2"></i>Düzenle</button></li>
                                                     <li><button type="button" class="dropdown-item" onclick="approveOrder({{ order.id }}, {{ order.sourceType == 'pool' ? 'true' : 'false' }})"><i data-feather="check" class="icon-xs me-2"></i>Onayla</button></li>
+                                                    {% if sibling_panels|default([])|length > 0 %}
+                                                    <li><button type="button" class="dropdown-item" onclick="dispatchOrder({{ order.id }})"><i data-feather="send" class="icon-xs me-2"></i>Başka panele taşı</button></li>
+                                                    {% endif %}
                                                     {% endif %}
                                                     {% if order.status == 'pending' or order.status == 'processing' %}
                                                     <li><button type="button" class="dropdown-item" onclick="cancelOrder({{ order.id }})"><i data-feather="pause" class="icon-xs me-2"></i>Duraklat</button></li>
@@ -457,6 +463,10 @@
 </div>
 
 <!-- Detay Modal -->
+<style>
+.nx-adm-eo-body-frame { width: 100%; height: 420px; border: 1px solid var(--bs-border-color, #e2e8f0); border-radius: 8px; background: #fff; display: block; }
+.nx-adm-eo-body-frame--expand { height: 75vh; }
+</style>
 <div class="modal fade nx-adm-eo-modal-root" id="orderDetailModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content nx-adm-eo-modal">
@@ -477,6 +487,92 @@
         </div>
     </div>
 </div>
+
+<!-- Başka Panele Taşı Modal -->
+<div class="modal fade nx-adm-eo-modal-root" id="dispatchPanelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="send" class="icon-sm me-2"></i> Siparişi Başka Panele Taşı</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">Yalnızca sipariş bilgisi (konu, içerik, adet, ayarlar) gönderilir. Müşteri ve alıcı listesi <strong>hedef panelde onay aşamasında</strong> seçilir. Kaynak sipariş iptal edilir.</p>
+                <label class="form-label small fw-semibold" for="dispatchPanelSelect">Hedef panel</label>
+                <select class="form-select" id="dispatchPanelSelect"></select>
+                <div id="dispatchPanelAlert" class="alert d-none mt-3 mb-0" role="alert"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-primary" id="dispatchPanelConfirmBtn"><i data-feather="send" class="icon-xs me-1"></i> Taşı</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    const PANELS = {{ sibling_panels|default([])|json_encode|raw }};
+    let dispatchOrderId = null;
+    let dispatchModal = null;
+
+    function fillSelect() {
+        const sel = document.getElementById('dispatchPanelSelect');
+        if (!sel) return;
+        sel.innerHTML = PANELS.map(function (p) {
+            return '<option value="' + p.key + '">' + (p.label || p.url) + '</option>';
+        }).join('');
+    }
+
+    window.dispatchOrder = function (orderId) {
+        dispatchOrderId = orderId;
+        fillSelect();
+        const alertEl = document.getElementById('dispatchPanelAlert');
+        if (alertEl) { alertEl.className = 'alert d-none mt-3 mb-0'; alertEl.textContent = ''; }
+        const el = document.getElementById('dispatchPanelModal');
+        if (!el) return;
+        if (!dispatchModal) dispatchModal = new bootstrap.Modal(el);
+        dispatchModal.show();
+        setTimeout(function () { if (typeof feather !== 'undefined') feather.replace(); }, 100);
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const btn = document.getElementById('dispatchPanelConfirmBtn');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            const sel = document.getElementById('dispatchPanelSelect');
+            const alertEl = document.getElementById('dispatchPanelAlert');
+            const panelKey = sel ? sel.value : '';
+            if (!dispatchOrderId || !panelKey) return;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Taşınıyor...';
+            fetch('/admin/email-orders/' + dispatchOrderId + '/dispatch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ panel: panelKey }),
+            })
+            .then(function (r) { return r.json().catch(function () { return { success: false, message: 'Geçersiz yanıt' }; }); })
+            .then(function (data) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-feather="send" class="icon-xs me-1"></i> Taşı';
+                if (typeof feather !== 'undefined') feather.replace();
+                if (data.success) {
+                    if (typeof iziToast !== 'undefined') iziToast.success({ title: 'Taşındı', message: data.message || 'Sipariş taşındı.', position: 'topRight', timeout: 4000 });
+                    if (dispatchModal) dispatchModal.hide();
+                    setTimeout(function () { window.location.reload(); }, 1500);
+                } else if (alertEl) {
+                    alertEl.className = 'alert alert-danger mt-3 mb-0';
+                    alertEl.textContent = data.message || 'Taşıma başarısız.';
+                }
+            })
+            .catch(function () {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-feather="send" class="icon-xs me-1"></i> Taşı';
+                if (alertEl) { alertEl.className = 'alert alert-danger mt-3 mb-0'; alertEl.textContent = 'Bağlantı hatası.'; }
+            });
+        });
+    });
+})();
+</script>
 
 <script>
 let searchTimer;
@@ -675,7 +771,7 @@ function viewOrderDetails(orderId) {
     `;
     modal.show();
     
-    fetch(`/admin/email-orders/${orderId}/details?section=summary`)
+    fetch(`/admin/email-orders/${orderId}/details?section=summary&include_body=1`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -1489,7 +1585,8 @@ function renderOrderDetails(order) {
         'sent': '<span class="nx-adm-eo-status nx-adm-eo-status--sent">Gönderildi</span>',
         'completed': '<span class="nx-adm-eo-status nx-adm-eo-status--completed">Tamamlandı</span>',
         'failed': '<span class="nx-adm-eo-status nx-adm-eo-status--failed">Başarısız</span>',
-        'cancelled': '<span class="nx-adm-eo-status nx-adm-eo-status--cancelled">İptal Edildi</span>'
+        'cancelled': '<span class="nx-adm-eo-status nx-adm-eo-status--cancelled">İptal Edildi</span>',
+        'transferred': '<span class="nx-adm-eo-status nx-adm-eo-status--cancelled">Başka panele taşındı</span>'
     };
     const templateBadge = order.template && order.template.id
         ? `TPL #${order.template.id}`
@@ -1571,6 +1668,21 @@ function renderOrderDetails(order) {
                 ${['sent', 'completed', 'failed', 'cancelled'].includes(order.status) ? '<button type="button" class="btn btn-outline-success btn-sm" onclick="bootstrap.Modal.getInstance(document.getElementById(\'orderDetailModal\')).hide(); restartOrder(' + order.id + ', ' + (order.is_pool_order ? 'true' : 'false') + ', \'' + order.status + '\');"><i data-feather="refresh-cw" class="icon-xs me-1"></i>Tekrar başlat</button>' : ''}
             </div>
         </div>
+
+        ${order.body ? `
+        <div class="nx-adm-eo-detail-card mt-3">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="nx-adm-eo-detail-card-label text-uppercase mb-0">E-Posta İçeriği</span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="this.closest('.nx-adm-eo-detail-card').querySelector('.nx-adm-eo-body-frame').classList.toggle('nx-adm-eo-body-frame--expand'); this.textContent = this.textContent.trim() === 'Büyüt' ? 'Küçült' : 'Büyüt';">Büyüt</button>
+            </div>
+            <iframe class="nx-adm-eo-body-frame" srcdoc="${order.body.replace(/"/g, '&quot;')}" sandbox="allow-same-origin" loading="lazy"></iframe>
+        </div>
+        ` : `
+        <div class="nx-adm-eo-detail-card mt-3">
+            <span class="nx-adm-eo-detail-card-label text-uppercase mb-0">E-Posta İçeriği</span>
+            <div class="text-muted small mt-2">Bu sipariş için e-posta içeriği bulunamadı.</div>
+        </div>
+        `}
 
         <div class="nx-adm-eo-detail-card mt-3 mb-0">
             <ul class="nav nav-tabs" id="nxDetailTabs" role="tablist">

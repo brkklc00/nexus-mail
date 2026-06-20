@@ -13,5 +13,6 @@ enum EmailOrderStatus: string
     case COMPLETED = 'completed';
     case FAILED = 'failed';
     case CANCELLED = 'cancelled';
+    case TRANSFERRED = 'transferred';
 }
 

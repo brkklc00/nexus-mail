@@ -210,6 +210,7 @@ class EmailOrderController
                 'total_pages' => $totalPages,
                 'total' => $total,
                 'per_page' => $perPage,
+                'sibling_panels' => (new \App\Application\Services\PanelRegistryService())->publicList(),
             ]);
             $response->getBody()->write($html);
             return $response;
@@ -1777,6 +1778,79 @@ class EmailOrderController
             'total' => $total,
             'hasNext' => $hasNext,
         ];
+    }
+
+    /**
+     * Onay bekleyen siparişi başka bir panele taşı (sadece sipariş bilgisi gider;
+     * alıcı/müşteri/liste hedef panelde onayda seçilir). Kaynak sipariş iptal edilir.
+     */
+    public function dispatchToPanel(Request $request, Response $response, array $args): Response
+    {
+        $orderId = (int) ($args['id'] ?? 0);
+        $body = (string) $request->getBody();
+        $payload = json_decode($body, true);
+        if (!is_array($payload)) {
+            $payload = $request->getParsedBody() ?: [];
+        }
+        $targetKey = trim((string) ($payload['panel'] ?? $payload['target'] ?? ''));
+
+        $order = $this->em->find(EmailOrder::class, $orderId);
+        if (!$order) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Sipariş bulunamadı.'], 404);
+        }
+        if ($order->getStatus() !== EmailOrderStatus::PENDING_APPROVAL) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Yalnızca onay bekleyen siparişler başka panele taşınabilir.'], 422);
+        }
+
+        $registry = new \App\Application\Services\PanelRegistryService();
+        $panel = $registry->get($targetKey);
+        if (!$panel) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Hedef panel bulunamadı. SIBLING_PANELS ayarını kontrol edin.'], 400);
+        }
+
+        $reqPayload = [
+            'subject' => $order->getSubject(),
+            'body' => $order->getBody(),
+            'total' => $order->getTotal(),
+            'delivery_percentage' => $order->getDeliveryPercentage(),
+            'source_type' => $order->getSourceType(),
+            'smtp_rotation_limit' => $order->getSmtpRotationLimit(),
+            'source_panel' => (string) ($_ENV['SITE_URL'] ?? $_ENV['APP_URL'] ?? 'unknown'),
+            'source_order_id' => $order->getId(),
+            'owner_username' => $_SESSION['user']['username'] ?? null,
+        ];
+
+        try {
+            $client = new \GuzzleHttp\Client(['timeout' => 20, 'http_errors' => false]);
+            $remote = $client->post($panel['url'] . '/api/email-orders/receive', [
+                'headers' => ['X-Api-Token' => $panel['token'], 'Accept' => 'application/json'],
+                'json' => $reqPayload,
+            ]);
+            $remoteBody = json_decode((string) $remote->getBody(), true);
+        } catch (\Throwable $e) {
+            error_log('Panel dispatch hatası (sipariş #' . $orderId . '): ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Hedef panele bağlanılamadı: ' . $e->getMessage()], 502);
+        }
+
+        if (!is_array($remoteBody) || empty($remoteBody['success'])) {
+            $msg = is_array($remoteBody) ? (string) ($remoteBody['error'] ?? $remoteBody['message'] ?? 'Bilinmeyen hata') : 'Geçersiz yanıt';
+            error_log('Panel dispatch reddedildi (sipariş #' . $orderId . ' → ' . $panel['key'] . '): ' . $msg);
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Hedef panel siparişi kabul etmedi: ' . $msg], 422);
+        }
+
+        // Kaynak sipariş taşındı → "taşındı" durumuna al; hedef panel adını sakla (lockedBy).
+        $order->setStatus(EmailOrderStatus::TRANSFERRED);
+        $order->setLockedBy($panel['label']);
+        $this->em->flush();
+
+        $remoteId = $remoteBody['order_id'] ?? '?';
+        error_log('Panel dispatch başarılı: sipariş #' . $orderId . ' → ' . $panel['key'] . ' (uzak #' . $remoteId . ')');
+
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'message' => $panel['label'] . ' paneline taşındı (uzak sipariş #' . $remoteId . '). Kaynak sipariş iptal edildi; hedef panelde onaylayın.',
+            'remote_order_id' => $remoteBody['order_id'] ?? null,
+        ]);
     }
 
     private function jsonResponse(Response $response, array $payload, int $status = 200): Response

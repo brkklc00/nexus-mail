@@ -56,6 +56,7 @@ return function (App $app) {
         $group->post('/smtp/{id}/usage', [ApiController::class, 'recordSmtpUsage'])->setName('api.smtp.usage');
         $group->get('/email-sending/runtime-config', [ApiController::class, 'getEmailSendingRuntimeConfig'])->setName('api.email-sending.runtime-config');
         $group->get('/email-worker/health', [ApiController::class, 'getEmailWorkerHealth'])->setName('api.email-worker.health');
+        $group->post('/email-orders/receive', [ApiController::class, 'receiveTransferredOrder'])->setName('api.email-orders.receive');
 
         // API Key Management
         $group->post('/regenerate-key', [ApiController::class, 'regenerateApiKey'])->setName('api.regenerate-key');
@@ -277,6 +278,8 @@ return function (App $app) {
             $group->post('/{id}/update-template', [\App\Controllers\Admin\EmailOrderController::class, 'updateTemplate'])->setName('admin.email-orders.update-template')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/cancel', [\App\Controllers\Admin\EmailOrderController::class, 'cancel'])->setName('admin.email-orders.cancel')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->post('/{id}/dispatch', [\App\Controllers\Admin\EmailOrderController::class, 'dispatchToPanel'])->setName('admin.email-orders.dispatch')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/restart', [\App\Controllers\Admin\EmailOrderController::class, 'restartCampaign'])->setName('admin.email-orders.restart')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
