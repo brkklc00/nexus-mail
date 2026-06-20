@@ -104,71 +104,64 @@ class EmailWorker {
     }
 
     /**
-     * Bekleyen kampanyaları çek ve işle
+     * Bekleyen kampanyaları çek ve işle (non-blocking dispatch)
+     *
+     * processCampaign AWAIT EDİLMEZ — fire-and-forget olarak başlatılır.
+     * poll() her 10sn'de çalışır, boş slot sayısı kadar yeni kampanya claim eder.
+     * Böylece "bekleyen" kampanyalar, işlenmekte olanlar bitmeden de başlar.
      */
     async poll() {
         try {
             await this.maybeCleanupStuckCampaigns();
             await this.apiClient.refreshRuntimeSendingConfig();
 
-            // Bekleyen kampanyaları getir
-            const campaigns = await this.apiClient.getPendingEmailCampaigns(config.worker.pendingFetchLimit);
+            const maxConcurrency = Math.max(1, config.worker.campaignConcurrency);
+            const active = this.processor.processing.size;
+            const freeSlots = maxConcurrency - active;
+
+            if (freeSlots <= 0) {
+                Logger.info(`Tüm ${maxConcurrency} slot dolu (aktif: ${active}) — yeni kampanya alınmıyor`);
+                return;
+            }
+
+            // Sadece boş slot kadar kampanya çek
+            const campaigns = await this.apiClient.getPendingEmailCampaigns(freeSlots);
 
             if (campaigns.length === 0) {
                 // Heartbeat: her 5 dakikada bir "canlı" logu yaz
                 const now = Date.now();
                 if (now - this.lastHeartbeatAt >= 5 * 60 * 1000) {
                     this.lastHeartbeatAt = now;
-                    Logger.info(`Beklemede — kampanya yok | ${new Date().toLocaleString('tr-TR')}`);
+                    Logger.info(`Beklemede — kampanya yok | aktif: ${active} | ${new Date().toLocaleString('tr-TR')}`);
                 }
                 return;
             }
 
             console.log('');
-            const dispatchStartedAt = Date.now();
-            const concurrency = Math.max(1, config.worker.campaignConcurrency);
-            Logger.info(`${campaigns.length} bekleyen kampanya bulundu (eşzamanlı hedef: ${concurrency})`);
-
-            const chunks = [];
-            for (let i = 0; i < campaigns.length; i += concurrency) {
-                chunks.push(campaigns.slice(i, i + concurrency));
-            }
+            Logger.info(`${campaigns.length} bekleyen kampanya bulundu (aktif: ${active}/${maxConcurrency} slot)`);
 
             let claimedCount = 0;
             let skippedCount = 0;
-            let failedCount = 0;
 
-            for (const chunk of chunks) {
-                const chunkResults = await Promise.allSettled(
-                    chunk.map(async (campaign) => {
-                        const claimResult = await this.apiClient.claimEmailCampaign(campaign.id, config.worker.workerId);
-                        if (!claimResult.claimed) {
-                            Logger.info(`Kampanya #${campaign.id} claim alınamadı, atlandı (${claimResult.reason || 'locked'})`);
-                            return { campaignId: campaign.id, claimed: false };
-                        }
-
-                        await this.processor.processCampaign(campaign);
-                        return { campaignId: campaign.id, claimed: true };
-                    })
-                );
-
-                for (const item of chunkResults) {
-                    if (item.status === 'fulfilled') {
-                        if (item.value.claimed) {
-                            claimedCount++;
-                        } else {
-                            skippedCount++;
-                        }
-                    } else {
-                        failedCount++;
-                        Logger.error(`Kampanya paralel işleme hatası: ${item.reason?.message || item.reason}`);
-                    }
+            for (const campaign of campaigns) {
+                const claimResult = await this.apiClient.claimEmailCampaign(campaign.id, config.worker.workerId);
+                if (!claimResult.claimed) {
+                    Logger.info(`Kampanya #${campaign.id} claim alınamadı, atlandı (${claimResult.reason || 'locked'})`);
+                    skippedCount++;
+                    continue;
                 }
+
+                claimedCount++;
+                Logger.info(`Kampanya #${campaign.id} başlatıldı (arka planda)`);
+
+                // Fire-and-forget — poll() bloklama; kampanya arka planda işlenir
+                this.processor.processCampaign(campaign).catch((err) => {
+                    Logger.error(`Kampanya #${campaign.id} işleme hatası: ${err.message}`);
+                });
             }
 
-            const dispatchLatencyMs = Date.now() - dispatchStartedAt;
             Logger.info(
-                `Kampanya dispatch özeti | toplam=${campaigns.length} | claim=${claimedCount} | skipped=${skippedCount} | failed=${failedCount} | campaigns_dispatched_total=${claimedCount} | campaign_dispatch_latency_ms=${dispatchLatencyMs}`
+                `Dispatch özeti | claim=${claimedCount} | skipped=${skippedCount} | aktif=${this.processor.processing.size}/${maxConcurrency}`
             );
 
         } catch (error) {
