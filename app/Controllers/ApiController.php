@@ -385,10 +385,12 @@ class ApiController
 
         $conn = $this->em->getConnection();
         $claimed = false;
-        $previousStatus = (string) ($conn->fetchOne(
-            'SELECT status FROM email_orders WHERE id = ?',
+        $preClaimRow = $conn->fetchAssociative(
+            'SELECT status, attempt_count FROM email_orders WHERE id = ?',
             [$orderId]
-        ) ?? '');
+        ) ?: [];
+        $previousStatus  = (string) ($preClaimRow['status'] ?? '');
+        $previousAttempt = (int) ($preClaimRow['attempt_count'] ?? 0);
 
         try {
             $affected = $conn->executeStatement(
@@ -434,8 +436,9 @@ class ApiController
                 $lockInfo['locked_by'] ?? 'null',
                 $lockInfo['locked_at'] ?? 'null'
             );
-        } elseif ($previousStatus === 'pending') {
-            // Yalnızca pending → processing geçişinde "başladı" bildirimi (re-claim tekrar atmaz)
+        } elseif ($previousStatus === 'pending' && $previousAttempt === 0) {
+            // Yalnızca ilk kez başlatıldığında bildirim gönder.
+            // attempt_count > 0 ise worker restart sonrası recovery — TG tekrar atmamalı.
             $order = $this->em->find(EmailOrder::class, $orderId);
             if ($order instanceof EmailOrder) {
                 $this->notifyTelegramSafely(
