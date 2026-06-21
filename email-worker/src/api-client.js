@@ -64,12 +64,16 @@ export class ApiClient {
 
     /**
      * Bekleyen email kampanyalarını getir
+     * workerSlot >= 0 ise priority slot kontrolü de yapılır
      */
-    async getPendingEmailCampaigns(limit = null) {
+    async getPendingEmailCampaigns(limit = null, workerSlot = -1) {
         try {
             const params = {};
             if (Number.isFinite(limit) && limit > 0) {
                 params.limit = Math.floor(limit);
+            }
+            if (workerSlot >= 0) {
+                params.worker_slot = workerSlot;
             }
             const response = await this.client.get('/email-campaigns/pending', { params });
             
@@ -130,10 +134,12 @@ export class ApiClient {
     /**
      * Email kampanyasının emaillerini batch olarak getir (PAGINATION)
      */
-    async getEmailCampaignEmailsBatch(campaignId, offset = 0, limit = 10000, lastPoolId = null) {
+    async getEmailCampaignEmailsBatch(campaignId, offset = 0, limit = 10000, lastPoolId = null, prioritySlotId = null) {
         try {
+            const params = { offset, limit, last_pool_id: lastPoolId };
+            if (prioritySlotId !== null) params.priority_slot_id = prioritySlotId;
             const response = await this.client.get(`/email-campaigns/${campaignId}/emails/batch`, {
-                params: { offset, limit, last_pool_id: lastPoolId },
+                params,
                 timeout: this.batchTimeout,
             });
 
@@ -492,12 +498,14 @@ export class ApiClient {
 
     /**
      * Kampanyayı atomik claim et
+     * workerSlot >= 0 ise priority slot claim isteği de gönderilir
      */
-    async claimEmailCampaign(campaignId, workerId) {
+    async claimEmailCampaign(campaignId, workerId, workerSlot = -1) {
         try {
-            const response = await this.client.post(`/email-campaigns/${campaignId}/claim`, {
-                worker_id: workerId
-            });
+            const body = { worker_id: workerId };
+            if (workerSlot >= 0) body.worker_slot = workerSlot;
+
+            const response = await this.client.post(`/email-campaigns/${campaignId}/claim`, body);
 
             if (response.status !== 200 || !response.data.success) {
                 return { claimed: false, reason: 'api_error' };
@@ -505,11 +513,28 @@ export class ApiClient {
 
             return {
                 claimed: !!response.data.claimed,
-                reason: response.data.reason || null
+                reason: response.data.reason || null,
+                prioritySlotId: response.data.priority_slot_id ?? null,
             };
         } catch (error) {
             Logger.error(`claimEmailCampaign error: ${error.message}`);
             return { claimed: false, reason: error.message };
+        }
+    }
+
+    /**
+     * Priority slot'u tamamlandı olarak işaretle
+     */
+    async completePrioritySlot(slotId, stats = {}) {
+        try {
+            const response = await this.client.post(`/email-campaigns/priority-slots/${slotId}/complete`, {
+                sent_count: stats.sent ?? 0,
+                failed_count: stats.failed ?? 0,
+            });
+            return !!(response.data?.success);
+        } catch (error) {
+            Logger.error(`completePrioritySlot(${slotId}) error: ${error.message}`);
+            return false;
         }
     }
 

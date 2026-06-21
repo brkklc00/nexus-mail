@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Nexus Mail — git post-merge: WORKER_SLOT .env güncelle + pm2 restart
+# Bu dosya versiyon kontrolündedir. .git/hooks/post-merge buraya yönlendirir.
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+ENV_FILE="$REPO_DIR/.env"
+SLOT_FILE="$REPO_DIR/.worker-slot"
+
+echo ""
+echo "╔══════════════════════════════════════════════╗"
+echo "║  Nexus Mail — post-merge env updater         ║"
+echo "╚══════════════════════════════════════════════╝"
+echo ""
+
+# ── WORKER_SLOT .env senkronizasyonu ─────────────────────────────────────────
+if [ -f "$SLOT_FILE" ]; then
+    SLOT=$(cat "$SLOT_FILE" | tr -d '[:space:]')
+    if echo "$SLOT" | grep -qE '^[0-2]$'; then
+        if [ -f "$ENV_FILE" ]; then
+            if grep -qE '^WORKER_SLOT=' "$ENV_FILE"; then
+                sed -i.bak "s/^WORKER_SLOT=.*/WORKER_SLOT=$SLOT/" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
+            else
+                echo "" >> "$ENV_FILE"
+                echo "# Priority campaign worker slot (0=mail, 1=mail-1, 2=mail-2)" >> "$ENV_FILE"
+                echo "WORKER_SLOT=$SLOT" >> "$ENV_FILE"
+            fi
+            echo "✅ WORKER_SLOT=$SLOT (.env güncellendi)"
+        else
+            echo "⚠️  .env bulunamadı — WORKER_SLOT atanamadı"
+        fi
+    else
+        echo "⚠️  .worker-slot geçersiz değer: '$SLOT' — atlandı"
+    fi
+else
+    echo "ℹ️  .worker-slot dosyası yok — WORKER_SLOT değiştirilmedi"
+    echo "   İlk kurulum için: bash bin/install-hooks.sh <0|1|2>"
+fi
+
+# ── npm install ───────────────────────────────────────────────────────────────
+WORKER_DIR="$REPO_DIR"
+[ -f "$REPO_DIR/email-worker/package.json" ] && WORKER_DIR="$REPO_DIR/email-worker"
+
+if command -v npm &>/dev/null && [ -f "$WORKER_DIR/package.json" ]; then
+    echo "▶  npm install (yeni bağımlılık varsa)..."
+    cd "$WORKER_DIR"
+    npm install --silent 2>&1 | tail -3
+    cd "$REPO_DIR"
+    echo "✅ npm install tamam"
+fi
+
+# ── PM2 restart ───────────────────────────────────────────────────────────────
+if command -v pm2 &>/dev/null; then
+    echo "▶  PM2 email-worker yeniden başlatılıyor..."
+    pm2 restart email-worker 2>/dev/null \
+        && echo "✅ PM2 restart tamam" \
+        || echo "⚠️  PM2 restart başarısız (ilk kurulumda normaldir, 'pm2 start ecosystem.config.js' çalıştırın)"
+fi
+
+echo ""
+echo "✅ post-merge tamamlandı"
+echo ""

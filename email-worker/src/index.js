@@ -124,8 +124,9 @@ class EmailWorker {
                 return;
             }
 
-            // Sadece boş slot kadar kampanya çek
-            const campaigns = await this.apiClient.getPendingEmailCampaigns(freeSlots);
+            // Sadece boş slot kadar kampanya çek; WORKER_SLOT >= 0 ise priority kontrolü dahil
+            const workerSlot = config.worker.workerSlot ?? -1;
+            const campaigns = await this.apiClient.getPendingEmailCampaigns(freeSlots, workerSlot);
 
             if (campaigns.length === 0) {
                 // Heartbeat: her 5 dakikada bir "canlı" logu yaz
@@ -144,20 +145,28 @@ class EmailWorker {
             let skippedCount = 0;
 
             for (const campaign of campaigns) {
-                const claimResult = await this.apiClient.claimEmailCampaign(campaign.id, config.worker.workerId);
+                const claimResult = await this.apiClient.claimEmailCampaign(
+                    campaign.id, config.worker.workerId, workerSlot
+                );
                 if (!claimResult.claimed) {
                     Logger.info(`Kampanya #${campaign.id} claim alınamadı, atlandı (${claimResult.reason || 'locked'})`);
                     skippedCount++;
                     continue;
                 }
 
-                claimedCount++;
-                Logger.info(`Kampanya #${campaign.id} başlatıldı (arka planda)`);
+                // Priority slot bilgisini campaign objesine taşı
+                if (claimResult.prioritySlotId) {
+                    campaign.priority_slot_id = claimResult.prioritySlotId;
+                    Logger.info(`[priority] Kampanya #${campaign.id} priority slot #${claimResult.prioritySlotId} ile başlatılıyor`);
+                } else {
+                    Logger.info(`Kampanya #${campaign.id} başlatıldı (arka planda)`);
+                }
 
                 // Fire-and-forget — poll() bloklama; kampanya arka planda işlenir
                 this.processor.processCampaign(campaign).catch((err) => {
                     Logger.error(`Kampanya #${campaign.id} işleme hatası: ${err.message}`);
                 });
+                claimedCount++;
             }
 
             Logger.info(

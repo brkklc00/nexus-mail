@@ -170,12 +170,11 @@ export class CampaignProcessor {
             let invalidEmailCount = 0; // Geçersiz email sayısı
             const fetchBatchSize = this.apiClient.getWorkerFetchBatchSize();
             let lastPoolCursor = campaign.last_pool_id || null;
+            const prioritySlotId = campaign.priority_slot_id ?? null;
 
             // Prefetch pipeline: fetch N+1 while sending N.
-            // Pending list shrinks with each batch (offset=0 always), so we always
-            // pass the latest cursor after updating it from the response.
             const startFetch = (cursor) =>
-                this.apiClient.getEmailCampaignEmailsBatch(campaign.id, 0, fetchBatchSize, cursor);
+                this.apiClient.getEmailCampaignEmailsBatch(campaign.id, 0, fetchBatchSize, cursor, prioritySlotId);
             let prefetchPromise = startFetch(lastPoolCursor);
 
             while (true) {
@@ -312,10 +311,12 @@ export class CampaignProcessor {
                 }
             }
 
-            // Kampanya tamamlandı - ama önce gerçekten tüm pending'ler bitti mi kontrol et
-            const finalCheck = await this.apiClient.getEmailCampaignEmailsBatch(campaign.id, 0, 1);
+            // Kampanya tamamlandı — önce gerçekten tüm pending'ler bitti mi kontrol et
+            const finalCheck = await this.apiClient.getEmailCampaignEmailsBatch(
+                campaign.id, 0, 1, null, prioritySlotId
+            );
             const remainingPending = finalCheck ? finalCheck.total_pending : 0;
-            
+
             if (remainingPending > 0) {
                 Logger.warn(`Kampanya #${campaign.id} — ${remainingPending} pending email kaldı, "processing" olarak bırakıldı`);
                 Logger.warn('Worker tekrar çalışınca kalan emailler gönderilecek');
@@ -326,13 +327,22 @@ export class CampaignProcessor {
                 });
                 return;
             }
-            
-            // Tüm email'ler işlendi, şimdi completed yapabiliriz
-            await this.apiClient.updateEmailCampaignStatus(campaign.id, 'completed', {
-                sent_count: successCount,
-                failed_count: failedCount,
-                delivered_count: successCount
-            });
+
+            // Priority slot ise slot tamamla (kampanya tüm slotlar bitince tamamlanacak)
+            if (prioritySlotId) {
+                Logger.info(`[priority] Slot #${prioritySlotId} tamamlandı — ${successCount} gönderildi, ${failedCount} başarısız`);
+                await this.apiClient.completePrioritySlot(prioritySlotId, {
+                    sent: successCount,
+                    failed: failedCount,
+                });
+            } else {
+                // Normal kampanya: tüm email'ler işlendi, completed yapabiliriz
+                await this.apiClient.updateEmailCampaignStatus(campaign.id, 'completed', {
+                    sent_count: successCount,
+                    failed_count: failedCount,
+                    delivered_count: successCount
+                });
+            }
 
             const totalCampMs = Date.now() - campaignStartedAt;
             const avgMps = mailsPerSecond(processedCount, totalCampMs);

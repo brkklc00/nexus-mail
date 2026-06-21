@@ -39,6 +39,7 @@ export const config = {
     
     worker: {
         workerId: process.env.EMAIL_WORKER_ID || `email-worker-${process.env.NODE_APP_INSTANCE || os.hostname()}`,
+        workerSlot: parseInt(process.env.WORKER_SLOT ?? '-1', 10),
         pollInterval: parseInt(process.env.EMAIL_POLL_INTERVAL || process.env.POLL_INTERVAL) || 10000,
         campaignConcurrency: parseInt(process.env.EMAIL_CAMPAIGN_CONCURRENCY || '5', 10) || 5,
         pendingFetchLimit: parseInt(process.env.EMAIL_PENDING_FETCH_LIMIT || '100', 10) || 100,
