@@ -486,8 +486,14 @@ export class CampaignProcessor {
                 throw new Error('No SMTP available - Daily limits may be exceeded. Waiting for next run...');
             }
 
-            // Her lane'in bu döngüde kalan kapasitesi (cap − şimdiye kadar gönderdiği)
-            const caps     = group.map(l => Math.max(0, rot.cap - (rot.sent.get(l.config.id) || 0)));
+            // Her lane'in bu döngüde kalan kapasitesi (cap − şimdiye kadar gönderdiği).
+            // Tur başına atanan mail, SMTP'nin dakikalık limitiyle de sınırlanır; aksi halde
+            // tek SMTP'ye cap (örn. 750) kadar mail binip token bucket'ta dakikalarca boğulur.
+            const caps     = group.map(l => {
+                const rotRemaining = Math.max(0, rot.cap - (rot.sent.get(l.config.id) || 0));
+                const minuteLimit  = l.config.minute_limit || 0;
+                return minuteLimit > 0 ? Math.min(rotRemaining, minuteLimit) : rotRemaining;
+            });
             const totalCap = caps.reduce((a, b) => a + b, 0);
             if (totalCap <= 0) {
                 // Gruptaki herkes cap'e ulaştı — emekli edip sıradaki gruba geç
