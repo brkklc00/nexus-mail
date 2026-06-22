@@ -1711,6 +1711,15 @@ class ApiController
     // ─── Dış Öncelik (hub-nexus → bu mail sunucusu) ───────────────────────────
 
     /**
+     * JSON yanıt yardımcısı (dış öncelik endpoint'leri için).
+     */
+    private function jsonResponse(Response $response, array $data, int $status = 200): Response
+    {
+        $response->getBody()->write(json_encode($data, JSON_UNESCAPED_UNICODE));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
+    }
+
+    /**
      * POST /api/email-campaigns/external-priority/receive
      * Hub-nexus'tan gelen priority slot kaydını sakla (idempotent).
      */
