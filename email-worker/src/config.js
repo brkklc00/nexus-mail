@@ -55,6 +55,11 @@ export const config = {
         healthPort: parseInt(process.env.WORKER_HEALTH_PORT || '0', 10) || 0,
     },
 
+    externalApi: {
+        baseUrl: (process.env.EXTERNAL_API_BASE_URL || '').replace(/\/$/, ''),
+        token: process.env.EXTERNAL_API_KEY || '',
+    },
+
     logging: {
         level: process.env.EMAIL_LOG_LEVEL || process.env.LOGGING_LEVEL || process.env.LOG_LEVEL || 'error',
         enableFile: process.env.EMAIL_LOGGING_ENABLE_FILE === 'true' || process.env.LOGGING_ENABLE_FILE === 'true',

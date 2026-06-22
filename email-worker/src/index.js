@@ -1,5 +1,6 @@
 import { Logger } from './logger.js';
 import { ApiClient } from './api-client.js';
+import { ExternalApiClient } from './external-api-client.js';
 import { CampaignProcessor } from './campaign-processor.js'; // PERFORMANS OPTİMİZE EDİLMİŞ VERSİYON
 import { ReportChecker } from './report-checker.js';
 import { config } from './config.js';
@@ -27,6 +28,7 @@ class EmailWorker {
             result_mode: mode,
             worker_id: config.worker.workerId,
         }));
+        this.flushService = flushService;
         this.processor = new CampaignProcessor(this.apiClient, {
             pool,
             flushService,
@@ -38,6 +40,8 @@ class EmailWorker {
         this.lastCleanupAt = 0;
         this.lastHeartbeatAt = 0;
         this._shutdownPromise = null;
+        /** Aktif dış öncelik işlemlerinin yerel slot ID'leri */
+        this.externalProcessing = new Set();
     }
 
     /**
@@ -115,6 +119,18 @@ class EmailWorker {
             await this.maybeCleanupStuckCampaigns();
             await this.apiClient.refreshRuntimeSendingConfig();
 
+            // ── Dış öncelik (hub-nexus → bu mail sunucusu) ────────────────────
+            const workerSlot = config.worker.workerSlot ?? -1;
+            if (workerSlot >= 0 && this.externalProcessing.size === 0) {
+                const extSlot = await this.apiClient.getActiveExternalPrioritySlot(workerSlot);
+                if (extSlot) {
+                    Logger.info(`[dış-öncelik] Slot #${extSlot.id} alındı — hub kampanya #${extSlot.hub_campaign_id} (${extSlot.total_emails} email)`);
+                    await this._processExternalPrioritySlot(extSlot);
+                    return; // Dış öncelik aktifken normal kampanya alma
+                }
+            }
+            // ──────────────────────────────────────────────────────────────────
+
             const maxConcurrency = Math.max(1, config.worker.campaignConcurrency);
             const active = this.processor.processing.size;
             const freeSlots = maxConcurrency - active;
@@ -125,7 +141,6 @@ class EmailWorker {
             }
 
             // Sadece boş slot kadar kampanya çek; WORKER_SLOT >= 0 ise priority kontrolü dahil
-            const workerSlot = config.worker.workerSlot ?? -1;
             const campaigns = await this.apiClient.getPendingEmailCampaigns(freeSlots, workerSlot);
 
             if (campaigns.length === 0) {
@@ -176,6 +191,75 @@ class EmailWorker {
         } catch (error) {
             Logger.error(`Poll error: ${error.message}`);
         }
+    }
+
+    /**
+     * Hub-nexus'tan gelen dış öncelik slotunu işle.
+     * SMTP seçimi yerel API'den, email verisi hub-nexus API'den.
+     */
+    async _processExternalPrioritySlot(extSlot) {
+        const slotId = extSlot.id;
+
+        // Claim: pending → processing
+        const claimed = await this.apiClient.claimExternalPrioritySlot(slotId, config.worker.workerId);
+        if (!claimed) {
+            Logger.warn(`[dış-öncelik] Slot #${slotId} claim edilemedi (başka worker aldı?)`);
+            return;
+        }
+
+        // Kampanya meta verisi
+        let meta = {};
+        try {
+            meta = JSON.parse(extSlot.campaign_meta || '{}');
+        } catch (_) {}
+
+        // Hybrid client: email ops → hub, smtp ops → yerel
+        const extClient = new ExternalApiClient(
+            extSlot.hub_api_url,
+            extSlot.hub_api_token,
+            parseInt(extSlot.hub_campaign_id, 10),
+            parseInt(extSlot.hub_slot_id, 10),
+            slotId
+        );
+        // Yerel worker runtime'ı hub client'a da aktar
+        extClient.workerRuntime = this.apiClient.workerRuntime;
+
+        // Sahte kampanya nesnesi (CampaignProcessor için)
+        const fakeCampaign = {
+            id:                         parseInt(extSlot.hub_campaign_id, 10),
+            user_id:                    meta.user_id || 0,
+            user_name:                  meta.user_name || '',
+            subject:                    meta.subject || '(no subject)',
+            body:                       meta.body || '',
+            from_name:                  meta.from_name || 'Nexus',
+            from_email:                 meta.from_email || 'noreply@nexus.com',
+            delivery_percentage:        meta.delivery_percentage ?? 100,
+            email_delivery_percentage:  meta.email_delivery_percentage ?? 100,
+            total_emails:               parseInt(extSlot.total_emails, 10) || 0,
+            pending_emails:             parseInt(extSlot.total_emails, 10) || 0,
+            last_pool_id:               null,
+            smtp_rotation_limit:        meta.smtp_rotation_limit || 500,
+            is_priority:                true,
+            priority_slot_id:           parseInt(extSlot.hub_slot_id, 10),
+        };
+
+        // Her zaman 'api' modu: sonuçlar hub-nexus'a yazılacak
+        const extProcessor = new CampaignProcessor(extClient, {
+            pool:        null,
+            flushService: null,
+            resultMode:  'api',
+            workerId:    config.worker.workerId,
+        });
+
+        this.externalProcessing.add(slotId);
+        Logger.info(`[dış-öncelik] Slot #${slotId} işleniyor → hub kampanya #${fakeCampaign.id}`);
+
+        extProcessor.processCampaign(fakeCampaign)
+            .catch(err => Logger.error(`[dış-öncelik] Slot #${slotId} işleme hatası: ${err.message}`))
+            .finally(() => {
+                this.externalProcessing.delete(slotId);
+                Logger.info(`[dış-öncelik] Slot #${slotId} tamamlandı`);
+            });
     }
 
     async maybeCleanupStuckCampaigns() {

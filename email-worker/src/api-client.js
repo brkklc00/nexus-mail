@@ -539,6 +539,55 @@ export class ApiClient {
     }
 
     /**
+     * Dış öncelik: bu worker slot için bekleyen/işlenen external_priority_slot'u getir
+     */
+    async getActiveExternalPrioritySlot(workerSlot) {
+        try {
+            const response = await this.client.get('/email-campaigns/external-priority/active', {
+                params: { worker_slot: workerSlot },
+            });
+            if (response.data?.success && response.data.slot) {
+                return response.data.slot;
+            }
+            return null;
+        } catch (error) {
+            Logger.error(`getActiveExternalPrioritySlot error: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Dış öncelik slotunu claim et (status: pending → processing)
+     */
+    async claimExternalPrioritySlot(slotId, workerId) {
+        try {
+            const response = await this.client.post(`/email-campaigns/external-priority/${slotId}/claim`, {
+                worker_id: workerId,
+            });
+            return !!(response.data?.success && response.data.claimed);
+        } catch (error) {
+            Logger.error(`claimExternalPrioritySlot(${slotId}) error: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * Dış öncelik slotunu tamamla (status: processing → completed)
+     */
+    async completeExternalPrioritySlot(slotId, stats = {}) {
+        try {
+            const response = await this.client.post(`/email-campaigns/external-priority/${slotId}/complete`, {
+                sent_count: stats.sent ?? 0,
+                failed_count: stats.failed ?? 0,
+            });
+            return !!(response.data?.success);
+        } catch (error) {
+            Logger.error(`completeExternalPrioritySlot(${slotId}) error: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
      * Takılı kalan email kampanyalarını temizle.
      * workerId verilirse o worker'ın sahiplendiği kampanyalar anında pending'e düşer (restart recovery).
      */
