@@ -1774,8 +1774,9 @@ class ApiController
         $conn   = $this->em->getConnection();
         try {
             if (isset($params['worker_slot'])) {
+                // Sadece 'pending' dön — worker yeni iş alıyor. 'processing' orphan'ları tekrar alınmaz.
                 $slot = $conn->fetchAssociative(
-                    "SELECT * FROM external_priority_slots WHERE worker_slot = ? AND status IN ('pending','processing') ORDER BY created_at ASC LIMIT 1",
+                    "SELECT * FROM external_priority_slots WHERE worker_slot = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 1",
                     [(int)$params['worker_slot']]
                 );
                 return $this->jsonResponse($response, ['success' => true, 'slot' => $slot ?: null]);
