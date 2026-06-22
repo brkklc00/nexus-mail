@@ -1707,4 +1707,116 @@ class ApiController
 
         return $payload;
     }
+
+    // ─── Dış Öncelik (hub-nexus → bu mail sunucusu) ───────────────────────────
+
+    /**
+     * POST /api/email-campaigns/external-priority/receive
+     * Hub-nexus'tan gelen priority slot kaydını sakla (idempotent).
+     */
+    public function receiveExternalPriority(Request $request, Response $response): Response
+    {
+        $data = (array) $request->getParsedBody();
+        $required = ['hub_api_url','hub_api_token','hub_campaign_id','hub_slot_id','worker_slot'];
+        foreach ($required as $field) {
+            if (empty($data[$field]) && $data[$field] !== 0) {
+                return $this->jsonResponse($response, ['success' => false, 'error' => "missing_field: $field"], 400);
+            }
+        }
+
+        $conn = $this->em->getConnection();
+        try {
+            $existing = $conn->fetchOne(
+                'SELECT id FROM external_priority_slots WHERE hub_slot_id = ? AND hub_campaign_id = ?',
+                [(int)$data['hub_slot_id'], (int)$data['hub_campaign_id']]
+            );
+            if ($existing) {
+                return $this->jsonResponse($response, ['success' => true, 'id' => (int)$existing, 'skipped' => true]);
+            }
+
+            $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $conn->insert('external_priority_slots', [
+                'hub_api_url'     => $data['hub_api_url'],
+                'hub_api_token'   => $data['hub_api_token'],
+                'hub_campaign_id' => (int)$data['hub_campaign_id'],
+                'hub_slot_id'     => (int)$data['hub_slot_id'],
+                'worker_slot'     => (int)$data['worker_slot'],
+                'email_id_min'    => isset($data['email_id_min']) ? (int)$data['email_id_min'] : null,
+                'email_id_max'    => isset($data['email_id_max']) ? (int)$data['email_id_max'] : null,
+                'total_emails'    => (int)($data['total_emails'] ?? 0),
+                'status'          => 'pending',
+                'campaign_meta'   => isset($data['campaign_meta']) ? (is_string($data['campaign_meta']) ? $data['campaign_meta'] : json_encode($data['campaign_meta'])) : null,
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ]);
+            $id = (int)$conn->lastInsertId();
+            return $this->jsonResponse($response, ['success' => true, 'id' => $id]);
+        } catch (\Throwable $e) {
+            return $this->jsonResponse($response, ['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /api/email-campaigns/external-priority/active?worker_slot=N
+     */
+    public function getActiveExternalPriority(Request $request, Response $response): Response
+    {
+        $params = $request->getQueryParams();
+        $conn   = $this->em->getConnection();
+        try {
+            if (isset($params['worker_slot'])) {
+                $slot = $conn->fetchAssociative(
+                    "SELECT * FROM external_priority_slots WHERE worker_slot = ? AND status IN ('pending','processing') ORDER BY created_at ASC LIMIT 1",
+                    [(int)$params['worker_slot']]
+                );
+                return $this->jsonResponse($response, ['success' => true, 'slot' => $slot ?: null]);
+            }
+            $slots = $conn->fetchAllAssociative(
+                "SELECT * FROM external_priority_slots WHERE status IN ('pending','processing') ORDER BY created_at ASC"
+            );
+            return $this->jsonResponse($response, ['success' => true, 'slots' => $slots]);
+        } catch (\Throwable $e) {
+            return $this->jsonResponse($response, ['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/email-campaigns/external-priority/{id}/claim
+     */
+    public function claimExternalPrioritySlot(Request $request, Response $response, array $args): Response
+    {
+        $id   = (int)$args['id'];
+        $data = (array) $request->getParsedBody();
+        $conn = $this->em->getConnection();
+        try {
+            $now     = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $updated = $conn->executeStatement(
+                "UPDATE external_priority_slots SET status='processing', worker_id=?, claimed_at=?, updated_at=? WHERE id=? AND status='pending'",
+                [$data['worker_id'] ?? null, $now, $now, $id]
+            );
+            return $this->jsonResponse($response, ['success' => true, 'claimed' => $updated > 0]);
+        } catch (\Throwable $e) {
+            return $this->jsonResponse($response, ['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/email-campaigns/external-priority/{id}/complete
+     */
+    public function completeExternalPrioritySlot(Request $request, Response $response, array $args): Response
+    {
+        $id   = (int)$args['id'];
+        $data = (array) $request->getParsedBody();
+        $conn = $this->em->getConnection();
+        try {
+            $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $conn->executeStatement(
+                "UPDATE external_priority_slots SET status='completed', sent_count=?, failed_count=?, completed_at=?, updated_at=? WHERE id=?",
+                [(int)($data['sent_count'] ?? 0), (int)($data['failed_count'] ?? 0), $now, $now, $id]
+            );
+            return $this->jsonResponse($response, ['success' => true]);
+        } catch (\Throwable $e) {
+            return $this->jsonResponse($response, ['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
 }

@@ -57,6 +57,10 @@ return function (App $app) {
         $group->get('/email-sending/runtime-config', [ApiController::class, 'getEmailSendingRuntimeConfig'])->setName('api.email-sending.runtime-config');
         $group->get('/email-worker/health', [ApiController::class, 'getEmailWorkerHealth'])->setName('api.email-worker.health');
         $group->post('/email-orders/receive', [ApiController::class, 'receiveTransferredOrder'])->setName('api.email-orders.receive');
+        $group->post('/email-campaigns/external-priority/receive', [ApiController::class, 'receiveExternalPriority'])->setName('api.external-priority.receive');
+        $group->get('/email-campaigns/external-priority/active', [ApiController::class, 'getActiveExternalPriority'])->setName('api.external-priority.active');
+        $group->post('/email-campaigns/external-priority/{id}/claim', [ApiController::class, 'claimExternalPrioritySlot'])->setName('api.external-priority.claim');
+        $group->post('/email-campaigns/external-priority/{id}/complete', [ApiController::class, 'completeExternalPrioritySlot'])->setName('api.external-priority.complete');
 
         // API Key Management
         $group->post('/regenerate-key', [ApiController::class, 'regenerateApiKey'])->setName('api.regenerate-key');
