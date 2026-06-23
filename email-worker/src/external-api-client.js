@@ -97,6 +97,24 @@ export class ExternalApiClient extends ApiClient {
     }
 
     /**
+     * Geçersiz adres karalisteye → email verisi hub'da olduğu için hub'a gönder.
+     */
+    async suppressBouncedEmails(campaignId, emails, reason = 'auto:invalid_address') {
+        if (!emails || emails.length === 0) return true;
+        try {
+            const response = await this.hubClient.post(
+                `/api/email-campaigns/${this.hubCampaignId}/suppress`,
+                { emails, reason },
+                { timeout: this.batchTimeout }
+            );
+            return response.status === 200;
+        } catch (error) {
+            Logger.warn(`[external] suppressBouncedEmails error: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
      * Hub priority slot'unu tamamla + yerel external slot'u kapat
      */
     async completePrioritySlot(slotId, stats = {}) {

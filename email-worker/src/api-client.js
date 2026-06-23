@@ -212,6 +212,27 @@ export class ApiClient {
     }
 
     /**
+     * Kalıcı geçersiz adresleri panel karalistesine ekle (otomatik suppression).
+     * @param {number} campaignId
+     * @param {string[]} emails  - küçük harfe çevrilmiş benzersiz adresler
+     * @param {string} reason
+     */
+    async suppressBouncedEmails(campaignId, emails, reason = 'auto:invalid_address') {
+        if (!emails || emails.length === 0) return true;
+        try {
+            const response = await this.client.post(
+                `/email-campaigns/${campaignId}/suppress`,
+                { emails, reason },
+                { timeout: this.batchTimeout }
+            );
+            return response.status === 200;
+        } catch (error) {
+            Logger.warn(`suppressBouncedEmails error (Kampanya #${campaignId}): ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
      * Paneldeki email-sending ayarlarını çek (batch gap, concurrency, pool…)
      */
     async refreshRuntimeSendingConfig() {

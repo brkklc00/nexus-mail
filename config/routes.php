@@ -50,6 +50,7 @@ return function (App $app) {
         $group->get('/email-campaigns/{id}/emails/batch', [ApiController::class, 'getEmailCampaignEmailsBatch'])->setName('api.email-campaigns.emails.batch');
         $group->post('/email-campaigns/{id}/status', [ApiController::class, 'updateEmailCampaignStatus'])->setName('api.email-campaigns.status');
         $group->post('/email-campaigns/{id}/emails', [ApiController::class, 'updateEmailCampaignEmails'])->setName('api.email-campaigns.emails');
+        $group->post('/email-campaigns/{id}/suppress', [ApiController::class, 'suppressBouncedEmails'])->setName('api.email-campaigns.suppress');
         $group->post('/email-campaigns/{id}/refund', [ApiController::class, 'refundFailedEmails'])->setName('api.email-campaigns.refund');
         $group->get('/smtp/select-best', [ApiController::class, 'selectBestSmtp'])->setName('api.smtp.select-best');
         $group->get('/smtp/select-best-batch', [ApiController::class, 'selectBestSmtpBatch'])->setName('api.smtp.select-best-batch');

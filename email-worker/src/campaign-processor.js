@@ -605,6 +605,20 @@ export class CampaignProcessor {
             Logger.warn(`⚠️  Boş sonuç listesi (Kampanya #${campaign.id}) — persist atlandı`);
         }
 
+        // Kalıcı geçersiz adresleri otomatik karalisteye al (bir daha gönderilmesin → IP itibarı korunur)
+        try {
+            const suppressEmails = results
+                .filter((r) => r.permanent === true && r.email)
+                .map((r) => r.email);
+            if (suppressEmails.length > 0 && typeof this.apiClient.suppressBouncedEmails === 'function') {
+                const uniq = [...new Set(suppressEmails.map((e) => String(e).toLowerCase()))];
+                await this.apiClient.suppressBouncedEmails(campaign.id, uniq, 'auto:invalid_address');
+                Logger.info(`🚫 ${uniq.length} geçersiz adres karalisteye alındı (Kampanya #${campaign.id})`);
+            }
+        } catch (e) {
+            Logger.warn(`Suppression hatası (Kampanya #${campaign.id}): ${e.message}`);
+        }
+
         // SMTP kullanımını kaydet (İSTATİSTİKLER DATABASE'E YAZILIR)
         // Not: Eğer SMTP değiştiyse, her SMTP için ayrı ayrı kaydetmemiz gerekir
         // Şimdilik son kullanılan SMTP için kaydediyoruz (basit yaklaşım)
@@ -869,9 +883,12 @@ export class CampaignProcessor {
                 results.push({
                     id: emailData.id != null ? Number(emailData.id) : null,
                     email: emailData.email,
-                    status: result.success ? 'delivered' : 'failed',
+                    // Kalıcı geçersiz adres → 'bounced' (suppression + doğru istatistik).
+                    status: result.success ? 'delivered' : (result.permanent ? 'bounced' : 'failed'),
                     message_id: result.messageId || null,
                     error: result.error || null,
+                    error_type: result.error_type || null,
+                    permanent: result.permanent === true,
                     smtp_id: smtp.config.id,
                 });
             }

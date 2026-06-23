@@ -141,6 +141,7 @@ export class SmtpClient {
                 error: msg,
                 error_type: 'invalid_recipient',
                 retryable: false,
+                permanent: true,
             };
         }
 
@@ -229,6 +230,7 @@ export class SmtpClient {
                 error: error.message,
                 error_type: classification.type,
                 retryable: classification.retryable,
+                permanent: classification.permanent === true,
             };
         }
     }
@@ -278,7 +280,8 @@ export class SmtpClient {
 
         const smtpClass = classifySmtpError(message);
         if (smtpClass.category === Category.RECIPIENT_REJECTED) {
-            return { type: 'recipient_rejected', retryable: false };
+            // permanent: gerçek geçersiz adres (suppression). antispam/itibar reddi ise false.
+            return { type: 'recipient_rejected', retryable: false, permanent: smtpClass.permanent === true };
         }
         if (smtpClass.category === Category.CONNECTION) {
             return { type: 'timeout', retryable: true };

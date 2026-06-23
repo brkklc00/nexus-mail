@@ -1071,6 +1071,80 @@ class ApiController
      * API: Email kampanya sonuçlarını güncelle
      * POST /api/email-campaigns/{id}/emails
      */
+    /**
+     * POST /api/email-campaigns/{id}/suppress
+     * Kalıcı geçersiz adresleri kullanıcı karalistesine ekle (otomatik suppression, idempotent).
+     */
+    public function suppressBouncedEmails(Request $request, Response $response, array $args): Response
+    {
+        $tokenError = $this->validateApiToken($request, $response);
+        if ($tokenError) {
+            return $tokenError;
+        }
+
+        $orderId = (int) ($args['id'] ?? 0);
+        $body    = (string) $request->getBody();
+        $data    = json_decode($body, true);
+        if (!is_array($data)) {
+            $data = (array) $request->getParsedBody();
+        }
+        $emails = $data['emails'] ?? [];
+        $reason = (string) ($data['reason'] ?? 'auto:invalid_address');
+
+        if (empty($emails) || !is_array($emails)) {
+            $response->getBody()->write(json_encode(['success' => true, 'added' => 0]));
+            return $response->withHeader('Content-Type', 'application/json');
+        }
+
+        $order = $this->em->find('App\Domain\Entities\EmailOrder', $orderId);
+        if (!$order) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'Order not found']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+        }
+
+        $user   = method_exists($order, 'getUser') ? $order->getUser() : null;
+        $userId = $user ? $user->getId() : null;
+        if (!$userId) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'User not found for order']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(422);
+        }
+
+        $conn  = $this->em->getConnection();
+        $now   = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $added = 0;
+
+        try {
+            foreach (array_chunk($emails, 500) as $chunk) {
+                $placeholders = [];
+                $params       = [];
+                foreach ($chunk as $email) {
+                    $email = strtolower(trim((string) $email));
+                    if ($email === '' || !str_contains($email, '@')) {
+                        continue;
+                    }
+                    $placeholders[] = '(?,?,?,?)';
+                    $params[] = $userId;
+                    $params[] = $email;
+                    $params[] = $reason;
+                    $params[] = $now;
+                }
+                if (empty($placeholders)) {
+                    continue;
+                }
+                // INSERT IGNORE → uniq (user_id, email) çakışması sessizce atlanır (idempotent)
+                $sql = 'INSERT IGNORE INTO email_blacklist (user_id, email, reason, created_at) VALUES '
+                     . implode(',', $placeholders);
+                $added += $conn->executeStatement($sql, $params);
+            }
+        } catch (\Throwable $e) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => $e->getMessage()]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+
+        $response->getBody()->write(json_encode(['success' => true, 'added' => $added]));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
     public function updateEmailCampaignEmails(Request $request, Response $response, array $args): Response
     {
         // API Token kontrolü
