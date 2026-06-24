@@ -172,6 +172,185 @@ class ApiController
     }
 
     /**
+     * Kaldığı yerden taşıma — ADIM 1: hedef panelde TRANSFERRING durumunda boş order oluştur.
+     * POST /api/email-orders/transfer-resume/init
+     * Kredi kesilmez (kaynak panelde zaten ödendi). Alıcılar adım 2'de batch yüklenir.
+     */
+    public function transferResumeInit(Request $request, Response $response): Response
+    {
+        if ($authError = $this->validateApiToken($request, $response)) {
+            return $authError;
+        }
+
+        $raw  = (string) $request->getBody();
+        $data = json_decode($raw, true);
+        if (!is_array($data)) {
+            $data = $request->getParsedBody() ?: [];
+        }
+
+        $subject = trim((string) ($data['subject'] ?? ''));
+        $body    = (string) ($data['body'] ?? '');
+        $total   = (int) ($data['total'] ?? 0);
+        if ($subject === '' || trim($body) === '' || $total < 1) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'subject, body ve total (>=1) zorunludur.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(422);
+        }
+
+        $deliveryPercentage = (int) ($data['delivery_percentage'] ?? 100);
+        if ($deliveryPercentage < 1 || $deliveryPercentage > 100) {
+            $deliveryPercentage = 100;
+        }
+        $rotation = (int) ($data['smtp_rotation_limit'] ?? 500);
+        if ($rotation < 1) {
+            $rotation = 500;
+        }
+
+        try {
+            // Sahiplik: aynı kullanıcı adı → admin → ilk kullanıcı
+            $userRepo = $this->em->getRepository(User::class);
+            $owner = null;
+            $ownerUsername = trim((string) ($data['owner_username'] ?? ''));
+            if ($ownerUsername !== '') {
+                $owner = $userRepo->findOneBy(['username' => $ownerUsername]);
+            }
+            if (!$owner) {
+                $owner = $userRepo->findOneBy(['username' => 'admin']) ?: $userRepo->findOneBy([], ['id' => 'ASC']);
+            }
+            if (!$owner) {
+                $response->getBody()->write(json_encode(['success' => false, 'error' => 'Hedef panelde kullanıcı bulunamadı.']));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+            }
+
+            $order = new \App\Domain\Entities\EmailOrder();
+            $order->setUser($owner);
+            $order->setSubject(mb_substr($subject, 0, 500));
+            $order->setBody($body);
+            $order->setTemplate(null);
+            $order->setTotal($total);
+            $order->setCost((float) $total);
+            // Taşınan kampanya artık "yüklenmiş liste" gibi davranır (pool DEĞİL) —
+            // hedef panel kendi havuzundan çekmesin, sadece taşınan adreslere göndersin.
+            $order->setSourceType(null);
+            $order->setStatus(\App\Domain\Enum\EmailOrderStatus::TRANSFERRING);
+            $order->setDeliveryPercentage($deliveryPercentage);
+            $order->setSmtpRotationLimit($rotation);
+
+            $this->em->persist($order);
+            $this->em->flush();
+
+            error_log(sprintf('[transfer-resume] init: yeni order #%d (kaynak %s #%s, total=%d)',
+                (int) $order->getId(), (string) ($data['source_panel'] ?? '?'), (string) ($data['source_order_id'] ?? '?'), $total));
+
+            $response->getBody()->write(json_encode(['success' => true, 'order_id' => $order->getId()]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Throwable $e) {
+            error_log('[transferResumeInit] HATA: ' . $e->getMessage());
+            $response->getBody()->write(json_encode(['success' => false, 'error' => $e->getMessage()]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * Kaldığı yerden taşıma — ADIM 2: alıcı adreslerini batch olarak email_order_emails'e yaz.
+     * POST /api/email-orders/transfer-resume/{id}/emails
+     */
+    public function transferResumeEmails(Request $request, Response $response, array $args): Response
+    {
+        if ($authError = $this->validateApiToken($request, $response)) {
+            return $authError;
+        }
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(120);
+        }
+
+        $orderId = (int) ($args['id'] ?? 0);
+        $raw     = (string) $request->getBody();
+        $data    = json_decode($raw, true);
+        if (!is_array($data)) {
+            $data = $request->getParsedBody() ?: [];
+        }
+        $emails = $data['emails'] ?? [];
+        if (!is_array($emails) || empty($emails)) {
+            $response->getBody()->write(json_encode(['success' => true, 'inserted' => 0]));
+            return $response->withHeader('Content-Type', 'application/json');
+        }
+
+        $order = $this->em->find('App\Domain\Entities\EmailOrder', $orderId);
+        if (!$order || $order->getStatus() !== \App\Domain\Enum\EmailOrderStatus::TRANSFERRING) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'Order bulunamadı veya transfer durumunda değil.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+        }
+
+        $conn = $this->em->getConnection();
+        $now  = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+        $inserted = 0;
+        try {
+            foreach (array_chunk($emails, 2000) as $chunk) {
+                $placeholders = [];
+                $params = [];
+                foreach ($chunk as $email) {
+                    $email = trim((string) $email);
+                    if ($email === '' || !str_contains($email, '@')) {
+                        continue;
+                    }
+                    $placeholders[] = '(?,?,?,?,?)';
+                    $params[] = $orderId;
+                    $params[] = $email;
+                    $params[] = '___TRANSFER___';
+                    $params[] = 'pending';
+                    $params[] = $now;
+                }
+                if (empty($placeholders)) {
+                    continue;
+                }
+                $sql = 'INSERT INTO email_order_emails (order_id, email, name, status, created_at) VALUES ' . implode(',', $placeholders);
+                $inserted += $conn->executeStatement($sql, $params);
+            }
+        } catch (\Throwable $e) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => $e->getMessage()]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+
+        $response->getBody()->write(json_encode(['success' => true, 'inserted' => $inserted]));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    /**
+     * Kaldığı yerden taşıma — ADIM 3: order'ı aktive et (TRANSFERRING → PENDING, worker görür).
+     * POST /api/email-orders/transfer-resume/{id}/activate
+     */
+    public function transferResumeActivate(Request $request, Response $response, array $args): Response
+    {
+        if ($authError = $this->validateApiToken($request, $response)) {
+            return $authError;
+        }
+
+        $orderId = (int) ($args['id'] ?? 0);
+        $order = $this->em->find('App\Domain\Entities\EmailOrder', $orderId);
+        if (!$order || $order->getStatus() !== \App\Domain\Enum\EmailOrderStatus::TRANSFERRING) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'Order bulunamadı veya transfer durumunda değil.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+        }
+
+        $conn = $this->em->getConnection();
+        // Gerçek alıcı sayısını email_order_emails'ten al ve total'i ona eşitle
+        $rowCount = (int) $conn->fetchOne('SELECT COUNT(*) FROM email_order_emails WHERE order_id = ?', [$orderId]);
+        if ($rowCount < 1) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'Aktive edilecek alıcı yok.']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(422);
+        }
+
+        $order->setTotal($rowCount);
+        $order->setStatus(\App\Domain\Enum\EmailOrderStatus::PENDING);
+        $this->em->flush();
+
+        error_log(sprintf('[transfer-resume] activate: order #%d → pending (%d alıcı)', $orderId, $rowCount));
+
+        $response->getBody()->write(json_encode(['success' => true, 'order_id' => $orderId, 'total' => $rowCount]));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    /**
      * API: Kullanıcının API Key'ini yenile
      * POST /api/regenerate-key
      */

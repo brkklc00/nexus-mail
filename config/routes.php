@@ -58,6 +58,9 @@ return function (App $app) {
         $group->get('/email-sending/runtime-config', [ApiController::class, 'getEmailSendingRuntimeConfig'])->setName('api.email-sending.runtime-config');
         $group->get('/email-worker/health', [ApiController::class, 'getEmailWorkerHealth'])->setName('api.email-worker.health');
         $group->post('/email-orders/receive', [ApiController::class, 'receiveTransferredOrder'])->setName('api.email-orders.receive');
+        $group->post('/email-orders/transfer-resume/init', [ApiController::class, 'transferResumeInit'])->setName('api.email-orders.transfer-resume.init');
+        $group->post('/email-orders/transfer-resume/{id}/emails', [ApiController::class, 'transferResumeEmails'])->setName('api.email-orders.transfer-resume.emails');
+        $group->post('/email-orders/transfer-resume/{id}/activate', [ApiController::class, 'transferResumeActivate'])->setName('api.email-orders.transfer-resume.activate');
         $group->post('/email-campaigns/external-priority/receive', [ApiController::class, 'receiveExternalPriority'])->setName('api.external-priority.receive');
         $group->get('/email-campaigns/external-priority/active', [ApiController::class, 'getActiveExternalPriority'])->setName('api.external-priority.active');
         $group->post('/email-campaigns/external-priority/{id}/claim', [ApiController::class, 'claimExternalPrioritySlot'])->setName('api.external-priority.claim');
@@ -285,6 +288,8 @@ return function (App $app) {
             $group->post('/{id}/cancel', [\App\Controllers\Admin\EmailOrderController::class, 'cancel'])->setName('admin.email-orders.cancel')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/dispatch', [\App\Controllers\Admin\EmailOrderController::class, 'dispatchToPanel'])->setName('admin.email-orders.dispatch')
+                ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
+            $group->post('/{id}/transfer-resume', [\App\Controllers\Admin\EmailOrderController::class, 'transferResumeToPanel'])->setName('admin.email-orders.transfer-resume')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));
             $group->post('/{id}/restart', [\App\Controllers\Admin\EmailOrderController::class, 'restartCampaign'])->setName('admin.email-orders.restart')
                 ->add(new PermissionMiddleware($em, $twig, 'admin_email_orders', 'write'));

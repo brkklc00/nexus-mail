@@ -1853,6 +1853,138 @@ class EmailOrderController
         ]);
     }
 
+    /**
+     * Kampanyayı kaldığı yerden başka panele taşı (kalan alıcılarla) ve kaynaktan sil.
+     * POST /admin/email-orders/{id}/transfer-resume
+     */
+    public function transferResumeToPanel(Request $request, Response $response, array $args): Response
+    {
+        @set_time_limit(300);
+        $orderId = (int) ($args['id'] ?? 0);
+        $payload = json_decode((string) $request->getBody(), true);
+        if (!is_array($payload)) {
+            $payload = $request->getParsedBody() ?: [];
+        }
+        $targetKey = trim((string) ($payload['panel'] ?? $payload['target'] ?? ''));
+
+        $order = $this->em->find(EmailOrder::class, $orderId);
+        if (!$order) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Sipariş bulunamadı.'], 404);
+        }
+
+        $allowed = [EmailOrderStatus::PENDING, EmailOrderStatus::PROCESSING, EmailOrderStatus::PENDING_APPROVAL];
+        if (!in_array($order->getStatus(), $allowed, true)) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Bu durumdaki sipariş taşınamaz (yalnızca bekleyen/işlenen/onay bekleyen).'], 422);
+        }
+
+        $registry = new \App\Application\Services\PanelRegistryService();
+        $panel = $registry->get($targetKey);
+        if (!$panel) {
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Hedef panel bulunamadı (SIBLING_PANELS).'], 400);
+        }
+
+        $conn = $this->em->getConnection();
+
+        // Kaynağı kilitle — worker yeni batch almasın
+        $prevStatus = $order->getStatus();
+        $order->setStatus(EmailOrderStatus::TRANSFERRING);
+        $this->em->flush();
+
+        // Kalan (gönderilmemiş) alıcıları topla: pending satırlar + havuzda çekilmemişler
+        $emailMap = [];
+        foreach ($conn->fetchFirstColumn("SELECT email FROM email_order_emails WHERE order_id = ? AND status = 'pending'", [$orderId]) as $e) {
+            $e = strtolower(trim((string) $e));
+            if ($e !== '') { $emailMap[$e] = true; }
+        }
+        $poolListId = $order->getPoolList()?->getId();
+        if ($order->getSourceType() === 'pool' && $poolListId) {
+            $cursor = (int) ($order->getLastPoolId() ?? 0);
+            foreach ($conn->fetchFirstColumn(
+                "SELECT email FROM email_data_pool WHERE is_active = 1 AND pool_list_id = ? AND id > ? ORDER BY id ASC",
+                [$poolListId, $cursor]
+            ) as $e) {
+                $e = strtolower(trim((string) $e));
+                if ($e !== '') { $emailMap[$e] = true; }
+            }
+        }
+        $emailList = array_keys($emailMap);
+        $remaining = count($emailList);
+
+        if ($remaining < 1) {
+            $order->setStatus($prevStatus);
+            $this->em->flush();
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Taşınacak gönderilmemiş alıcı yok.'], 422);
+        }
+
+        $client = new \GuzzleHttp\Client(['timeout' => 60, 'http_errors' => false]);
+        $hdr = ['headers' => ['X-Api-Token' => $panel['token'], 'Accept' => 'application/json']];
+        $srcPanel = (string) ($_ENV['SITE_URL'] ?? $_ENV['APP_URL'] ?? 'unknown');
+
+        // ADIM 1 — init
+        try {
+            $r = $client->post($panel['url'] . '/api/email-orders/transfer-resume/init', $hdr + ['json' => [
+                'subject' => $order->getSubject(),
+                'body' => $order->getBody(),
+                'total' => $remaining,
+                'delivery_percentage' => $order->getDeliveryPercentage(),
+                'smtp_rotation_limit' => $order->getSmtpRotationLimit(),
+                'owner_username' => $_SESSION['user']['username'] ?? null,
+                'source_panel' => $srcPanel,
+                'source_order_id' => $orderId,
+            ]]);
+            $rb = json_decode((string) $r->getBody(), true);
+        } catch (\Throwable $e) {
+            $order->setStatus($prevStatus); $this->em->flush();
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Hedef panele bağlanılamadı: ' . $e->getMessage() . ' (kaynak korundu)'], 502);
+        }
+        if (!is_array($rb) || empty($rb['success']) || empty($rb['order_id'])) {
+            $order->setStatus($prevStatus); $this->em->flush();
+            $msg = is_array($rb) ? (string) ($rb['error'] ?? 'init reddedildi') : 'geçersiz yanıt';
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Hedef init reddetti: ' . $msg . ' (kaynak korundu)'], 422);
+        }
+        $remoteId = (int) $rb['order_id'];
+
+        // ADIM 2 — alıcıları batch batch aktar, ADIM 3 — aktive et
+        try {
+            foreach (array_chunk($emailList, 5000) as $chunk) {
+                $r = $client->post($panel['url'] . '/api/email-orders/transfer-resume/' . $remoteId . '/emails', $hdr + ['json' => ['emails' => $chunk]]);
+                $rb = json_decode((string) $r->getBody(), true);
+                if (!is_array($rb) || empty($rb['success'])) {
+                    throw new \RuntimeException('batch reddedildi: ' . (is_array($rb) ? (string) ($rb['error'] ?? '?') : 'geçersiz yanıt'));
+                }
+            }
+            $r = $client->post($panel['url'] . '/api/email-orders/transfer-resume/' . $remoteId . '/activate', $hdr + ['json' => []]);
+            $rb = json_decode((string) $r->getBody(), true);
+            if (!is_array($rb) || empty($rb['success'])) {
+                throw new \RuntimeException('aktivasyon reddedildi: ' . (is_array($rb) ? (string) ($rb['error'] ?? '?') : 'geçersiz yanıt'));
+            }
+        } catch (\Throwable $e) {
+            // Hedef yarım kaldı → kaynağı GERİ AL (silme!). Hedef order TRANSFERRING kalır, admin temizler.
+            $order->setStatus($prevStatus); $this->em->flush();
+            error_log('[transfer-resume] sipariş #' . $orderId . ' yarıda kesildi: ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => false, 'message' => 'Taşıma yarıda kesildi: ' . $e->getMessage() . ' (kaynak korundu, hedefte yarım #' . $remoteId . ')'], 502);
+        }
+
+        // Hedef tamam → kaynağı SİL (önce alıcı satırları, sonra order)
+        try {
+            $conn->executeStatement('DELETE FROM email_order_emails WHERE order_id = ?', [$orderId]);
+            $conn->executeStatement('DELETE FROM email_campaign_priority_slots WHERE campaign_id = ?', [$orderId]);
+            $conn->executeStatement('DELETE FROM email_orders WHERE id = ?', [$orderId]);
+            $this->em->clear();
+        } catch (\Throwable $e) {
+            error_log('[transfer-resume] kaynak silme hatası #' . $orderId . ': ' . $e->getMessage());
+            return $this->jsonResponse($response, ['success' => true, 'message' => $panel['label'] . ' paneline taşındı (#' . $remoteId . ', ' . $remaining . ' alıcı) ama kaynak silinemedi: ' . $e->getMessage()], 200);
+        }
+
+        error_log('[transfer-resume] sipariş #' . $orderId . ' → ' . $panel['key'] . ' #' . $remoteId . ' (' . $remaining . ' alıcı), kaynak silindi');
+        return $this->jsonResponse($response, [
+            'success' => true,
+            'message' => $panel['label'] . ' paneline taşındı ve kaldığı yerden başlatıldı (' . $remaining . ' alıcı, uzak #' . $remoteId . '). Kaynak silindi.',
+            'remote_order_id' => $remoteId,
+            'moved' => $remaining,
+        ]);
+    }
+
     private function jsonResponse(Response $response, array $payload, int $status = 200): Response
     {
         $response->getBody()->write(json_encode($payload, JSON_UNESCAPED_UNICODE));

@@ -256,6 +256,9 @@
                                                     {% endif %}
                                                     {% if order.status == 'pending' or order.status == 'processing' %}
                                                     <li><button type="button" class="dropdown-item" onclick="cancelOrder({{ order.id }})"><i data-feather="pause" class="icon-xs me-2"></i>Duraklat</button></li>
+                                                    {% if sibling_panels|default([])|length > 0 %}
+                                                    <li><button type="button" class="dropdown-item" onclick="transferResumeOrder({{ order.id }})"><i data-feather="corner-up-right" class="icon-xs me-2"></i>Kaldığı yerden taşı</button></li>
+                                                    {% endif %}
                                                     {% endif %}
                                                     {% if order.status in ['sent', 'completed', 'failed', 'cancelled'] %}
                                                     <li><button type="button" class="dropdown-item" onclick="restartOrder({{ order.id }}, {{ order.sourceType == 'pool' ? 'true' : 'false' }}, '{{ order.status }}')"><i data-feather="refresh-cw" class="icon-xs me-2"></i>Devam Ettir</button></li>
@@ -514,6 +517,7 @@
     const PANELS = {{ sibling_panels|default([])|json_encode|raw }};
     let dispatchOrderId = null;
     let dispatchModal = null;
+    let dispatchEndpoint = 'dispatch';
 
     function fillSelect() {
         const sel = document.getElementById('dispatchPanelSelect');
@@ -523,17 +527,25 @@
         }).join('');
     }
 
-    window.dispatchOrder = function (orderId) {
+    function openPanelModal(orderId, endpoint) {
         dispatchOrderId = orderId;
+        dispatchEndpoint = endpoint;
         fillSelect();
         const alertEl = document.getElementById('dispatchPanelAlert');
         if (alertEl) { alertEl.className = 'alert d-none mt-3 mb-0'; alertEl.textContent = ''; }
+        if (endpoint === 'transfer-resume' && alertEl) {
+            alertEl.className = 'alert alert-info mt-3 mb-0';
+            alertEl.textContent = 'Kampanya kalan (gönderilmemiş) alıcılarıyla seçilen panele taşınacak ve buradan silinecek. Büyük listelerde bir dakika sürebilir.';
+        }
         const el = document.getElementById('dispatchPanelModal');
         if (!el) return;
         if (!dispatchModal) dispatchModal = new bootstrap.Modal(el);
         dispatchModal.show();
         setTimeout(function () { if (typeof feather !== 'undefined') feather.replace(); }, 100);
-    };
+    }
+
+    window.dispatchOrder = function (orderId) { openPanelModal(orderId, 'dispatch'); };
+    window.transferResumeOrder = function (orderId) { openPanelModal(orderId, 'transfer-resume'); };
 
     document.addEventListener('DOMContentLoaded', function () {
         const btn = document.getElementById('dispatchPanelConfirmBtn');
@@ -545,7 +557,7 @@
             if (!dispatchOrderId || !panelKey) return;
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Taşınıyor...';
-            fetch('/admin/email-orders/' + dispatchOrderId + '/dispatch', {
+            fetch('/admin/email-orders/' + dispatchOrderId + '/' + dispatchEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify({ panel: panelKey }),
